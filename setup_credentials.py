@@ -15,6 +15,9 @@ import os
 import base64
 import getpass
 import json
+import webbrowser
+
+import requests
 
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -25,6 +28,10 @@ BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 CONFIG_DIR  = os.path.join(BASE_DIR, "config")
 CRED_FILE   = os.path.join(CONFIG_DIR, "credentials.enc")
 SALT_FILE   = os.path.join(CONFIG_DIR, ".salt")
+
+TRAKT_OAUTH_AUTHORIZE = "https://trakt.tv/oauth/authorize"
+TRAKT_OAUTH_TOKEN     = "https://api.trakt.tv/oauth/token"
+TRAKT_REDIRECT_URI    = "urn:ietf:wg:oauth:2.0:oob"  # PIN / out-of-band flow
 
 # ── Encryption helpers ─────────────────────────────────────────────────────────
 
@@ -93,6 +100,70 @@ def _prompt(label: str, secret: bool = False, default: str = "") -> str:
     return value.strip() or default
 
 
+def _trakt_oauth_flow(client_id: str, client_secret: str) -> tuple[str, str]:
+    """
+    Run the Trakt PIN-based OAuth flow.
+
+    Opens the Trakt authorization page in the default browser, asks the user
+    to enter the displayed PIN, then exchanges it for access + refresh tokens.
+
+    Returns:
+        (access_token, refresh_token)
+    """
+    auth_url = (
+        f"{TRAKT_OAUTH_AUTHORIZE}"
+        f"?response_type=code"
+        f"&client_id={client_id}"
+        f"&redirect_uri={TRAKT_REDIRECT_URI}"
+    )
+
+    print("\n  Opening Trakt authorization page in your browser…")
+    print(f"  If it doesn't open, visit:\n    {auth_url}\n")
+    webbrowser.open(auth_url)
+
+    print("  After authorizing, Trakt will display a PIN code.")
+    while True:
+        pin = input("  Enter the PIN from Trakt: ").strip()
+        if pin:
+            break
+        print("  ⚠  PIN cannot be empty.")
+
+    print("  Exchanging PIN for access token…")
+    try:
+        resp = requests.post(
+            TRAKT_OAUTH_TOKEN,
+            json={
+                "code":          pin,
+                "client_id":     client_id,
+                "client_secret": client_secret,
+                "redirect_uri":  TRAKT_REDIRECT_URI,
+                "grant_type":    "authorization_code",
+            },
+            headers={
+                "User-Agent":    "Streamsaver/1.0",
+                "Content-Type":  "application/json",
+                "Accept":        "application/json",
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException as exc:
+        print(f"\n  ❌  Token exchange failed: {exc}")
+        print("  Please check your Client ID and Client Secret and try again.")
+        raise SystemExit(1)
+
+    access_token  = data.get("access_token", "")
+    refresh_token = data.get("refresh_token", "")
+
+    if not access_token:
+        print(f"\n  ❌  No access token in response: {data}")
+        raise SystemExit(1)
+
+    print("  ✅  Authorization successful!\n")
+    return access_token, refresh_token
+
+
 def run_wizard() -> None:
     print("=" * 60)
     print("  Streamsaver — Credential Setup Wizard")
@@ -116,22 +187,16 @@ def run_wizard() -> None:
 
     # ── Trakt credentials ───────────────────────────────────────────────────
     print("\n── Trakt API ──────────────────────────────────────────────────")
-    print("  Get your API credentials at: https://trakt.tv/oauth/applications")
-    print("  To get an Access Token:")
-    print("    1. Open your app at https://trakt.tv/oauth/applications")
-    print("    2. Click 'Authorize' and follow the flow")
-    print("    3. Copy the resulting Access Token\n")
+    print("  Get your Client ID and Secret at:")
+    print("  https://trakt.tv/oauth/applications\n")
     trakt_client_id     = _prompt("Client ID")
     trakt_client_secret = _prompt("Client Secret", secret=True)
-
-    while True:
-        trakt_access_token = _prompt("Access Token")
-        if trakt_access_token:
-            break
-        print("  ⚠  Access Token is required for syncing Trakt data. Please enter it.\n")
-
-    trakt_refresh_token = _prompt("Refresh Token (leave blank to skip)")
     trakt_username      = _prompt("Trakt Username")
+
+    print()
+    trakt_access_token, trakt_refresh_token = _trakt_oauth_flow(
+        trakt_client_id, trakt_client_secret
+    )
 
     # ── TMDb API ─────────────────────────────────────────────────────────────
     print("\n── TMDb API ───────────────────────────────────────────────────")
