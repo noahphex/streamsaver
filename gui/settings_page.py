@@ -151,6 +151,11 @@ class SettingsPage(ttk.Frame):
         ).pack(side="left", padx=(0, theme.PAD_SMALL))
 
         ttk.Button(
+            btn_frame, text="🌐 Refresh Network List",
+            command=self._on_refresh_networks,
+        ).pack(side="left", padx=(0, theme.PAD_SMALL))
+
+        ttk.Button(
             btn_frame, text="📧 Run Analysis & Send Report",
             command=self._on_run_analysis,
         ).pack(side="left", padx=(0, theme.PAD_SMALL))
@@ -236,7 +241,41 @@ class SettingsPage(ttk.Frame):
 
         threading.Thread(target=_do, daemon=True).start()
 
-    def _on_run_analysis(self) -> None:
+    def _on_refresh_networks(self) -> None:
+        """Fetch the latest network list from Trakt and update the cache."""
+        if not self._get_client:
+            messagebox.showwarning(
+                "Not Ready",
+                "No Trakt credentials loaded. Run setup_credentials.py first.",
+                parent=self,
+            )
+            return
+        client = self._get_client()
+        if not client:
+            messagebox.showwarning(
+                "Not Ready",
+                "Trakt client not initialized yet.",
+                parent=self,
+            )
+            return
+        self._set_status("Fetching network list from Trakt…", color=theme.INFO)
+
+        def _do():
+            try:
+                from core.service_manager import fetch_and_cache_networks
+                count = fetch_and_cache_networks(client)
+                self.after(0, lambda: self._set_status(
+                    f"✅  Network list updated — {count} networks cached.",
+                    theme.SUCCESS,
+                ))
+            except Exception as exc:
+                self.after(0, lambda: self._set_status(
+                    f"❌  Failed to refresh networks: {exc}", theme.DANGER
+                ))
+
+        threading.Thread(target=_do, daemon=True).start()
+
+
         self._set_status("Running analysis…", color=theme.INFO)
 
         def _do():

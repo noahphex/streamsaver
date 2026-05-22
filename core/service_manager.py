@@ -10,6 +10,7 @@ Valid status values: subscribed | suspended | unsubscribed | not_subscribed
 """
 
 import logging
+from datetime import date
 from typing import Optional
 
 from db import db_session
@@ -17,6 +18,59 @@ from db import db_session
 logger = logging.getLogger(__name__)
 
 VALID_STATUSES = {"subscribed", "suspended", "unsubscribed", "not_subscribed"}
+
+
+# ── Network cache ──────────────────────────────────────────────────────────────
+
+def fetch_and_cache_networks(client) -> int:
+    """
+    Pull the full network list from Trakt and store it in the local `networks`
+    table.  Replaces all existing cached entries.
+    Returns the number of networks stored.
+    """
+    networks = client.get_networks()
+    if not networks:
+        logger.warning("Trakt returned no networks.")
+        return 0
+
+    today = date.today().isoformat()
+    with db_session() as conn:
+        conn.execute("DELETE FROM networks")
+        conn.executemany(
+            "INSERT OR REPLACE INTO networks (name, country, fetched_at) VALUES (?,?,?)",
+            [
+                (
+                    net.get("name", "").strip(),
+                    net.get("country", ""),
+                    today,
+                )
+                for net in networks
+                if net.get("name", "").strip()
+            ],
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('networks_fetched_at', ?)",
+            (today,),
+        )
+
+    logger.info("Cached %d networks from Trakt.", len(networks))
+    return len(networks)
+
+
+def get_cached_network_names() -> list[str]:
+    """Return sorted list of all cached network names."""
+    with db_session() as conn:
+        rows = conn.execute(
+            "SELECT name FROM networks ORDER BY name COLLATE NOCASE"
+        ).fetchall()
+    return [r["name"] for r in rows]
+
+
+def networks_cache_is_empty() -> bool:
+    """Return True if the networks table has no rows."""
+    with db_session() as conn:
+        count = conn.execute("SELECT COUNT(*) FROM networks").fetchone()[0]
+    return count == 0
 
 
 # ── CRUD ───────────────────────────────────────────────────────────────────────

@@ -125,7 +125,7 @@ class StreamsaverApp(tk.Tk):
             self._status_bar.config(text="❌  Unlock failed.", fg=theme.DANGER)
 
     def _init_client(self, creds: dict) -> None:
-        """Instantiate TraktClient and update status bar."""
+        """Instantiate TraktClient, update status bar, and seed network cache if empty."""
         from core.trakt_client import TraktClient
         self._client = TraktClient(
             client_id     = creds["trakt_client_id"],
@@ -140,6 +140,31 @@ class StreamsaverApp(tk.Tk):
             fg=theme.SUCCESS,
         )
         logger.info("Trakt client initialized for user: %s", username)
+
+        # Fetch network list in background if cache is empty
+        from core.service_manager import networks_cache_is_empty
+        if networks_cache_is_empty():
+            import threading
+            self._status_bar.config(
+                text=f"✅  Connected as @{username} — fetching network list…",
+                fg=theme.SUCCESS,
+            )
+            threading.Thread(target=self._fetch_networks_bg, daemon=True).start()
+
+    def _fetch_networks_bg(self) -> None:
+        """Background thread: fetch Trakt networks and cache them."""
+        try:
+            from core.service_manager import fetch_and_cache_networks
+            count = fetch_and_cache_networks(self._client)
+            logger.info("Cached %d networks.", count)
+            # Update status bar back on main thread
+            username = self._client.username if self._client else "unknown"
+            self.after(0, lambda: self._status_bar.config(
+                text=f"✅  Connected as @{username}  ({count} networks loaded)",
+                fg=theme.SUCCESS,
+            ))
+        except Exception as exc:
+            logger.warning("Failed to fetch networks: %s", exc)
 
     # ── Event handlers ─────────────────────────────────────────────────────────
 

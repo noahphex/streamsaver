@@ -85,6 +85,13 @@ def init_db() -> None:
                 premiere_date  TEXT
             );
 
+            -- Cached Trakt network list (populated from /networks endpoint)
+            CREATE TABLE IF NOT EXISTS networks (
+                name        TEXT PRIMARY KEY,
+                country     TEXT,
+                fetched_at  TEXT    -- ISO date of last fetch
+            );
+
             -- Key/value settings store
             CREATE TABLE IF NOT EXISTS settings (
                 key   TEXT PRIMARY KEY,
@@ -95,7 +102,8 @@ def init_db() -> None:
             INSERT OR IGNORE INTO settings (key, value) VALUES
                 ('notification_email',        ''),
                 ('abandoned_mode',            'manual'),
-                ('abandoned_threshold_days',  '90');
+                ('abandoned_threshold_days',  '90'),
+                ('networks_fetched_at',        '');
         """)
 
     print(f"✅  Database ready: {DB_PATH}")

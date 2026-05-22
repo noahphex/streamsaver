@@ -41,11 +41,25 @@ def _format_episode(season: Optional[int], episode: Optional[int]) -> Optional[s
 
 def _resolve_service_id(network_name: Optional[str], conn) -> Optional[int]:
     """
-    Return the service id whose name matches the Trakt network, or None.
-    Matching is case-insensitive and strips trailing whitespace.
+    Return the service id that corresponds to a Trakt network name.
+
+    Matching priority:
+      1. Exact match on trakt_network_id (set when service was added from the
+         Trakt network picker — guaranteed identical string)
+      2. Case-insensitive name match as fallback for manually-entered services
     """
     if not network_name:
         return None
+
+    # Priority 1: exact trakt_network_id match
+    row = conn.execute(
+        "SELECT id FROM services WHERE trakt_network_id = ?",
+        (network_name,),
+    ).fetchone()
+    if row:
+        return row["id"]
+
+    # Priority 2: case-insensitive name fallback
     row = conn.execute(
         "SELECT id FROM services WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))",
         (network_name,),

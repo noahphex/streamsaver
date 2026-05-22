@@ -5,10 +5,12 @@ Author: Noah Lee
 
 Displays all services in a Treeview with status, cost and billing date.
 Allows adding, editing, deleting services and changing their status.
+Service names are selected from a searchable dropdown of Trakt-sourced
+networks, ensuring exact name matching during show sync.
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
+from tkinter import ttk, messagebox
 from datetime import date
 
 from gui import theme
@@ -16,7 +18,346 @@ from gui.widgets import SectionHeader, StatusBadge, configure_ttk_styles
 from core.service_manager import (
     add_service, update_service, delete_service,
     get_all_services, get_cost_totals, set_service_status, VALID_STATUSES,
+    get_cached_network_names,
 )
+
+STATUSES = ["subscribed", "suspended", "unsubscribed", "not_subscribed"]
+COL_DEFS = [
+    ("Name",         200, "w"),
+    ("Status",       120, "center"),
+    ("Monthly ($)",   90, "e"),
+    ("Annual ($)",    90, "e"),
+    ("Next Billing", 110, "center"),
+]
+
+
+class ServicesPage(ttk.Frame):
+    """Tab: manage streaming services."""
+
+    def __init__(self, parent, **kwargs):
+        super().__init__(parent, **kwargs)
+        self.configure(style="TFrame")
+        self._build_ui()
+        self.refresh()
+
+    # ── Layout ─────────────────────────────────────────────────────────────────
+
+    def _build_ui(self) -> None:
+        # Header row
+        header = ttk.Frame(self, style="TFrame")
+        header.pack(fill="x", padx=theme.PAD, pady=(theme.PAD, 0))
+        SectionHeader(header, text="Streaming Services").pack(side="left")
+        ttk.Button(header, text="+ Add Service",    style="Accent.TButton",
+                   command=self._on_add).pack(side="right", padx=(theme.PAD_SMALL, 0))
+        ttk.Button(header, text="✎ Edit Selected",  command=self._on_edit
+                   ).pack(side="right", padx=(theme.PAD_SMALL, 0))
+        ttk.Button(header, text="✕ Delete",          style="Danger.TButton",
+                   command=self._on_delete).pack(side="right", padx=(theme.PAD_SMALL, 0))
+
+        # Treeview
+        tree_frame = ttk.Frame(self, style="TFrame")
+        tree_frame.pack(fill="both", expand=True, padx=theme.PAD, pady=theme.PAD_SMALL)
+
+        self._tree = ttk.Treeview(
+            tree_frame,
+            columns=[c[0] for c in COL_DEFS],
+            show="headings",
+            selectmode="browse",
+        )
+        for col, width, anchor in COL_DEFS:
+            self._tree.heading(col, text=col,
+                               command=lambda c=col: self._sort_by(c))
+            self._tree.column(col, width=width, anchor=anchor, stretch=(col == "Name"))
+
+        # Tag-based status colors
+        for status, color in theme.STATUS_COLORS.items():
+            self._tree.tag_configure(status, foreground=color)
+
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical",   command=self._tree.yview)
+        hsb = ttk.Scrollbar(tree_frame, orient="horizontal",  command=self._tree.xview)
+        self._tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        self._tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        hsb.grid(row=1, column=0, sticky="ew")
+        tree_frame.rowconfigure(0, weight=1)
+        tree_frame.columnconfigure(0, weight=1)
+        self._tree.bind("<Double-1>", lambda e: self._on_edit())
+
+        # Cost summary bar
+        self._cost_frame = ttk.Frame(self, style="Alt.TFrame")
+        self._cost_frame.pack(fill="x", padx=theme.PAD, pady=(0, theme.PAD))
+        self._monthly_lbl = ttk.Label(
+            self._cost_frame, style="TLabel",
+            font=theme.FONT_BOLD,
+        )
+        self._annual_lbl = ttk.Label(
+            self._cost_frame, style="TLabel",
+            font=theme.FONT_BOLD,
+        )
+        ttk.Label(self._cost_frame, text="Subscribed services — ",
+                  style="Dim.TLabel").pack(side="left", padx=(theme.PAD, 0), pady=4)
+        self._monthly_lbl.pack(side="left", padx=(0, theme.PAD))
+        ttk.Label(self._cost_frame, text="|", style="Dim.TLabel").pack(side="left")
+        self._annual_lbl.pack(side="left", padx=theme.PAD)
+
+        # Sort state
+        self._sort_col = "Name"
+        self._sort_asc = True
+
+    # ── Data ───────────────────────────────────────────────────────────────────
+
+    def refresh(self) -> None:
+        """Reload service data from DB and repopulate the tree."""
+        for item in self._tree.get_children():
+            self._tree.delete(item)
+
+        services = get_all_services()
+        for svc in services:
+            status_label = theme.STATUS_LABELS.get(svc["status"], svc["status"])
+            self._tree.insert(
+                "", "end",
+                iid=str(svc["id"]),
+                values=(
+                    svc["name"],
+                    status_label,
+                    f"{svc['monthly_cost']:.2f}" if svc["monthly_cost"] else "—",
+                    f"{svc['annual_cost']:.2f}"  if svc["annual_cost"]  else "—",
+                    svc["next_billing_date"] or "—",
+                ),
+                tags=(svc["status"],),
+            )
+
+        totals = get_cost_totals(status_filter="subscribed")
+        self._monthly_lbl.config(
+            text=f"${totals['monthly_total']:.2f}/mo",
+            foreground=theme.GREEN,
+        )
+        self._annual_lbl.config(
+            text=f"${totals['annual_total']:.2f}/yr",
+            foreground=theme.CYAN,
+        )
+
+    def _selected_service_id(self) -> int | None:
+        sel = self._tree.selection()
+        return int(sel[0]) if sel else None
+
+    def _sort_by(self, col: str) -> None:
+        if self._sort_col == col:
+            self._sort_asc = not self._sort_asc
+        else:
+            self._sort_col = col
+            self._sort_asc = True
+
+        items = [(self._tree.set(k, col), k) for k in self._tree.get_children("")]
+        items.sort(reverse=not self._sort_asc)
+        for idx, (_, k) in enumerate(items):
+            self._tree.move(k, "", idx)
+
+    # ── Actions ────────────────────────────────────────────────────────────────
+
+    def _on_add(self) -> None:
+        network_names = get_cached_network_names()
+        dlg = ServiceDialog(self, title="Add Service", network_names=network_names)
+        self.wait_window(dlg)
+        if dlg.result:
+            try:
+                add_service(**dlg.result)
+                self.refresh()
+            except Exception as exc:
+                messagebox.showerror("Error", str(exc), parent=self)
+
+    def _on_edit(self) -> None:
+        sid = self._selected_service_id()
+        if sid is None:
+            messagebox.showinfo("No selection", "Please select a service to edit.", parent=self)
+            return
+        services = {s["id"]: s for s in get_all_services()}
+        svc = services.get(sid)
+        if not svc:
+            return
+        network_names = get_cached_network_names()
+        dlg = ServiceDialog(self, title="Edit Service", service=svc,
+                            network_names=network_names)
+        self.wait_window(dlg)
+        if dlg.result:
+            try:
+                update_service(sid, **dlg.result)
+                self.refresh()
+            except Exception as exc:
+                messagebox.showerror("Error", str(exc), parent=self)
+
+    def _on_delete(self) -> None:
+        sid = self._selected_service_id()
+        if sid is None:
+            messagebox.showinfo("No selection", "Please select a service to delete.", parent=self)
+            return
+        name = self._tree.item(str(sid), "values")[0]
+        if messagebox.askyesno(
+            "Delete Service",
+            f"Delete '{name}'?\n\nShows assigned to this service will be unlinked.",
+            parent=self,
+        ):
+            delete_service(sid)
+            self.refresh()
+
+
+# ── Add / Edit dialog ──────────────────────────────────────────────────────────
+
+class ServiceDialog(tk.Toplevel):
+    """
+    Modal dialog for adding or editing a streaming service.
+
+    The service name is chosen from a searchable combobox populated with
+    the cached Trakt network list, guaranteeing the stored name matches
+    exactly what Trakt returns in show metadata.
+    """
+
+    def __init__(
+        self,
+        parent,
+        title: str,
+        service: dict | None = None,
+        network_names: list[str] | None = None,
+    ):
+        super().__init__(parent)
+        self.title(title)
+        self.configure(bg=theme.BG)
+        self.resizable(False, False)
+        self.result: dict | None = None
+        self._svc = service or {}
+        self._all_networks = network_names or []
+        self._build()
+        self.grab_set()
+        self.transient(parent)
+        self.update_idletasks()
+        px, py = parent.winfo_rootx(), parent.winfo_rooty()
+        pw, ph = parent.winfo_width(), parent.winfo_height()
+        w, h   = self.winfo_width(), self.winfo_height()
+        self.geometry(f"+{px + pw//2 - w//2}+{py + ph//2 - h//2}")
+
+    def _entry_row(self, frame, label: str, row: int) -> ttk.Entry:
+        ttk.Label(frame, text=label, style="TLabel").grid(
+            row=row, column=0, sticky="w", padx=(0, theme.PAD), pady=4
+        )
+        entry = ttk.Entry(frame, width=32)
+        entry.grid(row=row, column=1, sticky="ew", pady=4)
+        return entry
+
+    def _build(self) -> None:
+        f = ttk.Frame(self, style="TFrame", padding=theme.PAD * 2)
+        f.pack(fill="both", expand=True)
+        f.columnconfigure(1, weight=1)
+
+        # ── Service name: searchable network picker ──────────────────────
+        ttk.Label(f, text="Service / Network:", style="TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, theme.PAD), pady=4
+        )
+
+        name_frame = ttk.Frame(f, style="TFrame")
+        name_frame.grid(row=0, column=1, sticky="ew", pady=4)
+        name_frame.columnconfigure(0, weight=1)
+
+        self._name_var = tk.StringVar()
+        self._name_cb  = ttk.Combobox(
+            name_frame,
+            textvariable=self._name_var,
+            values=self._all_networks,
+            width=30,
+        )
+        self._name_cb.grid(row=0, column=0, sticky="ew")
+
+        # Live filter: as user types, narrow the dropdown list
+        self._name_var.trace_add("write", self._filter_networks)
+
+        if self._all_networks:
+            hint = f"({len(self._all_networks)} networks — type to filter)"
+        else:
+            hint = "(No network cache — go to Settings → Refresh Network List)"
+        ttk.Label(name_frame, text=hint, style="Dim.TLabel",
+                  font=theme.FONT_SMALL).grid(row=1, column=0, sticky="w")
+
+        # ── Cost / billing fields ────────────────────────────────────────
+        self._monthly = self._entry_row(f, "Monthly Cost ($):",          1)
+        self._annual  = self._entry_row(f, "Annual Cost ($):",           2)
+        self._billing = self._entry_row(f, "Next Billing Date\n(YYYY-MM-DD):", 3)
+
+        # ── Status ────────────────────────────────────────────────────────
+        ttk.Label(f, text="Status:", style="TLabel").grid(
+            row=4, column=0, sticky="w", padx=(0, theme.PAD), pady=4
+        )
+        self._status_var = tk.StringVar()
+        ttk.Combobox(
+            f, textvariable=self._status_var,
+            values=STATUSES, state="readonly", width=30,
+        ).grid(row=4, column=1, sticky="ew", pady=4)
+
+        # ── Pre-fill for edit mode ────────────────────────────────────────
+        if self._svc:
+            self._name_var.set(self._svc.get("name", ""))
+            self._monthly.insert(0, str(self._svc.get("monthly_cost", "") or ""))
+            self._annual.insert(0,  str(self._svc.get("annual_cost",  "") or ""))
+            self._billing.insert(0, self._svc.get("next_billing_date", "") or "")
+            self._status_var.set(self._svc.get("status", "not_subscribed"))
+        else:
+            self._status_var.set("subscribed")
+
+        # ── Buttons ───────────────────────────────────────────────────────
+        btn_frame = ttk.Frame(f, style="TFrame")
+        btn_frame.grid(row=5, column=0, columnspan=2, pady=(theme.PAD, 0))
+        ttk.Button(btn_frame, text="Save", style="Accent.TButton",
+                   command=self._on_save).pack(side="left", padx=theme.PAD_SMALL)
+        ttk.Button(btn_frame, text="Cancel",
+                   command=self.destroy).pack(side="left", padx=theme.PAD_SMALL)
+
+    def _filter_networks(self, *_) -> None:
+        """Narrow the dropdown list to names containing the typed text."""
+        typed = self._name_var.get().lower()
+        if not typed:
+            filtered = self._all_networks
+        else:
+            filtered = [n for n in self._all_networks if typed in n.lower()]
+        self._name_cb["values"] = filtered
+        # Auto-open dropdown when there are matches and user is typing
+        if filtered and typed:
+            try:
+                self._name_cb.event_generate("<Down>")
+            except Exception:
+                pass
+
+    def _on_save(self) -> None:
+        name = self._name_var.get().strip()
+        if not name:
+            messagebox.showwarning("Validation", "Service name is required.", parent=self)
+            return
+
+        def _float(val: str) -> float:
+            try:
+                return float(val.strip()) if val.strip() else 0.0
+            except ValueError:
+                return 0.0
+
+        billing = self._billing.get().strip() or None
+        if billing:
+            try:
+                date.fromisoformat(billing)
+            except ValueError:
+                messagebox.showwarning(
+                    "Validation",
+                    "Billing date must be in YYYY-MM-DD format.",
+                    parent=self,
+                )
+                return
+
+        self.result = {
+            "name":              name,
+            # trakt_network_id stores the exact Trakt name for show matching
+            "trakt_network_id":  name,
+            "monthly_cost":      _float(self._monthly.get()),
+            "annual_cost":       _float(self._annual.get()),
+            "next_billing_date": billing,
+            "status":            self._status_var.get() or "subscribed",
+        }
+        self.destroy()
 
 STATUSES = ["subscribed", "suspended", "unsubscribed", "not_subscribed"]
 COL_DEFS = [
