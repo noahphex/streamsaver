@@ -228,10 +228,31 @@ class TraktClient:
     def get_networks(self) -> list[dict]:
         """
         Return all known networks from Trakt (used to populate service list).
+        This is a public endpoint — only the API key header is needed.
         https://trakt.docs.apiary.io/#reference/networks
         """
-        result = self._get("/networks")
+        result = self._get_public("/networks")
         return result or []
+
+    def _get_public(self, path: str, params: Optional[dict] = None) -> Any:
+        """
+        GET request using only the API key header (no Bearer token).
+        Used for Trakt public endpoints that don't require OAuth.
+        """
+        url     = f"{TRAKT_API_BASE}{path}"
+        headers = {
+            "Content-Type":      "application/json",
+            "trakt-api-version": "2",
+            "trakt-api-key":     self.client_id,
+            "Accept":            "application/json",
+        }
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=15)
+            resp.raise_for_status()
+            return resp.json() if resp.status_code == 200 else None
+        except requests.RequestException as exc:
+            logger.warning("Public GET failed for %s: %s", url, exc)
+            raise
 
     # ── Search ─────────────────────────────────────────────────────────────────
 

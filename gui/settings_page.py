@@ -235,8 +235,8 @@ class SettingsPage(ttk.Frame):
                 # Notify parent to refresh other tabs
                 self.after(0, lambda: self.event_generate("<<SyncComplete>>"))
             except Exception as exc:
-                self.after(0, lambda: self._set_status(
-                    f"❌  Sync failed: {exc}", theme.DANGER
+                self.after(0, lambda e=exc: self._set_status(
+                    f"❌  Sync failed: {e}", theme.DANGER
                 ))
 
         threading.Thread(target=_do, daemon=True).start()
@@ -269,8 +269,8 @@ class SettingsPage(ttk.Frame):
                     theme.SUCCESS,
                 ))
             except Exception as exc:
-                self.after(0, lambda: self._set_status(
-                    f"❌  Failed to refresh networks: {exc}", theme.DANGER
+                self.after(0, lambda e=exc: self._set_status(
+                    f"❌  Failed to refresh networks: {e}", theme.DANGER
                 ))
 
         threading.Thread(target=_do, daemon=True).start()
@@ -313,8 +313,8 @@ class SettingsPage(ttk.Frame):
                 )
                 self.after(0, lambda: self._set_status(msg, theme.SUCCESS))
             except Exception as exc:
-                self.after(0, lambda: self._set_status(
-                    f"❌  Error: {exc}", theme.DANGER
+                self.after(0, lambda e=exc: self._set_status(
+                    f"❌  Error: {e}", theme.DANGER
                 ))
 
         threading.Thread(target=_do, daemon=True).start()
