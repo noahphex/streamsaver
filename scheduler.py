@@ -36,6 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from db import init_db, db_session
 from core.trakt_client import TraktClient
+from core.tmdb_client  import TMDbClient
 from core.show_tracker import run_full_sync
 from core.analysis     import run_analysis
 from email_reports.report_builder import build_report
@@ -86,8 +87,15 @@ def run_daily_job(creds: dict) -> None:
         refresh_token = creds.get("trakt_refresh_token", ""),
         username      = creds.get("trakt_username", ""),
     )
+
+    tmdb_key = creds.get("tmdb_api_key", "")
+    country  = _get_setting("provider_country") or "US"
+    tmdb_client = TMDbClient(api_key=tmdb_key, country=country) if tmdb_key else None
+    if not tmdb_client:
+        logger.warning("No TMDb API key — provider lookup will be skipped during sync.")
+
     try:
-        sync_results = run_full_sync(client)
+        sync_results = run_full_sync(client, tmdb_client)
         logger.info(
             "Sync complete — shows: %d, watchlist: %d, archived: %d",
             sync_results["shows"],

@@ -100,14 +100,13 @@ def _build_resubscribe_content(recommendations: list[dict]) -> tuple[str, str]:
     cards = []
     for rec in recommendations:
         icon = _service_icon_tag(rec.get("icon_path"), rec["name"])
-        premieres = rec.get("premieres", [])
 
         show_items = "".join(
             f"""<li>
-              {p['title']}
-              <span class="premiere-date">{p['premiere_date']}</span>
+              {s['title']}
+              <span class="premiere-date">{s.get('next_air_date', '—')}</span>
             </li>"""
-            for p in premieres
+            for s in rec.get("shows", [])
         )
 
         cards.append(f"""
