@@ -305,8 +305,8 @@ class ServiceDialog(tk.Toplevel):
             hint = f"({len(self._all_networks)} SVOD providers — type to filter)"
         else:
             hint = "(No provider cache — go to Settings → Refresh Provider List)"
-        ttk.Label(name_frame, text=hint, style="Dim.TLabel",
-                  font=theme.FONT_SMALL).grid(row=1, column=0, sticky="w")
+        tk.Label(name_frame, text=hint, bg=theme.BG, fg=theme.FG_DIM,
+                 font=theme.FONT_SMALL).grid(row=1, column=0, sticky="w")
 
         # Live filter + icon preview update on name change
         self._name_var.trace_add("write", self._on_name_change)
@@ -330,15 +330,15 @@ class ServiceDialog(tk.Toplevel):
         ttk.Separator(f, orient="horizontal").grid(
             row=5, column=0, columnspan=2, sticky="ew", pady=(theme.PAD, 4)
         )
-        bundle_lf = ttk.LabelFrame(f, text="Bundle / Included Providers", style="TFrame", padding=6)
+        bundle_lf = ttk.LabelFrame(f, text="Bundle / Included Providers", padding=6)
         bundle_lf.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(0, 4))
         bundle_lf.columnconfigure(0, weight=1)
 
-        ttk.Label(
+        tk.Label(
             bundle_lf,
             text="Providers listed here are treated as part of this subscription.\n"
-                 "e.g. Map \'Disney Plus\' → Hulu if you subscribe to the Disney Bundle.",
-            style="Dim.TLabel", font=theme.FONT_SMALL, justify="left",
+                 "e.g. Map 'Disney Plus' → Hulu if you subscribe to the Disney Bundle.",
+            bg=theme.BG, fg=theme.FG_DIM, font=theme.FONT_SMALL, justify="left",
         ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 4))
 
         list_frame = ttk.Frame(bundle_lf, style="TFrame")
@@ -349,7 +349,7 @@ class ServiceDialog(tk.Toplevel):
             list_frame, height=4, selectmode="single",
             bg=theme.BG_ALT, fg=theme.FG, relief="flat",
             highlightthickness=1, highlightcolor=theme.PURPLE,
-            font=theme.FONT,
+            font=theme.FONT_NORMAL,
         )
         self._bundle_lb.grid(row=0, column=0, sticky="ew")
         bundle_sb = ttk.Scrollbar(list_frame, orient="vertical", command=self._bundle_lb.yview)
