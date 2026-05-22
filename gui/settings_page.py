@@ -241,7 +241,8 @@ class SettingsPage(ttk.Frame):
 
         def _do():
             try:
-                from core.show_tracker import run_full_sync
+                from core.show_tracker  import run_full_sync
+                from core.trakt_client  import TraktAuthError
                 client  = self._get_client()
                 results = run_full_sync(client)
                 msg = (
@@ -251,9 +252,20 @@ class SettingsPage(ttk.Frame):
                     f"{results['abandoned']} abandoned updates."
                 )
                 self.after(0, lambda: self._set_status(msg, theme.SUCCESS))
-                # Notify parent to refresh other tabs
                 self.after(0, lambda: self.event_generate("<<SyncComplete>>"))
             except Exception as exc:
+                is_auth = "TraktAuthError" in type(exc).__name__ or "Access denied" in str(exc)
+                if is_auth:
+                    self.after(0, lambda e=exc: messagebox.showerror(
+                        "Trakt Auth Error",
+                        "Your Trakt access token is expired or invalid.\n\n"
+                        "To fix:\n"
+                        "1. Visit https://trakt.tv/oauth/applications\n"
+                        "2. Get a new Access Token for your app\n"
+                        "3. Re-run  setup_credentials.py  and enter the new token\n"
+                        "4. Restart Streamsaver",
+                        parent=self,
+                    ))
                 self.after(0, lambda e=exc: self._set_status(
                     f"❌  Sync failed: {e}", theme.DANGER
                 ))

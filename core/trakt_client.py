@@ -85,8 +85,12 @@ class TraktClient:
                 return resp.json()
             if resp.status_code == 204:
                 return None
-            if resp.status_code == 401:
-                raise TraktAuthError("Invalid or expired access token.")
+            if resp.status_code in (401, 403):
+                raise TraktAuthError(
+                    f"Access denied ({resp.status_code}) for {url}.\n"
+                    "Your Trakt access token may be expired or invalid.\n"
+                    "Re-run setup_credentials.py with a fresh access token."
+                )
             if resp.status_code == 429:
                 retry_after = int(resp.headers.get("Retry-After", 5))
                 logger.warning("Rate limited. Retrying after %ss.", retry_after)
