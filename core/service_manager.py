@@ -10,14 +10,107 @@ Valid status values: subscribed | suspended | unsubscribed | not_subscribed
 """
 
 import logging
+import os
+import time
 from datetime import date
 from typing import Optional
+
+import requests
 
 from db import db_session
 
 logger = logging.getLogger(__name__)
 
 VALID_STATUSES = {"subscribed", "suspended", "unsubscribed", "not_subscribed"}
+
+_BASE_DIR    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_ICONS_DIR   = os.path.join(_BASE_DIR, "assets", "service_icons")
+_TMDB_IMG    = "https://image.tmdb.org/t/p/w92"
+
+
+# ── Icon helpers ───────────────────────────────────────────────────────────────
+
+def _icon_path_for(provider_id: int) -> str:
+    """Return the local file path for a provider icon regardless of whether it exists."""
+    return os.path.join(_ICONS_DIR, f"{provider_id}.jpg")
+
+
+def download_icon_for_provider(provider_id: int, logo_path: str) -> Optional[str]:
+    """
+    Download a TMDb provider logo to assets/service_icons/{provider_id}.jpg.
+    Returns the local path on success, None on failure.
+    Skips download if the file already exists.
+    """
+    if not logo_path:
+        return None
+    os.makedirs(_ICONS_DIR, exist_ok=True)
+    dest = _icon_path_for(provider_id)
+    if os.path.exists(dest):
+        return dest
+    try:
+        url  = f"{_TMDB_IMG}{logo_path}"
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        with open(dest, "wb") as f:
+            f.write(resp.content)
+        return dest
+    except Exception as exc:
+        logger.debug("Could not download icon for provider %d: %s", provider_id, exc)
+        return None
+
+
+def get_icon_for_service_name(name: str) -> Optional[str]:
+    """
+    Look up the cached provider by name, return local icon path if it exists.
+    Returns None if no match or icon not yet downloaded.
+    """
+    with db_session() as conn:
+        row = conn.execute(
+            "SELECT provider_id, logo_path FROM networks WHERE LOWER(name) = LOWER(?)",
+            (name,),
+        ).fetchone()
+    if not row or not row["provider_id"]:
+        return None
+    path = _icon_path_for(row["provider_id"])
+    return path if os.path.exists(path) else None
+
+
+def backfill_service_icons() -> int:
+    """
+    For every service that has no icon_path, attempt to match it against the
+    networks cache by name, download the logo, and update the row.
+    Returns the number of services updated.
+    """
+    with db_session() as conn:
+        services = conn.execute(
+            "SELECT id, name FROM services WHERE icon_path IS NULL OR icon_path = ''"
+        ).fetchall()
+        networks_map = {
+            r["name"].lower(): (r["provider_id"], r["logo_path"])
+            for r in conn.execute(
+                "SELECT name, provider_id, logo_path FROM networks WHERE logo_path != ''"
+            ).fetchall()
+        }
+
+    updated = 0
+    for svc in services:
+        match = networks_map.get(svc["name"].lower())
+        if not match:
+            continue
+        provider_id, logo_path = match
+        local = download_icon_for_provider(provider_id, logo_path)
+        if local:
+            with db_session() as conn:
+                conn.execute(
+                    "UPDATE services SET icon_path = ?, tmdb_provider_id = ? WHERE id = ?",
+                    (local, provider_id, svc["id"]),
+                )
+            updated += 1
+            time.sleep(0.1)   # be polite to TMDb CDN
+
+    if updated:
+        logger.info("Backfilled icons for %d service(s).", updated)
+    return updated
 
 
 # ── Network / provider cache ───────────────────────────────────────────────────
@@ -57,6 +150,7 @@ def fetch_and_cache_networks(tmdb_client) -> int:
         )
 
     logger.info("Cached %d providers from TMDb (%s).", len(providers), tmdb_client.country)
+    backfill_service_icons()
     return len(providers)
 
 
@@ -100,12 +194,25 @@ def add_service(
     """
     Insert a new service. Returns the new row id.
     If annual_cost is 0 and monthly_cost > 0, annual_cost is auto-calculated.
+    Auto-downloads the provider icon from TMDb cache if not already supplied.
     """
     if status not in VALID_STATUSES:
         raise ValueError(f"Invalid status '{status}'. Must be one of: {VALID_STATUSES}")
 
     if annual_cost == 0.0 and monthly_cost > 0:
         annual_cost = round(monthly_cost * 12, 2)
+
+    # Auto-resolve icon from network cache if not provided
+    if not icon_path:
+        with db_session() as conn:
+            row = conn.execute(
+                "SELECT provider_id, logo_path FROM networks WHERE LOWER(name) = LOWER(?)",
+                (name,),
+            ).fetchone()
+        if row and row["provider_id"]:
+            if not tmdb_provider_id:
+                tmdb_provider_id = row["provider_id"]
+            icon_path = download_icon_for_provider(row["provider_id"], row["logo_path"])
 
     with db_session() as conn:
         cursor = conn.execute(
