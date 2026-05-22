@@ -47,6 +47,12 @@ class TraktClient:
         self.username      = username
         self._session      = requests.Session()
         self._session.headers.update(self._build_headers())
+        logger.debug(
+            "TraktClient init — username=%s  client_id=%s…  token=%s…",
+            username,
+            client_id[:8] if client_id else "(none)",
+            access_token[:8] if access_token else "(none)",
+        )
 
     # ── Headers ────────────────────────────────────────────────────────────────
 
@@ -81,15 +87,32 @@ class TraktClient:
                     continue
                 raise
 
+            logger.debug(
+                "GET %s  params=%s  status=%s",
+                url, params, resp.status_code,
+            )
+
             if resp.status_code == 200:
                 return resp.json()
             if resp.status_code == 204:
                 return None
             if resp.status_code in (401, 403):
+                # Log full response detail to help diagnose auth failures
+                logger.error(
+                    "Trakt auth error %s — URL: %s\n"
+                    "  Request headers: %s\n"
+                    "  Response headers: %s\n"
+                    "  Response body: %s",
+                    resp.status_code, url,
+                    dict(self._session.headers),
+                    dict(resp.headers),
+                    resp.text[:500],
+                )
                 raise TraktAuthError(
                     f"Access denied ({resp.status_code}) for {url}.\n"
                     "Your Trakt access token may be expired or invalid.\n"
-                    "Re-run setup_credentials.py with a fresh access token."
+                    "Re-run setup_credentials.py with a fresh access token.\n"
+                    f"Full details written to data/streamsaver.log"
                 )
             if resp.status_code == 429:
                 retry_after = int(resp.headers.get("Retry-After", 5))
@@ -100,6 +123,10 @@ class TraktClient:
                 logger.debug("404 Not found: %s", url)
                 return None
 
+            logger.error(
+                "Unexpected status %s from %s — body: %s",
+                resp.status_code, url, resp.text[:300],
+            )
             resp.raise_for_status()
 
         raise TraktRateLimitError(f"Request to {url} failed after {retry} attempts.")

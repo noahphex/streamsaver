@@ -6,3 +6,4 @@ config/credentials.enc
 config/.salt
 data/streamsaver.db
 .DS_Store
+data/streamsaver*.log
