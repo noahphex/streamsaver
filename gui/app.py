@@ -143,9 +143,10 @@ class StreamsaverApp(tk.Tk):
         tmdb_key = creds.get("tmdb_api_key", "")
         if tmdb_key:
             with db_session() as conn:
-                country = (conn.execute(
+                row = conn.execute(
                     "SELECT value FROM settings WHERE key = 'provider_country'"
-                ).fetchone() or {}).get("value", "US") or "US"
+                ).fetchone()
+                country = (row["value"] if row and row["value"] else "US")
             self._tmdb_client = TMDbClient(api_key=tmdb_key, country=country)
         else:
             self._tmdb_client = None
