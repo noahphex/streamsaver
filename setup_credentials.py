@@ -116,11 +116,21 @@ def run_wizard() -> None:
 
     # ── Trakt credentials ───────────────────────────────────────────────────
     print("\n── Trakt API ──────────────────────────────────────────────────")
-    print("  Get your API credentials at: https://trakt.tv/oauth/applications\n")
+    print("  Get your API credentials at: https://trakt.tv/oauth/applications")
+    print("  To get an Access Token:")
+    print("    1. Open your app at https://trakt.tv/oauth/applications")
+    print("    2. Click 'Authorize' and follow the flow")
+    print("    3. Copy the resulting Access Token\n")
     trakt_client_id     = _prompt("Client ID")
     trakt_client_secret = _prompt("Client Secret", secret=True)
-    trakt_access_token  = _prompt("Access Token (leave blank to set later)")
-    trakt_refresh_token = _prompt("Refresh Token (leave blank to set later)")
+
+    while True:
+        trakt_access_token = _prompt("Access Token")
+        if trakt_access_token:
+            break
+        print("  ⚠  Access Token is required for syncing Trakt data. Please enter it.\n")
+
+    trakt_refresh_token = _prompt("Refresh Token (leave blank to skip)")
     trakt_username      = _prompt("Trakt Username")
 
     # ── TMDb API ─────────────────────────────────────────────────────────────

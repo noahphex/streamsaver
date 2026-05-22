@@ -58,11 +58,12 @@ class TraktClient:
 
     def _build_headers(self) -> dict:
         return {
-            "Content-Type":    "application/json",
+            "User-Agent":        "Streamsaver/1.0",
+            "Content-Type":      "application/json",
             "trakt-api-version": "2",
-            "trakt-api-key":   self.client_id,
-            "Accept":          "application/json",
-            "Authorization":   f"Bearer {self.access_token}",
+            "trakt-api-key":     self.client_id,
+            "Accept":            "application/json",
+            "Authorization":     f"Bearer {self.access_token}",
         }
 
     def _refresh_headers(self) -> None:
