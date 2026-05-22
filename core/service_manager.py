@@ -20,32 +20,35 @@ logger = logging.getLogger(__name__)
 VALID_STATUSES = {"subscribed", "suspended", "unsubscribed", "not_subscribed"}
 
 
-# ── Network cache ──────────────────────────────────────────────────────────────
+# ── Network / provider cache ───────────────────────────────────────────────────
 
-def fetch_and_cache_networks(client) -> int:
+def fetch_and_cache_networks(tmdb_client) -> int:
     """
-    Pull the full network list from Trakt and store it in the local `networks`
-    table.  Replaces all existing cached entries.
-    Returns the number of networks stored.
+    Pull the TV streaming provider list from TMDb and store it in the local
+    `networks` table. Replaces all existing cached entries.
+    Returns the number of providers stored.
     """
-    networks = client.get_networks()
-    if not networks:
-        logger.warning("Trakt returned no networks.")
+    providers = tmdb_client.get_streaming_providers()
+    if not providers:
+        logger.warning("TMDb returned no streaming providers.")
         return 0
 
     today = date.today().isoformat()
     with db_session() as conn:
         conn.execute("DELETE FROM networks")
         conn.executemany(
-            "INSERT OR REPLACE INTO networks (name, country, fetched_at) VALUES (?,?,?)",
+            """INSERT OR REPLACE INTO networks (name, provider_id, logo_path, country, fetched_at)
+               VALUES (?, ?, ?, ?, ?)""",
             [
                 (
-                    net.get("name", "").strip(),
-                    net.get("country", ""),
+                    p.get("provider_name", "").strip(),
+                    p.get("provider_id"),
+                    p.get("logo_path", ""),
+                    tmdb_client.country,
                     today,
                 )
-                for net in networks
-                if net.get("name", "").strip()
+                for p in providers
+                if p.get("provider_name", "").strip()
             ],
         )
         conn.execute(
@@ -53,8 +56,8 @@ def fetch_and_cache_networks(client) -> int:
             (today,),
         )
 
-    logger.info("Cached %d networks from Trakt.", len(networks))
-    return len(networks)
+    logger.info("Cached %d providers from TMDb (%s).", len(providers), tmdb_client.country)
+    return len(providers)
 
 
 def get_cached_network_names() -> list[str]:
@@ -73,6 +76,15 @@ def networks_cache_is_empty() -> bool:
     return count == 0
 
 
+def get_network_provider_id(name: str) -> Optional[int]:
+    """Return the TMDb provider_id for a given provider name, or None."""
+    with db_session() as conn:
+        row = conn.execute(
+            "SELECT provider_id FROM networks WHERE name = ?", (name,)
+        ).fetchone()
+    return row["provider_id"] if row else None
+
+
 # ── CRUD ───────────────────────────────────────────────────────────────────────
 
 def add_service(
@@ -82,6 +94,7 @@ def add_service(
     annual_cost: float = 0.0,
     next_billing_date: Optional[str] = None,
     trakt_network_id: Optional[str] = None,
+    tmdb_provider_id: Optional[int] = None,
     icon_path: Optional[str] = None,
 ) -> int:
     """
@@ -98,11 +111,11 @@ def add_service(
         cursor = conn.execute(
             """
             INSERT INTO services
-                (name, trakt_network_id, icon_path, status,
+                (name, trakt_network_id, tmdb_provider_id, icon_path, status,
                  monthly_cost, annual_cost, next_billing_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (name, trakt_network_id, icon_path, status,
+            (name, trakt_network_id, tmdb_provider_id, icon_path, status,
              monthly_cost, annual_cost, next_billing_date),
         )
         return cursor.lastrowid
@@ -116,6 +129,7 @@ def update_service(
     annual_cost: Optional[float] = None,
     next_billing_date: Optional[str] = None,
     trakt_network_id: Optional[str] = None,
+    tmdb_provider_id: Optional[int] = None,
     icon_path: Optional[str] = None,
 ) -> None:
     """Update one or more fields on an existing service."""
@@ -132,6 +146,7 @@ def update_service(
         "annual_cost":       annual_cost,
         "next_billing_date": next_billing_date,
         "trakt_network_id":  trakt_network_id,
+        "tmdb_provider_id":  tmdb_provider_id,
         "icon_path":         icon_path,
     }
     for col, val in updates.items():

@@ -33,7 +33,8 @@ class StreamsaverApp(tk.Tk):
         self.title(APP_TITLE)
         self.minsize(MIN_WIDTH, MIN_HEIGHT)
         self.configure(bg=theme.BG)
-        self._client = None
+        self._client      = None
+        self._tmdb_client = None
 
         configure_ttk_styles()
         self._build_ui()
@@ -73,6 +74,7 @@ class StreamsaverApp(tk.Tk):
         self._settings_page = SettingsPage(
             self._notebook,
             get_client_fn=lambda: self._client,
+            get_tmdb_client_fn=lambda: self._tmdb_client,
         )
 
         self._notebook.add(self._services_page, text="  📺  Services  ")
@@ -125,8 +127,11 @@ class StreamsaverApp(tk.Tk):
             self._status_bar.config(text="❌  Unlock failed.", fg=theme.DANGER)
 
     def _init_client(self, creds: dict) -> None:
-        """Instantiate TraktClient, update status bar, and seed network cache if empty."""
+        """Instantiate TraktClient + TMDbClient, update status bar, seed provider cache."""
         from core.trakt_client import TraktClient
+        from core.tmdb_client  import TMDbClient
+        from db import db_session
+
         self._client = TraktClient(
             client_id     = creds["trakt_client_id"],
             client_secret = creds["trakt_client_secret"],
@@ -134,6 +139,18 @@ class StreamsaverApp(tk.Tk):
             refresh_token = creds.get("trakt_refresh_token", ""),
             username      = creds.get("trakt_username", ""),
         )
+
+        tmdb_key = creds.get("tmdb_api_key", "")
+        if tmdb_key:
+            with db_session() as conn:
+                country = (conn.execute(
+                    "SELECT value FROM settings WHERE key = 'provider_country'"
+                ).fetchone() or {}).get("value", "US") or "US"
+            self._tmdb_client = TMDbClient(api_key=tmdb_key, country=country)
+        else:
+            self._tmdb_client = None
+            logger.warning("No TMDb API key in credentials — provider list unavailable.")
+
         username = creds.get("trakt_username", "unknown")
         self._status_bar.config(
             text=f"✅  Connected as @{username}",
@@ -141,30 +158,29 @@ class StreamsaverApp(tk.Tk):
         )
         logger.info("Trakt client initialized for user: %s", username)
 
-        # Fetch network list in background if cache is empty
+        # Fetch provider list in background if cache is empty and TMDb is configured
         from core.service_manager import networks_cache_is_empty
-        if networks_cache_is_empty():
+        if networks_cache_is_empty() and self._tmdb_client:
             import threading
             self._status_bar.config(
-                text=f"✅  Connected as @{username} — fetching network list…",
+                text=f"✅  Connected as @{username} — fetching streaming providers…",
                 fg=theme.SUCCESS,
             )
             threading.Thread(target=self._fetch_networks_bg, daemon=True).start()
 
     def _fetch_networks_bg(self) -> None:
-        """Background thread: fetch Trakt networks and cache them."""
+        """Background thread: fetch TMDb streaming providers and cache them."""
         try:
             from core.service_manager import fetch_and_cache_networks
-            count = fetch_and_cache_networks(self._client)
-            logger.info("Cached %d networks.", count)
-            # Update status bar back on main thread
+            count = fetch_and_cache_networks(self._tmdb_client)
+            logger.info("Cached %d streaming providers.", count)
             username = self._client.username if self._client else "unknown"
             self.after(0, lambda: self._status_bar.config(
-                text=f"✅  Connected as @{username}  ({count} networks loaded)",
+                text=f"✅  Connected as @{username}  ({count} providers loaded)",
                 fg=theme.SUCCESS,
             ))
         except Exception as exc:
-            logger.warning("Failed to fetch networks: %s", exc)
+            logger.warning("Failed to fetch providers: %s", exc)
 
     # ── Event handlers ─────────────────────────────────────────────────────────
 

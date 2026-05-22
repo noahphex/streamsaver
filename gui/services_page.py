@@ -18,7 +18,7 @@ from gui.widgets import SectionHeader, StatusBadge, configure_ttk_styles
 from core.service_manager import (
     add_service, update_service, delete_service,
     get_all_services, get_cost_totals, set_service_status, VALID_STATUSES,
-    get_cached_network_names,
+    get_cached_network_names, get_network_provider_id,
 )
 
 STATUSES = ["subscribed", "suspended", "unsubscribed", "not_subscribed"]
@@ -270,9 +270,9 @@ class ServiceDialog(tk.Toplevel):
         self._name_var.trace_add("write", self._filter_networks)
 
         if self._all_networks:
-            hint = f"({len(self._all_networks)} networks — type to filter)"
+            hint = f"({len(self._all_networks)} SVOD providers — type to filter)"
         else:
-            hint = "(No network cache — go to Settings → Refresh Network List)"
+            hint = "(No provider cache — go to Settings → Refresh Provider List)"
         ttk.Label(name_frame, text=hint, style="Dim.TLabel",
                   font=theme.FONT_SMALL).grid(row=1, column=0, sticky="w")
 
@@ -350,8 +350,10 @@ class ServiceDialog(tk.Toplevel):
 
         self.result = {
             "name":              name,
-            # trakt_network_id stores the exact Trakt name for show matching
+            # trakt_network_id stores the provider name for show matching
             "trakt_network_id":  name,
+            # tmdb_provider_id stored for future show→provider matching
+            "tmdb_provider_id":  get_network_provider_id(name),
             "monthly_cost":      _float(self._monthly.get()),
             "annual_cost":       _float(self._annual.get()),
             "next_billing_date": billing,

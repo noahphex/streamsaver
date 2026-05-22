@@ -46,15 +46,16 @@ THRESHOLD_OPTIONS = [
 class SettingsPage(ttk.Frame):
     """Tab: app settings, sync controls, email management."""
 
-    def __init__(self, parent, get_client_fn=None, **kwargs):
+    def __init__(self, parent, get_client_fn=None, get_tmdb_client_fn=None, **kwargs):
         """
         Args:
-            get_client_fn: Callable that returns a TraktClient, used for syncing.
-                           May be None before credentials are loaded.
+            get_client_fn:      Callable returning a TraktClient (for sync).
+            get_tmdb_client_fn: Callable returning a TMDbClient (for provider refresh).
         """
         super().__init__(parent, **kwargs)
         self.configure(style="TFrame")
-        self._get_client = get_client_fn
+        self._get_client      = get_client_fn
+        self._get_tmdb_client = get_tmdb_client_fn
         self._build_ui()
         self._load()
 
@@ -82,6 +83,21 @@ class SettingsPage(ttk.Frame):
             row=row, column=1, sticky="ew", pady=4
         )
         row += 1
+
+        # ── Streaming provider country ────────────────────────────────────
+        ttk.Label(wrap, text="Provider country (2-letter code):", style="TLabel").grid(
+            row=row, column=0, sticky="w", padx=(0, theme.PAD), pady=4
+        )
+        self._country_var = tk.StringVar(value="US")
+        country_entry = ttk.Entry(wrap, textvariable=self._country_var, width=6)
+        country_entry.grid(row=row, column=1, sticky="w", pady=4)
+        ttk.Label(
+            wrap,
+            text="Used when refreshing the streaming provider list.",
+            style="Dim.TLabel",
+            font=theme.FONT_SMALL,
+        ).grid(row=row + 1, column=1, sticky="w")
+        row += 2
 
         ttk.Separator(wrap, orient="horizontal").grid(
             row=row, column=0, columnspan=2, sticky="ew", pady=theme.PAD
@@ -151,7 +167,7 @@ class SettingsPage(ttk.Frame):
         ).pack(side="left", padx=(0, theme.PAD_SMALL))
 
         ttk.Button(
-            btn_frame, text="🌐 Refresh Network List",
+            btn_frame, text="🌐 Refresh Provider List",
             command=self._on_refresh_networks,
         ).pack(side="left", padx=(0, theme.PAD_SMALL))
 
@@ -176,6 +192,7 @@ class SettingsPage(ttk.Frame):
 
     def _load(self) -> None:
         self._email_var.set(_get_setting("notification_email"))
+        self._country_var.set(_get_setting("provider_country") or "US")
         mode = _get_setting("abandoned_mode") or "manual"
         self._mode_var.set(mode)
         self._on_mode_change()
@@ -193,8 +210,9 @@ class SettingsPage(ttk.Frame):
     # ── Actions ────────────────────────────────────────────────────────────────
 
     def _on_save(self) -> None:
-        email = self._email_var.get().strip()
-        mode  = self._mode_var.get()
+        email   = self._email_var.get().strip()
+        mode    = self._mode_var.get()
+        country = self._country_var.get().strip().upper() or "US"
 
         # Resolve threshold label → days value
         threshold_days = "90"
@@ -207,6 +225,7 @@ class SettingsPage(ttk.Frame):
         _set_setting("notification_email",       email)
         _set_setting("abandoned_mode",           mode)
         _set_setting("abandoned_threshold_days", threshold_days)
+        _set_setting("provider_country",         country)
 
         self._set_status("✅  Settings saved.", color=theme.SUCCESS)
 
@@ -242,35 +261,40 @@ class SettingsPage(ttk.Frame):
         threading.Thread(target=_do, daemon=True).start()
 
     def _on_refresh_networks(self) -> None:
-        """Fetch the latest network list from Trakt and update the cache."""
-        if not self._get_client:
+        """Fetch the latest streaming provider list from TMDb and update the cache."""
+        if not self._get_tmdb_client:
             messagebox.showwarning(
                 "Not Ready",
-                "No Trakt credentials loaded. Run setup_credentials.py first.",
+                "TMDb client not configured.\n\nRe-run setup_credentials.py to add your TMDb API key.",
                 parent=self,
             )
             return
-        client = self._get_client()
-        if not client:
+        tmdb_client = self._get_tmdb_client()
+        if not tmdb_client:
             messagebox.showwarning(
                 "Not Ready",
-                "Trakt client not initialized yet.",
+                "TMDb client not initialized.\nCheck that your TMDb API key is set in credentials.",
                 parent=self,
             )
             return
-        self._set_status("Fetching network list from Trakt…", color=theme.INFO)
+
+        # Update the client's country from the current setting before fetching
+        country = self._country_var.get().strip().upper() or "US"
+        tmdb_client.country = country
+
+        self._set_status("Fetching streaming providers from TMDb…", color=theme.INFO)
 
         def _do():
             try:
                 from core.service_manager import fetch_and_cache_networks
-                count = fetch_and_cache_networks(client)
+                count = fetch_and_cache_networks(tmdb_client)
                 self.after(0, lambda: self._set_status(
-                    f"✅  Network list updated — {count} networks cached.",
+                    f"✅  Provider list updated — {count} streaming services cached.",
                     theme.SUCCESS,
                 ))
             except Exception as exc:
                 self.after(0, lambda e=exc: self._set_status(
-                    f"❌  Failed to refresh networks: {e}", theme.DANGER
+                    f"❌  Failed to refresh providers: {e}", theme.DANGER
                 ))
 
         threading.Thread(target=_do, daemon=True).start()

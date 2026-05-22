@@ -34,6 +34,14 @@ def db_session():
         conn.close()
 
 
+def _migrate_columns(conn, table: str, columns: list[tuple]) -> None:
+    """Add columns to an existing table if they don't already exist."""
+    existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    for col_name, col_type in columns:
+        if col_name not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
+
+
 def init_db() -> None:
     """Create all tables if they don't already exist."""
     os.makedirs(os.path.join(BASE_DIR, "data"), exist_ok=True)
@@ -103,8 +111,18 @@ def init_db() -> None:
                 ('notification_email',        ''),
                 ('abandoned_mode',            'manual'),
                 ('abandoned_threshold_days',  '90'),
-                ('networks_fetched_at',        '');
+                ('networks_fetched_at',        ''),
+                ('provider_country',           'US');
         """)
+
+        # Schema migrations — safe to run on existing databases
+        _migrate_columns(conn, "networks", [
+            ("provider_id", "INTEGER"),
+            ("logo_path",   "TEXT"),
+        ])
+        _migrate_columns(conn, "services", [
+            ("tmdb_provider_id", "INTEGER"),
+        ])
 
     print(f"✅  Database ready: {DB_PATH}")
 

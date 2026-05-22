@@ -123,6 +123,12 @@ def run_wizard() -> None:
     trakt_refresh_token = _prompt("Refresh Token (leave blank to set later)")
     trakt_username      = _prompt("Trakt Username")
 
+    # ── TMDb API ─────────────────────────────────────────────────────────────
+    print("\n── TMDb API ───────────────────────────────────────────────────")
+    print("  Used to fetch streaming provider lists (SVOD services by country).")
+    print("  Get a free read-only API key at: https://www.themoviedb.org/settings/api\n")
+    tmdb_api_key = _prompt("TMDb Read-Only API Key (leave blank to skip)")
+
     # ── Gmail SMTP ──────────────────────────────────────────────────────────
     print("\n── Gmail SMTP ─────────────────────────────────────────────────")
     print("  Use a Gmail App Password (not your main password).")
@@ -143,6 +149,7 @@ def run_wizard() -> None:
         "trakt_access_token":  trakt_access_token,
         "trakt_refresh_token": trakt_refresh_token,
         "trakt_username":      trakt_username,
+        "tmdb_api_key":        tmdb_api_key,
         "gmail_sender":        gmail_sender,
         "gmail_app_password":  gmail_app_password,
         "notify_email":        notify_email,
