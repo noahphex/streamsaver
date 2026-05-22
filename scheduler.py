@@ -118,35 +118,36 @@ def run_daily_job(creds: dict) -> None:
         return
 
     sent = 0
-    for rec in results["suspend"]:
-        try:
-            html = build_report("suspend", [rec])
-            send_report_with_credentials(
-                creds=creds,
-                to_address=notify_email,
-                subject=f"Streamsaver: Consider suspending {rec['name']}",
-                html_body=html,
-            )
-            logger.info("Sent suspend report for: %s", rec["name"])
-            sent += 1
-        except Exception as exc:
-            logger.error("Failed to send suspend report for %s: %s", rec["name"], exc)
 
-    for rec in results["resubscribe"]:
+    if results["suspend"]:
+        names = ", ".join(r["name"] for r in results["suspend"])
         try:
-            html = build_report("resubscribe", [rec])
+            html = build_report("suspend", results["suspend"])
             send_report_with_credentials(
                 creds=creds,
                 to_address=notify_email,
-                subject=f"Streamsaver: Resubscribe to {rec['name']}",
+                subject=f"Streamsaver: Consider suspending — {names}",
                 html_body=html,
             )
-            logger.info("Sent resubscribe report for: %s", rec["name"])
+            logger.info("Sent suspend digest for: %s", names)
             sent += 1
         except Exception as exc:
-            logger.error(
-                "Failed to send resubscribe report for %s: %s", rec["name"], exc
+            logger.error("Failed to send suspend digest: %s", exc)
+
+    if results["resubscribe"]:
+        names = ", ".join(r["name"] for r in results["resubscribe"])
+        try:
+            html = build_report("resubscribe", results["resubscribe"])
+            send_report_with_credentials(
+                creds=creds,
+                to_address=notify_email,
+                subject=f"Streamsaver: Time to resubscribe — {names}",
+                html_body=html,
             )
+            logger.info("Sent resubscribe digest for: %s", names)
+            sent += 1
+        except Exception as exc:
+            logger.error("Failed to send resubscribe digest: %s", exc)
 
     logger.info("Daily job complete. %d email(s) sent.", sent)
     logger.info("=" * 60)

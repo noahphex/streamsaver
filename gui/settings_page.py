@@ -359,22 +359,25 @@ class SettingsPage(ttk.Frame):
                         "Enter a Report email address in Settings and save first."
                     )
 
+                # Send one digest email per recommendation type
                 sent = 0
-                for rec in results["suspend"]:
-                    html = build_report("suspend", [rec])
+                if results["suspend"]:
+                    names = ", ".join(r["name"] for r in results["suspend"])
+                    html  = build_report("suspend", results["suspend"])
                     send_report(
                         to_address=notify_email,
-                        subject=f"Streamsaver: Suspend {rec['name']}",
+                        subject=f"Streamsaver: Consider suspending — {names}",
                         html_body=html,
                         from_address=from_address,
                         app_password=app_password,
                     )
                     sent += 1
-                for rec in results["resubscribe"]:
-                    html = build_report("resubscribe", [rec])
+                if results["resubscribe"]:
+                    names = ", ".join(r["name"] for r in results["resubscribe"])
+                    html  = build_report("resubscribe", results["resubscribe"])
                     send_report(
                         to_address=notify_email,
-                        subject=f"Streamsaver: Resubscribe to {rec['name']}",
+                        subject=f"Streamsaver: Time to resubscribe — {names}",
                         html_body=html,
                         from_address=from_address,
                         app_password=app_password,

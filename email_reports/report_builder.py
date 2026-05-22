@@ -54,8 +54,15 @@ def _build_suspend_content(recommendations: list[dict]) -> tuple[str, str]:
     cards = []
     for rec in recommendations:
         icon = _service_icon_tag(rec.get("icon_path"), rec["name"])
-        savings_monthly = rec.get("monthly_cost") or 0.0
-        savings_annual  = round(savings_monthly * 12, 2)
+
+        # Use stored costs; derive the missing value if only one is set.
+        savings_monthly = float(rec.get("monthly_cost") or 0.0)
+        savings_annual  = float(rec.get("annual_cost")  or 0.0)
+        if savings_monthly and not savings_annual:
+            savings_annual = round(savings_monthly * 12, 2)
+        elif savings_annual and not savings_monthly:
+            savings_monthly = round(savings_annual / 12, 2)
+
         cards.append(f"""
         <div class="service-card">
           <p class="service-name">{icon}{rec['name']} <span class="badge badge-suspend">Suspend</span></p>
