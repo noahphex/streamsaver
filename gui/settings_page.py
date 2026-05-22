@@ -275,7 +275,7 @@ class SettingsPage(ttk.Frame):
 
         threading.Thread(target=_do, daemon=True).start()
 
-
+    def _on_run_analysis(self) -> None:
         self._set_status("Running analysis…", color=theme.INFO)
 
         def _do():
