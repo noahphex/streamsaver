@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+config/credentials.enc
+config/.salt
+data/streamsaver.db
+.DS_Store

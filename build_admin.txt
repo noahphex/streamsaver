@@ -1,0 +1,51 @@
+## Streamsaver
+## Author Noah Lee
+
+Trakt API Documentation for reference: https://trakt.docs.apiary.io/#
+
+## Main Purpose:
+Script that will runs on a scheduled task to parse a user's Trakt.tv data of TV history for shows watched and upcoming episodes and compare them against subscribed TV streaming services to cleverly determine when it will be best time to suspend a service to save monthly costs on services that are not being used. 
+
+## Project Objectives ##
+Make sure to utilize Trakt's API and use their required headers.
+	https://trakt.docs.apiary.io/#introduction/required-headers
+Parse Trakt.tv watched television shows data for:
+	show name
+	season data (total seasons/current season)
+	episode name/number
+	total eposodes
+	latest watched episode
+	next episode to watch
+	show status (current/ended/etc...)
+	Watchlist data for TV shows the user wants to watch (not movies!)
+	If no new episode check for next premiere date
+	Determine if a show is abandoned
+	network or streaming service that the show is airing on
+
+Create a friendly GUI interface for a user to enter streaming service information and a page for currently  watched shows
+	Choose from possible servicesin Trakt to which they are subscribed
+	Ask for cost of service monthly or annually
+	Determine total cost of streaming services annually and monthly
+	Services need to be able to be marked as subscribed, suspended, unsubscribed and Not Subsctibed
+	Watched TV shows need the ability to be manually marked as abandoned
+	Parse cost total annually and monthly of all services
+	Interface should use Trakt's API for service data
+	Ask for next billing date for each service
+	Ideally the services will have graphical/icon represently cleanly
+	Allow user to enter and update the notification email for reports
+	 
+Email system will use Google SMTP.
+
+Create a script to securely enter the trakt API information and email auth/sender account and App Key for Google SMTP server for sending reports. 
+
+Create a process to parse the subscribed services and determine when a service is not going to be used in the next billing cycle and email the user to tell them to suspend the service.
+
+Create a process to parse the subscribed services and determine when a service needs to be resubscribed to allow for viewing of show preimeres and returns
+
+When data is generated for subscribing or suspending a service, send the report in an email to a designated address.
+
+All reports should be nicely formatted and use graphics for services and the dracula theme for colors (https://draculatheme.com/)
+
+Ask questions when there is any question of logic.
+
+Keep code clean and professional. Comment where necessary.

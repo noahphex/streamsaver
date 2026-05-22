@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<!--
+  email_reports/templates/base.html
+  Streamsaver email report template — Dracula theme
+  Author: Noah Lee
+
+  Placeholders filled by report_builder.py:
+    {{TITLE}}, {{PREHEADER}}, {{CONTENT}}, {{YEAR}}
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{TITLE}}</title>
+  <style>
+    /* ── Reset ── */
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    body { margin: 0; padding: 0; background-color: #1e1f29; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+    img  { border: 0; display: block; }
+
+    /* ── Dracula palette ── */
+    :root {
+      --bg:          #282a36;
+      --bg-alt:      #44475a;
+      --fg:          #f8f8f2;
+      --comment:     #6272a4;
+      --cyan:        #8be9fd;
+      --green:       #50fa7b;
+      --orange:      #ffb86c;
+      --pink:        #ff79c6;
+      --purple:      #bd93f9;
+      --red:         #ff5555;
+      --yellow:      #f1fa8c;
+    }
+
+    /* ── Layout ── */
+    .wrapper   { width: 100%; background-color: #1e1f29; padding: 20px 0; }
+    .container { max-width: 620px; margin: 0 auto; background-color: #282a36;
+                 border-radius: 8px; overflow: hidden;
+                 border: 1px solid #44475a; }
+
+    /* ── Header ── */
+    .header    { background-color: #44475a; padding: 24px 32px; text-align: center; }
+    .header h1 { color: #bd93f9; font-size: 22px; margin: 0; letter-spacing: 1px; }
+    .header p  { color: #6272a4; font-size: 13px; margin: 6px 0 0; }
+
+    /* ── Body ── */
+    .body      { padding: 28px 32px; }
+    .body p    { color: #f8f8f2; font-size: 15px; line-height: 1.6; margin: 0 0 16px; }
+    .body h2   { color: #8be9fd; font-size: 17px; margin: 24px 0 10px; border-bottom: 1px solid #44475a; padding-bottom: 6px; }
+    .body h3   { color: #bd93f9; font-size: 15px; margin: 16px 0 6px; }
+
+    /* ── Service card ── */
+    .service-card { background-color: #44475a; border-radius: 6px;
+                    padding: 16px 20px; margin-bottom: 16px; }
+    .service-name { color: #f1fa8c; font-size: 18px; font-weight: bold; margin: 0 0 4px; }
+    .service-meta { color: #6272a4; font-size: 13px; margin: 0 0 10px; }
+
+    /* ── Badge ── */
+    .badge        { display: inline-block; border-radius: 4px; font-size: 12px;
+                    padding: 2px 8px; font-weight: bold; text-transform: uppercase;
+                    letter-spacing: 0.5px; }
+    .badge-suspend   { background-color: #ff5555; color: #282a36; }
+    .badge-resubscribe { background-color: #50fa7b; color: #282a36; }
+    .badge-suspended   { background-color: #f1fa8c; color: #282a36; }
+
+    /* ── Show list ── */
+    .show-list    { margin: 10px 0 0; padding: 0; list-style: none; }
+    .show-list li { color: #f8f8f2; font-size: 14px; padding: 4px 0;
+                    border-bottom: 1px solid #6272a450; }
+    .show-list li:last-child { border-bottom: none; }
+    .premiere-date { color: #ffb86c; font-size: 13px; float: right; }
+
+    /* ── Cost row ── */
+    .cost-row     { display: flex; justify-content: space-between;
+                    color: #f8f8f2; font-size: 14px; padding: 4px 0; }
+    .cost-value   { color: #50fa7b; font-weight: bold; }
+
+    /* ── CTA button ── */
+    .cta          { text-align: center; margin: 24px 0 8px; }
+    .cta a        { background-color: #bd93f9; color: #282a36;
+                    text-decoration: none; font-weight: bold; font-size: 14px;
+                    padding: 10px 28px; border-radius: 6px; display: inline-block; }
+
+    /* ── Footer ── */
+    .footer       { background-color: #1e1f29; padding: 16px 32px;
+                    text-align: center; }
+    .footer p     { color: #6272a4; font-size: 12px; margin: 0; }
+  </style>
+</head>
+<body>
+  <!-- Preheader text (hidden, shown in email preview) -->
+  <span style="display:none;font-size:1px;color:#1e1f29;max-height:0;overflow:hidden;">
+    {{PREHEADER}}&nbsp;&zwnj;&nbsp;&zwnj;
+  </span>
+
+  <div class="wrapper">
+    <div class="container">
+
+      <!-- Header -->
+      <div class="header">
+        <h1>💾 Streamsaver</h1>
+        <p>Streaming cost intelligence</p>
+      </div>
+
+      <!-- Content injected by report_builder.py -->
+      <div class="body">
+        {{CONTENT}}
+      </div>
+
+      <!-- Footer -->
+      <div class="footer">
+        <p>Streamsaver &bull; Automated report &bull; {{YEAR}}</p>
+      </div>
+
+    </div>
+  </div>
+</body>
+</html>
