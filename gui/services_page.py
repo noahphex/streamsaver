@@ -21,6 +21,7 @@ from core.service_manager import (
     add_service, update_service, delete_service,
     get_all_services, get_cost_totals, VALID_STATUSES,
     get_cached_network_names, get_network_provider_id,
+    get_bundle_providers, set_bundle_providers,
 )
 
 STATUSES = ["subscribed", "suspended", "unsubscribed", "not_subscribed"]
@@ -184,7 +185,10 @@ class ServicesPage(ttk.Frame):
         self.wait_window(dlg)
         if dlg.result:
             try:
-                add_service(**dlg.result)
+                bundle_providers = dlg.result.pop("bundle_providers", [])
+                new_id = add_service(**dlg.result)
+                if bundle_providers:
+                    set_bundle_providers(new_id, bundle_providers)
                 self.refresh()
             except Exception as exc:
                 messagebox.showerror("Error", str(exc), parent=self)
@@ -205,7 +209,9 @@ class ServicesPage(ttk.Frame):
         self.wait_window(dlg)
         if dlg.result:
             try:
+                bundle_providers = dlg.result.pop("bundle_providers", [])
                 update_service(sid, **dlg.result)
+                set_bundle_providers(sid, bundle_providers)
                 self.refresh()
             except Exception as exc:
                 messagebox.showerror("Error", str(exc), parent=self)
@@ -247,11 +253,13 @@ class ServiceDialog(tk.Toplevel):
         super().__init__(parent)
         self.title(title)
         self.configure(bg=theme.BG)
-        self.resizable(False, False)
+        self.resizable(False, True)
         self.result: dict | None = None
         self._svc          = service or {}
         self._all_networks = network_names or []
         self._icon_img: ImageTk.PhotoImage | None = None   # keep ref
+        # Bundle state: list of {tmdb_provider_id, provider_name}
+        self._bundle: list[dict] = list(get_bundle_providers(self._svc["id"])) if self._svc.get("id") else []
         self._build()
         self.grab_set()
         self.transient(parent)
@@ -318,6 +326,54 @@ class ServiceDialog(tk.Toplevel):
             values=STATUSES, state="readonly", width=30,
         ).grid(row=4, column=1, sticky="ew", pady=4)
 
+        # ── Bundle Providers ─────────────────────────────────────────────
+        ttk.Separator(f, orient="horizontal").grid(
+            row=5, column=0, columnspan=2, sticky="ew", pady=(theme.PAD, 4)
+        )
+        bundle_lf = ttk.LabelFrame(f, text="Bundle / Included Providers", style="TFrame", padding=6)
+        bundle_lf.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        bundle_lf.columnconfigure(0, weight=1)
+
+        ttk.Label(
+            bundle_lf,
+            text="Providers listed here are treated as part of this subscription.\n"
+                 "e.g. Map \'Disney Plus\' → Hulu if you subscribe to the Disney Bundle.",
+            style="Dim.TLabel", font=theme.FONT_SMALL, justify="left",
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 4))
+
+        list_frame = ttk.Frame(bundle_lf, style="TFrame")
+        list_frame.grid(row=1, column=0, columnspan=2, sticky="ew")
+        list_frame.columnconfigure(0, weight=1)
+
+        self._bundle_lb = tk.Listbox(
+            list_frame, height=4, selectmode="single",
+            bg=theme.BG_ALT, fg=theme.FG, relief="flat",
+            highlightthickness=1, highlightcolor=theme.PURPLE,
+            font=theme.FONT,
+        )
+        self._bundle_lb.grid(row=0, column=0, sticky="ew")
+        bundle_sb = ttk.Scrollbar(list_frame, orient="vertical", command=self._bundle_lb.yview)
+        bundle_sb.grid(row=0, column=1, sticky="ns")
+        self._bundle_lb.configure(yscrollcommand=bundle_sb.set)
+
+        add_frame = ttk.Frame(bundle_lf, style="TFrame")
+        add_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        add_frame.columnconfigure(0, weight=1)
+
+        self._bundle_add_var = tk.StringVar()
+        self._bundle_cb = ttk.Combobox(
+            add_frame, textvariable=self._bundle_add_var,
+            values=self._all_networks, width=28,
+        )
+        self._bundle_cb.grid(row=0, column=0, sticky="ew", padx=(0, theme.PAD_SMALL))
+        self._bundle_add_var.trace_add("write", self._on_bundle_filter)
+
+        ttk.Button(add_frame, text="+ Add", command=self._bundle_add).grid(
+            row=0, column=1, padx=(0, theme.PAD_SMALL)
+        )
+        ttk.Button(add_frame, text="✕ Remove", style="Danger.TButton",
+                   command=self._bundle_remove).grid(row=0, column=2)
+
         # ── Pre-fill for edit mode ────────────────────────────────────────
         if self._svc:
             self._name_var.set(self._svc.get("name", ""))
@@ -325,18 +381,57 @@ class ServiceDialog(tk.Toplevel):
             self._annual.insert(0,  str(self._svc.get("annual_cost",  "") or ""))
             self._billing.insert(0, self._svc.get("next_billing_date", "") or "")
             self._status_var.set(self._svc.get("status", "not_subscribed"))
-            # Show existing icon if available
             self._update_icon_preview(self._svc.get("icon_path"))
         else:
             self._status_var.set("subscribed")
 
+        self._refresh_bundle_listbox()
+
         # ── Buttons ───────────────────────────────────────────────────────
         btn_frame = ttk.Frame(f, style="TFrame")
-        btn_frame.grid(row=5, column=0, columnspan=2, pady=(theme.PAD, 0))
+        btn_frame.grid(row=7, column=0, columnspan=2, pady=(theme.PAD, 0))
         ttk.Button(btn_frame, text="Save", style="Accent.TButton",
                    command=self._on_save).pack(side="left", padx=theme.PAD_SMALL)
         ttk.Button(btn_frame, text="Cancel",
                    command=self.destroy).pack(side="left", padx=theme.PAD_SMALL)
+
+    def _refresh_bundle_listbox(self) -> None:
+        self._bundle_lb.delete(0, "end")
+        for p in self._bundle:
+            self._bundle_lb.insert("end", f"{p['provider_name']}  (id: {p['tmdb_provider_id']})")
+
+    def _on_bundle_filter(self, *_) -> None:
+        typed = self._bundle_add_var.get().lower()
+        filtered = [n for n in self._all_networks if typed in n.lower()] if typed else self._all_networks
+        self._bundle_cb["values"] = filtered
+
+    def _bundle_add(self) -> None:
+        name = self._bundle_add_var.get().strip()
+        if not name:
+            return
+        pid = get_network_provider_id(name)
+        if pid is None:
+            messagebox.showwarning(
+                "Unknown Provider",
+                f"'{name}' was not found in the provider cache.\n"
+                "Refresh Provider List in Settings first.",
+                parent=self,
+            )
+            return
+        if any(p["tmdb_provider_id"] == pid for p in self._bundle):
+            return
+        self._bundle.append({"tmdb_provider_id": pid, "provider_name": name})
+        self._refresh_bundle_listbox()
+        self._bundle_add_var.set("")
+
+    def _bundle_remove(self) -> None:
+        sel = self._bundle_lb.curselection()
+        if not sel:
+            return
+        idx = sel[0]
+        if 0 <= idx < len(self._bundle):
+            del self._bundle[idx]
+            self._refresh_bundle_listbox()
 
     def _on_name_change(self, *_) -> None:
         """Filter the dropdown and update the icon preview."""
@@ -395,5 +490,6 @@ class ServiceDialog(tk.Toplevel):
             "annual_cost":       _float(self._annual.get()),
             "next_billing_date": billing,
             "status":            self._status_var.get() or "subscribed",
+            "bundle_providers":  list(self._bundle),
         }
         self.destroy()

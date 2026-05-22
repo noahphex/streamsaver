@@ -329,18 +329,34 @@ def _resolve_service_id_conn(
 ) -> Optional[int]:
     """Match a TMDb provider to a user-configured service using an existing connection."""
     if provider_id:
+        # 1. Exact match by TMDb provider_id on the service itself
         row = conn.execute(
             "SELECT id FROM services WHERE tmdb_provider_id = ?", (provider_id,)
         ).fetchone()
         if row:
             return row["id"]
+        # 2. Bundle match: provider is a member of a bundle service
+        row = conn.execute(
+            "SELECT service_id FROM service_bundles WHERE tmdb_provider_id = ?",
+            (provider_id,),
+        ).fetchone()
+        if row:
+            return row["service_id"]
     if provider_name:
+        # 3. Name match on services
         row = conn.execute(
             "SELECT id FROM services WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))",
             (provider_name,),
         ).fetchone()
         if row:
             return row["id"]
+        # 4. Bundle name match
+        row = conn.execute(
+            "SELECT service_id FROM service_bundles WHERE LOWER(TRIM(provider_name)) = LOWER(TRIM(?))",
+            (provider_name,),
+        ).fetchone()
+        if row:
+            return row["service_id"]
     return None
 
 

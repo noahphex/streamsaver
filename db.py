@@ -119,6 +119,15 @@ def init_db() -> None:
                 logo_path   TEXT
             );
 
+            -- Bundle provider mappings: extra TMDb providers that belong to a service
+            -- (e.g. Disney Plus + ESPN+ both map to the user's Hulu subscription)
+            CREATE TABLE IF NOT EXISTS service_bundles (
+                service_id        INTEGER NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+                tmdb_provider_id  INTEGER NOT NULL,
+                provider_name     TEXT,
+                PRIMARY KEY (service_id, tmdb_provider_id)
+            );
+
             -- Key/value settings store
             CREATE TABLE IF NOT EXISTS settings (
                 key   TEXT PRIMARY KEY,
@@ -140,7 +149,78 @@ def init_db() -> None:
             ("tmdb_provider_id", "INTEGER"),
         ])
 
+    _seed_default_bundles()
     print(f"✅  Database ready: {DB_PATH}")
+
+
+# ── Default bundle seeds ────────────────────────────────────────────────────────
+
+# Well-known provider bundles: (service_name_fragment, [(tmdb_provider_id, provider_name)])
+# service_name_fragment is matched case-insensitively against services.name.
+# These only insert if the service exists; safe to run multiple times (INSERT OR IGNORE).
+_DEFAULT_BUNDLES: list[tuple[str, list[tuple[int, str]]]] = [
+    # Disney Bundle (Hulu subscription includes Disney+ and ESPN+)
+    ("hulu", [
+        (337,  "Disney Plus"),
+        (508,  "DisneyNOW"),
+    ]),
+    # Amazon Prime Video variants
+    ("amazon prime", [
+        (9,    "Amazon Prime Video"),
+        (10,   "Amazon Video"),
+        (613,  "Amazon Prime Video Free with Ads"),
+    ]),
+    # Add-on channels billed through Prime (match by service name)
+    ("shudder", [
+        (99,   "Shudder"),
+        (204,  "Shudder Amazon Channel"),
+    ]),
+    ("paramount+", [
+        (582,  "Paramount+ Amazon Channel"),
+        (2616, "Paramount Plus Essential"),
+        (2303, "Paramount Plus Premium"),
+    ]),
+    ("mgm+", [
+        (34,   "MGM Plus"),
+        (583,  "MGM+ Amazon Channel"),
+    ]),
+    ("amc+", [
+        (526,  "AMC+"),
+        (528,  "AMC+ Amazon Channel"),
+    ]),
+    ("starz", [
+        (43,   "Starz"),
+        (1794, "Starz Amazon Channel"),
+    ]),
+    # HBO / Max — rebranded, multiple provider IDs in TMDb
+    ("hbo", [
+        (1899, "HBO Max"),
+        (1825, "HBO Max Amazon Channel"),
+    ]),
+]
+
+
+def _seed_default_bundles() -> None:
+    """
+    Insert well-known bundle mappings for any matching services.
+    Safe to call on every startup — uses INSERT OR IGNORE.
+    """
+    with db_session() as conn:
+        for name_fragment, providers in _DEFAULT_BUNDLES:
+            row = conn.execute(
+                "SELECT id FROM services WHERE LOWER(name) LIKE ?",
+                (f"%{name_fragment}%",),
+            ).fetchone()
+            if not row:
+                continue
+            service_id = row["id"]
+            for pid, pname in providers:
+                conn.execute(
+                    """INSERT OR IGNORE INTO service_bundles
+                       (service_id, tmdb_provider_id, provider_name)
+                       VALUES (?, ?, ?)""",
+                    (service_id, pid, pname),
+                )
 
 
 if __name__ == "__main__":

@@ -343,6 +343,35 @@ def get_cost_totals(status_filter: Optional[str] = None) -> dict:
     }
 
 
+# ── Bundle provider CRUD ───────────────────────────────────────────────────────
+
+def get_bundle_providers(service_id: int) -> list[dict]:
+    """Return all bundle provider mappings for a service."""
+    with db_session() as conn:
+        rows = conn.execute(
+            "SELECT tmdb_provider_id, provider_name FROM service_bundles WHERE service_id = ? ORDER BY provider_name",
+            (service_id,),
+        ).fetchall()
+    return [{"tmdb_provider_id": r["tmdb_provider_id"], "provider_name": r["provider_name"]} for r in rows]
+
+
+def set_bundle_providers(service_id: int, providers: list[dict]) -> None:
+    """
+    Replace all bundle providers for a service in one operation.
+
+    Args:
+        service_id: The service to update.
+        providers:  List of dicts with keys tmdb_provider_id (int) and provider_name (str).
+    """
+    with db_session() as conn:
+        conn.execute("DELETE FROM service_bundles WHERE service_id = ?", (service_id,))
+        for p in providers:
+            conn.execute(
+                "INSERT OR IGNORE INTO service_bundles (service_id, tmdb_provider_id, provider_name) VALUES (?, ?, ?)",
+                (service_id, p["tmdb_provider_id"], p.get("provider_name", "")),
+            )
+
+
 # ── Trakt network import ───────────────────────────────────────────────────────
 
 def import_networks_from_trakt(client) -> int:
