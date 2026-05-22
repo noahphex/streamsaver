@@ -3,8 +3,8 @@ gui/shows_page.py
 Streamsaver — Currently watched shows tab
 Author: Noah Lee
 
-Displays all tracked TV shows with watch status, episode info, and
-abandoned state. Users can manually mark/unmark shows as abandoned.
+Displays tracked TV shows with interest score, show state, and provider info.
+Users can manually mark/unmark shows as abandoned (sets abandoned_override).
 """
 
 import tkinter as tk
@@ -12,19 +12,32 @@ from tkinter import ttk, messagebox
 
 from gui import theme
 from gui.widgets import SectionHeader
-from core.abandoned import set_manual_abandoned
 from db import db_session
 
+# show_state → (display label, color tag)
+_STATE_DISPLAY = {
+    "active":      ("Active",      "active"),
+    "occasional":  ("Occasional",  "occasional"),
+    "dormant":     ("Dormant",     "dormant"),
+    "abandoned":   ("Abandoned",   "abandoned"),
+    "anticipated": ("Anticipated", "anticipated"),
+    "ignored":     ("Ignored",     "ignored"),
+    "archived":    ("Archived",    "archived"),
+}
+
 COL_DEFS = [
-    ("Title",         220, "w"),
-    ("Service",       130, "w"),
-    ("Status",        110, "center"),
-    ("Progress",      110, "center"),
-    ("Next Episode",  100, "center"),
-    ("Next Premiere", 110, "center"),
-    ("Last Watched",  100, "center"),
-    ("Abandoned",      80, "center"),
+    ("Title",          220, "w"),
+    ("Service",        130, "w"),
+    ("State",           90, "center"),
+    ("Score",           55, "center"),
+    ("Provider",       130, "w"),
+    ("Last Watched",   100, "center"),
+    ("Next Air Date",  100, "center"),
+    ("Trakt Status",   110, "center"),
 ]
+
+_FILTER_STATES = ["All", "Active", "Occasional", "Dormant",
+                  "Abandoned", "Anticipated", "Archived"]
 
 
 class ShowsPage(ttk.Frame):
@@ -61,12 +74,12 @@ class ShowsPage(ttk.Frame):
         ttk.Entry(filter_bar, textvariable=self._filter_var, width=30).pack(
             side="left", padx=(theme.PAD_SMALL, theme.PAD)
         )
-        ttk.Label(filter_bar, text="Show:", style="Dim.TLabel").pack(side="left")
+        ttk.Label(filter_bar, text="State:", style="Dim.TLabel").pack(side="left")
         self._show_filter = tk.StringVar(value="All")
         cb = ttk.Combobox(
             filter_bar, textvariable=self._show_filter,
-            values=["All", "Active", "Abandoned", "Ended"],
-            state="readonly", width=12,
+            values=_FILTER_STATES,
+            state="readonly", width=14,
         )
         cb.pack(side="left", padx=theme.PAD_SMALL)
         cb.bind("<<ComboboxSelected>>", lambda *_: self.refresh())
@@ -87,10 +100,14 @@ class ShowsPage(ttk.Frame):
             self._tree.column(col, width=width, anchor=anchor,
                               stretch=(col == "Title"))
 
-        self._tree.tag_configure("abandoned", foreground=theme.COMMENT)
-        self._tree.tag_configure("ended",     foreground=theme.FG_DIM)
-        self._tree.tag_configure("returning", foreground=theme.GREEN)
-        self._tree.tag_configure("canceled",  foreground=theme.DANGER)
+        # Row color tags per show_state
+        self._tree.tag_configure("active",      foreground=theme.GREEN)
+        self._tree.tag_configure("occasional",  foreground=theme.CYAN)
+        self._tree.tag_configure("anticipated", foreground=theme.YELLOW)
+        self._tree.tag_configure("dormant",     foreground=theme.FG_DIM)
+        self._tree.tag_configure("abandoned",   foreground=theme.COMMENT)
+        self._tree.tag_configure("ignored",     foreground=theme.COMMENT)
+        self._tree.tag_configure("archived",    foreground=theme.COMMENT)
 
         vsb = ttk.Scrollbar(tree_frame, orient="vertical",  command=self._tree.yview)
         hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=self._tree.xview)
@@ -117,18 +134,18 @@ class ShowsPage(ttk.Frame):
             self._tree.delete(item)
 
         text_filter   = self._filter_var.get().lower()
-        status_filter = self._show_filter.get()
+        state_filter  = self._show_filter.get()
 
         with db_session() as conn:
             rows = conn.execute(
                 """
-                SELECT s.trakt_id, s.title, s.status, s.current_season,
-                       s.total_seasons, s.last_watched_episode, s.next_episode,
-                       s.next_premiere_date, s.last_watch_date,
-                       s.is_abandoned, svc.name AS service_name
+                SELECT s.trakt_id, s.title, s.show_state, s.interest_score,
+                       s.trakt_status, s.primary_provider,
+                       s.last_watch_date, s.next_air_date,
+                       svc.name AS service_name
                 FROM   shows s
                 LEFT JOIN services svc ON s.service_id = svc.id
-                ORDER BY LOWER(s.title)
+                ORDER BY s.interest_score DESC, LOWER(s.title)
                 """
             ).fetchall()
 
@@ -136,37 +153,29 @@ class ShowsPage(ttk.Frame):
         for row in rows:
             row = dict(row)
 
-            # Text filter
             if text_filter and text_filter not in row["title"].lower():
                 continue
 
-            # Status filter
-            if status_filter == "Active"    and (row["is_abandoned"] or row["status"] in ("ended","canceled")):
-                continue
-            if status_filter == "Abandoned" and not row["is_abandoned"]:
-                continue
-            if status_filter == "Ended"     and row["status"] not in ("ended","canceled"):
+            state = row["show_state"] or "dormant"
+            if state_filter != "All" and state.lower() != state_filter.lower():
                 continue
 
-            progress = (
-                f"S{row['current_season']:02d} / S{row['total_seasons']:02d}"
-                if row["current_season"] else "—"
-            )
-            tag = "abandoned" if row["is_abandoned"] else (row["status"] or "")
-            abandoned_mark = "✓" if row["is_abandoned"] else ""
+            state_label, tag = _STATE_DISPLAY.get(state, (state.title(), "dormant"))
+            # Archived shows get a badge suffix
+            display_state = f"🗄 {state_label}" if state == "archived" else state_label
 
             self._tree.insert(
                 "", "end",
                 iid=row["trakt_id"],
                 values=(
                     row["title"],
-                    row["service_name"] or "—",
-                    (row["status"] or "").title(),
-                    progress,
-                    row["next_episode"]        or "—",
-                    row["next_premiere_date"]  or "—",
-                    row["last_watch_date"]     or "—",
-                    abandoned_mark,
+                    row["service_name"]    or "—",
+                    display_state,
+                    row["interest_score"]  or 0,
+                    row["primary_provider"] or "—",
+                    row["last_watch_date"] or "—",
+                    row["next_air_date"]   or "—",
+                    (row["trakt_status"] or "").replace(" series", "").title(),
                 ),
                 tags=(tag,),
             )
@@ -196,10 +205,16 @@ class ShowsPage(ttk.Frame):
         if not tid:
             messagebox.showinfo("No selection", "Please select a show.", parent=self)
             return
-        action = "mark" if abandoned else "unmark"
         title  = self._tree.item(tid, "values")[0]
+        action = "mark" if abandoned else "unmark"
         if messagebox.askyesno(
             "Confirm", f"{action.title()} '{title}' as abandoned?", parent=self
         ):
-            set_manual_abandoned(tid, abandoned)
+            with db_session() as conn:
+                new_state    = "abandoned" if abandoned else "dormant"
+                new_override = 1 if abandoned else 0
+                conn.execute(
+                    "UPDATE shows SET show_state = ?, abandoned_override = ? WHERE trakt_id = ?",
+                    (new_state, new_override, tid),
+                )
             self.refresh()

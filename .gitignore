@@ -1,9 +1,25 @@
+# Virtual environment
 .venv/
+
+# Python cache
 __pycache__/
+**/__pycache__/
 *.pyc
 *.pyo
+*.pyd
+
+# Encrypted credentials (never commit these)
 config/credentials.enc
 config/.salt
+
+# Local database and logs (machine-specific)
 data/streamsaver.db
-.DS_Store
 data/streamsaver*.log
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# IDE
+.vscode/
+.idea/

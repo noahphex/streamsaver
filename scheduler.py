@@ -89,10 +89,10 @@ def run_daily_job(creds: dict) -> None:
     try:
         sync_results = run_full_sync(client)
         logger.info(
-            "Sync complete — shows: %d, watchlist: %d, abandoned updated: %d",
+            "Sync complete — shows: %d, watchlist: %d, archived: %d",
             sync_results["shows"],
             sync_results["watchlist"],
-            sync_results["abandoned"],
+            sync_results["archived"],
         )
     except Exception as exc:
         logger.error("Trakt sync failed: %s", exc)

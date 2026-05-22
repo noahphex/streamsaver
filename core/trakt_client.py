@@ -165,7 +165,30 @@ class TraktClient:
             page += 1
         return all_items
 
-    # ── Watched shows summary ──────────────────────────────────────────────────
+    def get_show_history(
+        self,
+        start_at: str,
+        username: Optional[str] = None,
+        limit: int = 200,
+    ) -> list[dict]:
+        """
+        Return episode-level watch history for TV shows since start_at.
+
+        Used for incremental syncs — only fetches activity since the last sync
+        timestamp rather than pulling all-time history.
+
+        Args:
+            start_at: ISO 8601 datetime string, e.g. "2025-05-22T00:00:00.000Z"
+            limit:    Max episodes to return per page (up to 1000 per Trakt docs).
+
+        https://trakt.docs.apiary.io/#reference/users/history/get-watched-history
+        """
+        user   = username or self.username
+        path   = f"/users/{user}/history/shows"
+        params = {"start_at": start_at, "limit": limit, "extended": "full"}
+        result = self._get(path, params=params)
+        return result or []
+
 
     def get_watched_shows(self, username: Optional[str] = None) -> list[dict]:
         """

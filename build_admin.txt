@@ -49,3 +49,371 @@ All reports should be nicely formatted and use graphics for services and the dra
 Ask questions when there is any question of logic.
 
 Keep code clean and professional. Comment where necessary.
+
+## Issues to overcome
+
+Determine the best route to pull all streaming services and then have it accessible to the end user to choose which ones they are subscribed to or use.
+	- POssible to use TMDb Watch providers
+	- will need to enter the TMDb read only API key
+		- pull available streaming providers per country
+		- need to select country from TMDb country list
+	- cache streaming providers and periodically  update them
+
+Need to normalize subscriptions versus streaming providers listed in Trakt data
+
+**Determine "currently watching" automatically.
+THought: Use weighted systems:
+Signal					Points
+Episode watched in last 7 days		+10
+Episode watched in last 30 days		+5
+Multiple episodes in same show recently +5
+Show marked “in progress”		+8
+Season incomplete			+4
+No activity in X days			-10	
+
+	Then classify:
+	* 15+ = Active
+	* 5–14 = Occasional
+	* <5 = Dormant
+
+Match Shows → Services
+Example:
+{
+  "show": "Severance",
+  "providers": ["apple_tv_plus"]
+}
+
+Now aggrgate:
+{
+  "apple_tv_plus": {
+    "active_shows": 3,
+    "watch_score": 42
+  }
+}
+
+* Suspension Recommendation Logic
+Keep If:
+
+* High watch score
+* Exclusive content actively watched
+* Upcoming season soon
+
+Suspend If:
+
+* No active viewing in 45–60 days
+* Everything watched there is available elsewhere
+* Cost-to-usage ratio is poor
+
+Important Reality: Multi-Provider Availability
+Shows often exist on:
+
+* Hulu + Disney
+* Netflix + syndication
+* Prime add-ons
+
+So do not binary match.
+
+Use weighted ownership:
+
+{
+  "show": "The Bear",
+  "primary_provider": "hulu",
+  "secondary_providers": []
+}
+OR
+{
+  "show": "Friends",
+  "providers": [
+    {"service": "max", "priority": 1},
+    {"service": "tbs", "priority": 5}
+  ]
+}
+Ignore FAST channels and cable networks entirely.
+
+Strong Recommendation: Only Track Subscription VOD
+
+*Do NOT include:
+
+* broadcast networks
+* FAST services
+* cable channels
+* transactional rentals
+
+Only:
+
+* SVOD
+* AVOD premium apps
+* live TV bundles optionally
+This dramatically improves UX.
+
+* Most Important Product Decision
+
+Do NOT try to answer:
+
+“Where can every show be watched?”
+
+Instead answer:
+
+“Of the shows this user actively watches, which subscriptions matter?”
+
+That dramatically reduces:
+* API cost
+* database size
+* provider complexity
+* false positives
+
+You only need provider data for:
+* recently watched shows
+* watchlisted shows
+* in-progress shows
+
+Probably under 100 titles/user.
+
+## Code and Backend
+Recommended MVP Stack
+
+APIs
+* Trakt API￼
+* TMDB API￼
+
+Backend
+* SQLlite or PostgreSQL
+* Node.js/TypeScript or Python
+
+Caching
+Cache provider lookups aggressively:
+
+* 7–30 days TTL
+Streaming availability changes, but not hourly.
+
+## First version outcome
+Suggested Simplification for v1
+
+Instead of:
+* exact pricing
+* exact provider mapping
+* every edge case
+
+Do:
+You watched 17 episodes on Max this month.
+You have not watched anything on Peacock in 72 days.
+Potential savings: $7.99/month.
+Send notification with above info and suggestion to suspend Peacock.
+
+
+## Recommended Data Strategy for Show Activity Determination
+
+1. Only Cache Recent Activity
+
+You probably only need:
+* last 90 days of watched activity
+* current progress
+* watchlist
+* paused/in-progress shows
+
+NOT:
+* 15 years of history
+For most recommendation and subscription logic:
+* old completed shows are low-value
+
+Divide Shows Into States
+This is the core idea.
+Every tracked show should exist in one of these states:
+
+State			Meaning
+
+Active			User currently watching
+Dormant			User watched before, may return
+Abandoned		User probably done forever
+Anticipated		Upcoming season user likely wants
+Ignored			Explicitly dismissed
+
+2. What You Actually Persist
+
+Instead of storing every episode watched:
+Store a compact show profile
+
+Example:
+{
+  "trakt_show_id": 1390,
+  "title": "Severance",
+  "status": "anticipated",
+  "last_watched_at": "2026-05-01",
+  "last_season_seen": 1,
+  "completion_percent": 100,
+  "interest_score": 78,
+  "provider": "apple_tv_plus",
+  "next_air_date": "2027-01-14"
+}
+That is tiny
+
+3. Critical Optimization:
+
+Use Incremental Syncs Only
+Trakt supports activity timestamps.
+You should:
+
+1. store last_trakt_sync
+2. request only changed data since then
+NOT full-history reloads.
+
+4. Your Main Dataset Should Be:
+
+A. Recently Watched Shows
+Small.
+Maybe:
+
+* last 100–200 watched shows max
+
+B. Watchlist
+
+Very important signal.
+If a user watchlists:
+
+* Stranger Things
+* Severance
+…they likely still care even during hiatus.
+
+C. Progress Collection
+
+This matters most.
+You care about:
+* partially watched
+* recently completed
+* awaiting next season
+
+D. Long Hiatus Problem
+
+some shows disappear for years.
+So you need a decaying interest model, not binary deletion.
+
+E. Keep in mind Interest decay system (see weighted system above)
+
+F.Returning Show Logic
+
+This is where many apps fail.
+Do NOT notify:
+“A new season exists”
+unless BOTH:
+* user previously engaged strongly
+* AND user is likely unsubscribed
+
+G. deal “Resubscribe Candidate” Logic
+
+Trigger if:
+
+Show:
+
+* has upcoming/new season
+* AND interest_score > threshold
+
+AND:
+
+* provider not currently subscribed
+
+AND:
+
+* user watched prior season substantially
+
+Example: 
+
+{
+  "show": "The Last of Us",
+  "interest_score": 91,
+  "last_season_completed": true,
+  "new_season_in_14_days": true,
+  "provider": "max",
+  "user_subscribed": false,
+  "recommend_resubscribe": true
+}
+
+##Important:
+
+Don’t Keep Monitoring Everything Forever
+You need pruning.
+
+Recommended Lifecycle Rules
+
+Archive shows when:
+
+Any:
+
+* completed > 2 years ago
+* no interaction
+* no announced future season
+* low interest score
+
+Then:
+
+* remove episode-level detail
+* keep only minimal metadata
+
+Example:
+{
+  "show_id": 12,
+  "status": "archived",
+  "interest_score": 8
+}
+
+## Simple reiteration of purpose of system
+Answers Two Questions
+
+1. “Can I cancel this service safely?”
+
+2. “Should I resubscribe now?”
+That means you can aggressively compress data.
+
+##The Most Logical Architecture
+
+Hot Storage (small)
+Keep:
+* active shows
+* anticipated shows
+* recent activity
+* watchlist
+
+Maybe:
+* 100–300 rows/user total
+
+Cold Storage (optional)
+If you really want:
+* dump historical sync snapshots to object storage
+But never load them routinely.
+
+##Recommended Sync Cadence
+
+Daily:
+
+* activity timestamps
+* watch progress deltas
+
+Weekly:
+
+* provider availability refresh
+
+Monthly:
+
+* prune/archive pass
+
+##Important:
+
+Use TV Metadata APIs Instead of Polling Trakt
+
+Trakt tells you:
+* what user watched
+
+TMDB/TVDB tells you:
+* what is returning
+
+Important: That separation matters.
+
+
+##The Best Heuristic
+
+The strongest signal for future resubscribe behavior is probably:
+
++ completed_previous_season
++ watched_recently_before_hiatus
++ watchlisted
+
+

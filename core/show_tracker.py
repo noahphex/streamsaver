@@ -3,209 +3,351 @@ core/show_tracker.py
 Streamsaver — Show data sync: Trakt → SQLite
 Author: Noah Lee
 
-Parses Trakt watch history and watchlist into the local database,
-enriching each show with season/episode metadata and next-premiere info.
+Incremental sync strategy:
+  - First sync: pulls last 1 year of episode history
+  - Subsequent syncs: pulls only activity since last_trakt_sync timestamp
+  - Groups episodes by show, computes interest scores from timestamps
+  - Looks up TMDb providers for automatic show→service matching
+  - Caps at 200 shows (most recently watched first)
+  - Monthly archive pass prunes shows that are no longer relevant
 """
 
 import logging
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from db import db_session
 from core.trakt_client import TraktClient
+from core.tmdb_client import TMDbClient
 
 logger = logging.getLogger(__name__)
 
-# ISO date format used by Trakt for first_aired fields
-_TRAKT_DT_FMT = "%Y-%m-%dT%H:%M:%S.%fZ"
+# Interest scoring thresholds (from build_admin.txt spec)
+_SCORE_ACTIVE     = 15
+_SCORE_OCCASIONAL = 5
+
+# Maximum shows to keep in hot storage
+_MAX_SHOWS = 200
+
+# Archive threshold: completed 2+ years ago
+_ARCHIVE_AGE_DAYS = 730
 
 
-def _parse_date(raw: Optional[str]) -> Optional[str]:
-    """Safely parse a Trakt ISO datetime string and return YYYY-MM-DD, or None."""
+def _parse_dt(raw: Optional[str]) -> Optional[datetime]:
+    """Parse a Trakt ISO datetime string to a timezone-aware datetime, or None."""
     if not raw:
         return None
-    for fmt in (_TRAKT_DT_FMT, "%Y-%m-%dT%H:%M:%SZ"):
+    for fmt in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d"):
         try:
-            return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
+            dt = datetime.strptime(raw, fmt)
+            return dt.replace(tzinfo=timezone.utc)
         except ValueError:
             continue
     return None
 
 
-def _format_episode(season: Optional[int], episode: Optional[int]) -> Optional[str]:
-    """Return a human-readable episode label like S02E05, or None."""
-    if season is None or episode is None:
-        return None
-    return f"S{season:02d}E{episode:02d}"
+def _to_date_str(raw: Optional[str]) -> Optional[str]:
+    """Return YYYY-MM-DD from a Trakt ISO datetime string, or None."""
+    dt = _parse_dt(raw)
+    return dt.strftime("%Y-%m-%d") if dt else None
 
 
-def _resolve_service_id(network_name: Optional[str], conn) -> Optional[int]:
+def _compute_interest_score(watch_events: list[datetime]) -> int:
     """
-    Return the service id that corresponds to a Trakt network name.
+    Compute an interest score for a show from a list of watched-at timestamps.
 
-    Matching priority:
-      1. Exact match on trakt_network_id (set when service was added from the
-         Trakt network picker — guaranteed identical string)
-      2. Case-insensitive name match as fallback for manually-entered services
+    Weighted signals per spec:
+        +10  watched in last 7 days
+        +5   watched in last 30 days
+        +5   3+ episodes watched recently (binge signal)
+        -10  no activity in 45+ days
     """
-    if not network_name:
-        return None
+    now   = datetime.now(timezone.utc)
+    score = 0
 
-    # Priority 1: exact trakt_network_id match
-    row = conn.execute(
-        "SELECT id FROM services WHERE trakt_network_id = ?",
-        (network_name,),
-    ).fetchone()
-    if row:
-        return row["id"]
+    recent_7  = [e for e in watch_events if (now - e).days <= 7]
+    recent_30 = [e for e in watch_events if (now - e).days <= 30]
 
-    # Priority 2: case-insensitive name fallback
-    row = conn.execute(
-        "SELECT id FROM services WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))",
-        (network_name,),
-    ).fetchone()
-    return row["id"] if row else None
+    if recent_7:
+        score += 10
+    if recent_30:
+        score += 5
+    if len(recent_30) >= 3:
+        score += 5  # binge signal
+
+    # No activity penalty
+    if watch_events:
+        most_recent = max(watch_events)
+        if (now - most_recent).days >= 45:
+            score -= 10
+
+    return max(score, 0)
 
 
-# ── Show sync ──────────────────────────────────────────────────────────────────
+def _classify_state(score: int) -> str:
+    """Map an interest score to a show_state label."""
+    if score >= _SCORE_ACTIVE:
+        return "active"
+    if score >= _SCORE_OCCASIONAL:
+        return "occasional"
+    return "dormant"
 
-def sync_watched_shows(client: TraktClient) -> int:
+
+def _get_setting(conn, key: str) -> Optional[str]:
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def _set_setting(conn, key: str, value: str) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value)
+    )
+
+
+# ── Main sync ──────────────────────────────────────────────────────────────────
+
+def sync_watched_shows(
+    client: TraktClient,
+    tmdb_client: Optional[TMDbClient] = None,
+) -> int:
     """
-    Pull watched shows from Trakt, enrich with show/episode details,
-    and upsert into the `shows` table.
+    Incrementally sync watched shows from Trakt.
+
+    Strategy:
+      1. Read last_trakt_sync from settings.
+      2. start_at = now - 1 year if never synced, else = last_trakt_sync.
+      3. Pull episode history since start_at (grouped into show profiles).
+      4. Compute interest_score and show_state for each show.
+      5. Look up TMDb for primary streaming provider (if tmdb_client provided).
+      6. Upsert compact show profiles (cap at _MAX_SHOWS most recent).
+      7. Update last_trakt_sync.
 
     Returns the number of shows processed.
     """
-    logger.info("Fetching watched shows from Trakt...")
-    watched = client.get_watched_shows()
-    if not watched:
-        logger.info("No watched shows returned.")
+    now = datetime.now(timezone.utc)
+
+    with db_session() as conn:
+        last_sync_str = _get_setting(conn, "last_trakt_sync")
+
+    if last_sync_str:
+        start_at = last_sync_str
+        logger.info("Incremental sync since %s", start_at)
+    else:
+        start_at = (now - timedelta(days=365)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        logger.info("First sync — pulling last 1 year of history (since %s)", start_at)
+
+    logger.info("Fetching episode history from Trakt...")
+    history = client.get_show_history(start_at=start_at)
+    if not history:
+        logger.info("No new watch history since last sync.")
+        _update_last_sync(now)
         return 0
 
-    count = 0
-    for entry in watched:
-        show_stub = entry.get("show", {})
+    # Group episode events by show trakt_id
+    show_map: dict[str, dict] = {}
+    for event in history:
+        show_stub = event.get("show", {})
         trakt_id  = str(show_stub.get("ids", {}).get("trakt", ""))
-        title     = show_stub.get("title", "Unknown")
-
         if not trakt_id:
-            logger.warning("Skipping show with no Trakt ID: %s", title)
             continue
 
-        try:
-            _sync_single_show(client, trakt_id, title, entry)
-            count += 1
-        except Exception as exc:
-            logger.error("Error syncing show '%s' (%s): %s", title, trakt_id, exc)
+        if trakt_id not in show_map:
+            show_map[trakt_id] = {
+                "title":       show_stub.get("title", "Unknown"),
+                "trakt_id":    trakt_id,
+                "events":      [],
+                "last_at_raw": None,
+                "season":      0,
+            }
 
-    logger.info("Synced %d watched shows.", count)
+        watched_at = _parse_dt(event.get("watched_at"))
+        if watched_at:
+            show_map[trakt_id]["events"].append(watched_at)
+
+        # Track most recent watch date and last season seen
+        ep = event.get("episode", {})
+        ep_dt = _parse_dt(event.get("watched_at"))
+        existing_last = _parse_dt(show_map[trakt_id]["last_at_raw"])
+        if ep_dt and (existing_last is None or ep_dt > existing_last):
+            show_map[trakt_id]["last_at_raw"] = event.get("watched_at")
+            show_map[trakt_id]["season"] = ep.get("season", 0)
+
+    # Sort by most recently watched, cap at _MAX_SHOWS
+    sorted_shows = sorted(
+        show_map.values(),
+        key=lambda s: s["last_at_raw"] or "",
+        reverse=True,
+    )[:_MAX_SHOWS]
+
+    logger.info("Processing %d unique shows from history...", len(sorted_shows))
+
+    country = "US"
+    with db_session() as conn:
+        country = _get_setting(conn, "provider_country") or "US"
+
+    count = 0
+    for show_data in sorted_shows:
+        try:
+            _upsert_show(show_data, client, tmdb_client, country)
+            count += 1
+            # Throttle to avoid rate limits: 0.5s between shows with TMDb lookups
+            if tmdb_client:
+                time.sleep(0.5)
+        except Exception as exc:
+            logger.error("Error syncing show '%s': %s", show_data["title"], exc)
+
+    _update_last_sync(now)
+    logger.info("Synced %d shows.", count)
     return count
 
 
-def _sync_single_show(
+def _upsert_show(
+    show_data: dict,
     client: TraktClient,
-    trakt_id: str,
-    title: str,
-    watched_entry: dict,
+    tmdb_client: Optional[TMDbClient],
+    country: str,
 ) -> None:
-    """Fetch full details for one show and upsert into the database."""
-    summary  = client.get_show_summary(trakt_id) or {}
-    progress = None
-    try:
-        progress = client.get_show_progress(trakt_id)
-    except Exception as exc:
-        logger.debug("Could not fetch progress for %s: %s", trakt_id, exc)
+    """Compute score, look up providers, and upsert one show's compact profile."""
+    trakt_id = show_data["trakt_id"]
+    title    = show_data["title"]
+    events   = show_data["events"]
+    season   = show_data["season"]
 
-    seasons      = client.get_show_seasons(trakt_id) or []
-    next_ep_data = client.get_next_episode(trakt_id)
+    score      = _compute_interest_score(events)
+    show_state = _classify_state(score)
+    last_watch = _to_date_str(show_data["last_at_raw"])
 
-    # ── Derive fields ──────────────────────────────────────────────────────
-    total_seasons = len([s for s in seasons if s.get("number", 0) > 0])
-    total_eps     = summary.get("aired_episodes", 0)
-    show_status   = summary.get("status", "")
-    network       = summary.get("network", "")
+    # Only fetch Trakt show summary for shows worth tracking closely
+    trakt_status = None
+    next_air_date = None
+    if show_state in ("active", "occasional"):
+        try:
+            summary = client.get_show_summary(trakt_id) or {}
+            trakt_status = summary.get("status")
+            # Check for upcoming season/episode
+            next_ep = client.get_next_episode(trakt_id)
+            if next_ep:
+                next_air_date = _to_date_str(next_ep.get("first_aired"))
+            # Anticipated: returning show with a known air date
+            if trakt_status == "returning series" and next_air_date:
+                show_state = "anticipated"
+            # Boost score for returning show
+            if trakt_status == "returning series":
+                score = min(score + 8, 100)
+        except Exception as exc:
+            logger.debug("Could not fetch Trakt summary for %s: %s", trakt_id, exc)
 
-    # Current season = last season in which user has watched any episode
-    current_season = 0
-    last_watched   = None
-    last_watch_date = None
+    # TMDb provider lookup
+    tmdb_id = None
+    primary_provider = None
+    primary_provider_id = None
+    service_id = None
 
-    if progress:
-        seasons_prog = progress.get("seasons", [])
-        for s in reversed(seasons_prog):
-            completed = s.get("completed", 0)
-            if completed and completed > 0:
-                current_season = s.get("number", 0)
-                # Find last watched episode in this season
-                for ep in reversed(s.get("episodes", [])):
-                    if ep.get("completed"):
-                        last_watched = _format_episode(
-                            s.get("number"), ep.get("number")
-                        )
-                        last_watch_date = _parse_date(ep.get("last_watched_at"))
-                        break
-                if last_watched:
-                    break
-
-        # Prefer the top-level last_watched_at when more specific date unavailable
-        if not last_watch_date:
-            last_watch_date = _parse_date(progress.get("last_watched_at"))
-
-    # Next episode label
-    next_ep = None
-    next_premiere = None
-    if next_ep_data:
-        next_ep = _format_episode(
-            next_ep_data.get("season"), next_ep_data.get("number")
-        )
-        next_premiere = _parse_date(next_ep_data.get("first_aired"))
+    if tmdb_client:
+        try:
+            tmdb_id = tmdb_client.search_tv_show(title)
+            if tmdb_id:
+                providers = tmdb_client.get_show_providers(tmdb_id)
+                if providers:
+                    best = providers[0]
+                    primary_provider    = best.get("provider_name")
+                    primary_provider_id = best.get("provider_id")
+                    # Match to a user-configured service
+                    service_id = _resolve_service_id(primary_provider_id, primary_provider)
+        except Exception as exc:
+            logger.debug("TMDb lookup failed for '%s': %s", title, exc)
 
     with db_session() as conn:
-        service_id = _resolve_service_id(network, conn)
+        if service_id is None:
+            service_id = _resolve_service_id_conn(primary_provider_id, primary_provider, conn)
 
         existing = conn.execute(
-            "SELECT id, is_abandoned, abandoned_override FROM shows WHERE trakt_id = ?",
+            "SELECT id, abandoned_override FROM shows WHERE trakt_id = ?",
             (trakt_id,),
         ).fetchone()
+
+        # Respect manual abandoned override
+        if existing and existing["abandoned_override"]:
+            show_state = "abandoned"
 
         if existing:
             conn.execute(
                 """
                 UPDATE shows SET
-                    title                = ?,
-                    status               = ?,
-                    total_seasons        = ?,
-                    current_season       = ?,
-                    total_episodes       = ?,
-                    last_watched_episode = ?,
-                    next_episode         = ?,
-                    next_premiere_date   = ?,
-                    service_id           = ?,
-                    last_watch_date      = ?
+                    tmdb_id             = COALESCE(?, tmdb_id),
+                    title               = ?,
+                    trakt_status        = COALESCE(?, trakt_status),
+                    show_state          = ?,
+                    interest_score      = ?,
+                    last_season_seen    = ?,
+                    last_watch_date     = ?,
+                    next_air_date       = COALESCE(?, next_air_date),
+                    primary_provider    = COALESCE(?, primary_provider),
+                    primary_provider_id = COALESCE(?, primary_provider_id),
+                    service_id          = COALESCE(?, service_id)
                 WHERE trakt_id = ?
                 """,
                 (
-                    title, show_status, total_seasons, current_season,
-                    total_eps, last_watched, next_ep, next_premiere,
-                    service_id, last_watch_date, trakt_id,
+                    tmdb_id, title, trakt_status, show_state, score,
+                    season, last_watch, next_air_date,
+                    primary_provider, primary_provider_id, service_id,
+                    trakt_id,
                 ),
             )
         else:
             conn.execute(
                 """
                 INSERT INTO shows (
-                    trakt_id, title, status, total_seasons, current_season,
-                    total_episodes, last_watched_episode, next_episode,
-                    next_premiere_date, service_id, is_abandoned,
-                    abandoned_override, last_watch_date
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
+                    trakt_id, tmdb_id, title, trakt_status, show_state,
+                    interest_score, last_season_seen, last_watch_date,
+                    next_air_date, primary_provider, primary_provider_id,
+                    abandoned_override, service_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
                 """,
                 (
-                    trakt_id, title, show_status, total_seasons, current_season,
-                    total_eps, last_watched, next_ep, next_premiere,
-                    service_id, last_watch_date,
+                    trakt_id, tmdb_id, title, trakt_status, show_state,
+                    score, season, last_watch,
+                    next_air_date, primary_provider, primary_provider_id,
+                    service_id,
                 ),
             )
+
+
+def _resolve_service_id(
+    provider_id: Optional[int], provider_name: Optional[str]
+) -> Optional[int]:
+    """Match a TMDb provider to a user-configured service (opens its own connection)."""
+    if not provider_id and not provider_name:
+        return None
+    with db_session() as conn:
+        return _resolve_service_id_conn(provider_id, provider_name, conn)
+
+
+def _resolve_service_id_conn(
+    provider_id: Optional[int], provider_name: Optional[str], conn
+) -> Optional[int]:
+    """Match a TMDb provider to a user-configured service using an existing connection."""
+    if provider_id:
+        row = conn.execute(
+            "SELECT id FROM services WHERE tmdb_provider_id = ?", (provider_id,)
+        ).fetchone()
+        if row:
+            return row["id"]
+    if provider_name:
+        row = conn.execute(
+            "SELECT id FROM services WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))",
+            (provider_name,),
+        ).fetchone()
+        if row:
+            return row["id"]
+    return None
+
+
+def _update_last_sync(now: datetime) -> None:
+    """Persist the current timestamp as last_trakt_sync."""
+    with db_session() as conn:
+        _set_setting(conn, "last_trakt_sync", now.strftime("%Y-%m-%dT%H:%M:%S.000Z"))
 
 
 # ── Watchlist sync ─────────────────────────────────────────────────────────────
@@ -229,11 +371,15 @@ def sync_watchlist(client: TraktClient) -> int:
         if not trakt_id:
             continue
 
-        network  = show.get("network", "")
-        premiere = _parse_date(show.get("first_aired"))
+        premiere = _to_date_str(show.get("first_aired"))
 
         with db_session() as conn:
-            service_id = _resolve_service_id(network, conn)
+            # Try to match watchlist item to a service via the shows table
+            show_row = conn.execute(
+                "SELECT service_id FROM shows WHERE trakt_id = ?", (trakt_id,)
+            ).fetchone()
+            service_id = show_row["service_id"] if show_row else None
+
             existing = conn.execute(
                 "SELECT id FROM watchlist WHERE trakt_id = ?", (trakt_id,)
             ).fetchone()
@@ -254,21 +400,61 @@ def sync_watchlist(client: TraktClient) -> int:
     return count
 
 
+# ── Archive pass ───────────────────────────────────────────────────────────────
+
+def run_archive_pass() -> int:
+    """
+    Archive shows that are no longer worth tracking in hot storage.
+
+    A show is archived when ALL of the following are true:
+      - last_watch_date is more than 2 years ago (or null)
+      - trakt_status is ended or canceled (not returning)
+      - next_air_date is null (no announced future season)
+      - interest_score < 5 (dormant)
+      - abandoned_override is not set
+
+    Returns the count of shows archived.
+    """
+    from datetime import date
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=_ARCHIVE_AGE_DAYS)).strftime("%Y-%m-%d")
+
+    with db_session() as conn:
+        result = conn.execute(
+            """
+            UPDATE shows
+            SET show_state = 'archived'
+            WHERE abandoned_override = 0
+              AND show_state NOT IN ('active', 'occasional', 'anticipated', 'ignored', 'archived')
+              AND interest_score < 5
+              AND (next_air_date IS NULL OR next_air_date = '')
+              AND (trakt_status IN ('ended', 'canceled') OR trakt_status IS NULL)
+              AND (last_watch_date IS NULL OR last_watch_date < ?)
+            """,
+            (cutoff,),
+        )
+        count = result.rowcount
+
+    if count:
+        logger.info("Archive pass: %d show(s) archived.", count)
+    return count
+
+
 # ── Full sync entry point ──────────────────────────────────────────────────────
 
-def run_full_sync(client: TraktClient) -> dict:
+def run_full_sync(
+    client: TraktClient,
+    tmdb_client: Optional[TMDbClient] = None,
+) -> dict:
     """
-    Convenience function called by the scheduler and the GUI sync button.
-    Syncs watched shows and watchlist, then applies abandoned detection.
+    Entry point called by the scheduler and the GUI sync button.
+    Runs incremental show sync, watchlist sync, and archive pass.
     """
-    from core.abandoned import apply_abandoned_detection
-
-    shows_count    = sync_watched_shows(client)
+    shows_count     = sync_watched_shows(client, tmdb_client)
     watchlist_count = sync_watchlist(client)
-    abandoned_count = apply_abandoned_detection()
+    archived_count  = run_archive_pass()
 
     return {
         "shows":     shows_count,
         "watchlist": watchlist_count,
-        "abandoned": abandoned_count,
+        "archived":  archived_count,
     }

@@ -42,11 +42,22 @@ def _migrate_columns(conn, table: str, columns: list[tuple]) -> None:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
 
 
+def _shows_needs_migration(conn) -> bool:
+    """Return True if the shows table is missing the new show_state column."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(shows)").fetchall()}
+    return bool(cols) and "show_state" not in cols
+
+
 def init_db() -> None:
-    """Create all tables if they don't already exist."""
+    """Create all tables if they don't already exist, migrating schema as needed."""
     os.makedirs(os.path.join(BASE_DIR, "data"), exist_ok=True)
 
     with db_session() as conn:
+        # Migrate shows table to compact-profile schema if it's the old layout.
+        # The old schema used is_abandoned; the new one uses show_state.
+        if _shows_needs_migration(conn):
+            conn.execute("DROP TABLE IF EXISTS shows")
+
         conn.executescript("""
             -- Streaming services
             CREATE TABLE IF NOT EXISTS services (
@@ -64,23 +75,29 @@ def init_db() -> None:
                 next_billing_date TEXT
             );
 
-            -- TV shows sourced from Trakt watch history
+            -- TV shows — compact activity profiles (one row per show)
             CREATE TABLE IF NOT EXISTS shows (
-                id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-                trakt_id              TEXT    NOT NULL UNIQUE,
-                title                 TEXT    NOT NULL,
-                status                TEXT,
-                total_seasons         INTEGER DEFAULT 0,
-                current_season        INTEGER DEFAULT 0,
-                total_episodes        INTEGER DEFAULT 0,
-                last_watched_episode  TEXT,
-                next_episode          TEXT,
-                next_premiere_date    TEXT,
-                service_id            INTEGER REFERENCES services(id)
-                                              ON DELETE SET NULL,
-                is_abandoned          BOOLEAN NOT NULL DEFAULT 0,
-                abandoned_override    BOOLEAN NOT NULL DEFAULT 0,
-                last_watch_date       TEXT
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                trakt_id            TEXT    NOT NULL UNIQUE,
+                tmdb_id             INTEGER,
+                title               TEXT    NOT NULL,
+                trakt_status        TEXT,               -- returning series/ended/canceled
+                show_state          TEXT    NOT NULL DEFAULT 'dormant'
+                                            CHECK(show_state IN (
+                                                'active','occasional','dormant',
+                                                'abandoned','anticipated',
+                                                'ignored','archived'
+                                            )),
+                interest_score      INTEGER NOT NULL DEFAULT 0,
+                last_season_seen    INTEGER DEFAULT 0,
+                completion_percent  REAL    DEFAULT 0.0,
+                last_watch_date     TEXT,               -- ISO date
+                next_air_date       TEXT,               -- ISO date of next episode/season
+                primary_provider    TEXT,               -- human-readable provider name
+                primary_provider_id INTEGER,            -- TMDb provider_id
+                abandoned_override  BOOLEAN NOT NULL DEFAULT 0,
+                service_id          INTEGER REFERENCES services(id)
+                                            ON DELETE SET NULL
             );
 
             -- TV show watchlist (shows user wants to watch, not yet started)
@@ -93,11 +110,13 @@ def init_db() -> None:
                 premiere_date  TEXT
             );
 
-            -- Cached Trakt network list (populated from /networks endpoint)
+            -- Cached streaming provider list (from TMDb)
             CREATE TABLE IF NOT EXISTS networks (
                 name        TEXT PRIMARY KEY,
                 country     TEXT,
-                fetched_at  TEXT    -- ISO date of last fetch
+                fetched_at  TEXT,
+                provider_id INTEGER,
+                logo_path   TEXT
             );
 
             -- Key/value settings store
@@ -112,14 +131,11 @@ def init_db() -> None:
                 ('abandoned_mode',            'manual'),
                 ('abandoned_threshold_days',  '90'),
                 ('networks_fetched_at',        ''),
-                ('provider_country',           'US');
+                ('provider_country',           'US'),
+                ('last_trakt_sync',            '');
         """)
 
-        # Schema migrations — safe to run on existing databases
-        _migrate_columns(conn, "networks", [
-            ("provider_id", "INTEGER"),
-            ("logo_path",   "TEXT"),
-        ])
+        # Safe migrations for tables that already exist with older schemas
         _migrate_columns(conn, "services", [
             ("tmdb_provider_id", "INTEGER"),
         ])

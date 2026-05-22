@@ -35,6 +35,7 @@ class StreamsaverApp(tk.Tk):
         self.configure(bg=theme.BG)
         self._client      = None
         self._tmdb_client = None
+        self._creds       = {}   # decrypted credentials dict, set after unlock
 
         configure_ttk_styles()
         self._build_ui()
@@ -75,6 +76,7 @@ class StreamsaverApp(tk.Tk):
             self._notebook,
             get_client_fn=lambda: self._client,
             get_tmdb_client_fn=lambda: self._tmdb_client,
+            get_creds_fn=lambda: self._creds,
         )
 
         self._notebook.add(self._services_page, text="  📺  Services  ")
@@ -131,6 +133,8 @@ class StreamsaverApp(tk.Tk):
         from core.trakt_client import TraktClient
         from core.tmdb_client  import TMDbClient
         from db import db_session
+
+        self._creds = creds   # keep in memory for email reports
 
         self._client = TraktClient(
             client_id     = creds["trakt_client_id"],

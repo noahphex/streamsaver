@@ -46,16 +46,20 @@ THRESHOLD_OPTIONS = [
 class SettingsPage(ttk.Frame):
     """Tab: app settings, sync controls, email management."""
 
-    def __init__(self, parent, get_client_fn=None, get_tmdb_client_fn=None, **kwargs):
+    def __init__(self, parent, get_client_fn=None, get_tmdb_client_fn=None,
+                 get_creds_fn=None, **kwargs):
         """
         Args:
             get_client_fn:      Callable returning a TraktClient (for sync).
             get_tmdb_client_fn: Callable returning a TMDbClient (for provider refresh).
+            get_creds_fn:       Callable returning the decrypted credentials dict
+                                (for sending email reports).
         """
         super().__init__(parent, **kwargs)
         self.configure(style="TFrame")
         self._get_client      = get_client_fn
         self._get_tmdb_client = get_tmdb_client_fn
+        self._get_creds       = get_creds_fn
         self._build_ui()
         self._load()
 
@@ -177,6 +181,13 @@ class SettingsPage(ttk.Frame):
         ).pack(side="left", padx=(0, theme.PAD_SMALL))
         row += 1
 
+        # Last sync timestamp
+        self._last_sync_lbl = ttk.Label(wrap, text="", style="Dim.TLabel",
+                                        font=theme.FONT_SMALL)
+        self._last_sync_lbl.grid(row=row, column=0, columnspan=2, sticky="w",
+                                  pady=(4, 0))
+        row += 1
+
         # Status message
         self._status_lbl = ttk.Label(wrap, text="", style="Dim.TLabel",
                                      font=theme.FONT_SMALL)
@@ -202,6 +213,12 @@ class SettingsPage(ttk.Frame):
             if value == threshold_days:
                 self._threshold_var.set(label)
                 break
+
+        last_sync = _get_setting("last_trakt_sync")
+        if last_sync:
+            self._last_sync_lbl.config(text=f"Last Trakt sync: {last_sync[:19].replace('T', ' ')} UTC")
+        else:
+            self._last_sync_lbl.config(text="Last Trakt sync: never")
 
     def _set_status(self, msg: str, color: str = theme.FG_DIM) -> None:
         self._status_lbl.config(text=msg, foreground=color)
@@ -243,15 +260,17 @@ class SettingsPage(ttk.Frame):
             try:
                 from core.show_tracker  import run_full_sync
                 from core.trakt_client  import TraktAuthError
-                client  = self._get_client()
-                results = run_full_sync(client)
+                client      = self._get_client()
+                tmdb_client = self._get_tmdb_client() if self._get_tmdb_client else None
+                results     = run_full_sync(client, tmdb_client)
                 msg = (
                     f"✅  Sync complete — "
                     f"{results['shows']} shows, "
                     f"{results['watchlist']} watchlist, "
-                    f"{results['abandoned']} abandoned updates."
+                    f"{results['archived']} archived."
                 )
                 self.after(0, lambda: self._set_status(msg, theme.SUCCESS))
+                self.after(0, lambda: self._load())          # refresh last sync timestamp
                 self.after(0, lambda: self.event_generate("<<SyncComplete>>"))
             except Exception as exc:
                 is_auth = "TraktAuthError" in type(exc).__name__ or "Access denied" in str(exc)
@@ -320,8 +339,25 @@ class SettingsPage(ttk.Frame):
                 from email_reports.report_builder import build_report
                 from email_reports.mailer import send_report
 
-                results = run_analysis()
+                results      = run_analysis()
                 notify_email = _get_setting("notification_email")
+
+                # Resolve Gmail credentials from the in-memory creds dict
+                creds        = self._get_creds() if self._get_creds else {}
+                from_address = creds.get("gmail_sender", "")
+                app_password = creds.get("gmail_app_password", "")
+
+                if not from_address or not app_password:
+                    raise RuntimeError(
+                        "Gmail credentials not found in loaded credentials.\n"
+                        "Re-run setup_credentials.py to add your Gmail sender and App Password."
+                    )
+
+                if not notify_email:
+                    raise RuntimeError(
+                        "No notification email set.\n"
+                        "Enter a Report email address in Settings and save first."
+                    )
 
                 sent = 0
                 for rec in results["suspend"]:
@@ -330,6 +366,8 @@ class SettingsPage(ttk.Frame):
                         to_address=notify_email,
                         subject=f"Streamsaver: Suspend {rec['name']}",
                         html_body=html,
+                        from_address=from_address,
+                        app_password=app_password,
                     )
                     sent += 1
                 for rec in results["resubscribe"]:
@@ -338,6 +376,8 @@ class SettingsPage(ttk.Frame):
                         to_address=notify_email,
                         subject=f"Streamsaver: Resubscribe to {rec['name']}",
                         html_body=html,
+                        from_address=from_address,
+                        app_password=app_password,
                     )
                     sent += 1
 
