@@ -27,7 +27,7 @@ _TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "templates", "base.html
 _FG      = "#f8f8f2"
 _FG_DIM  = "#9aa3c7"
 _FG_META = "#6272a4"
-_GREEN   = "#50fa7b"
+_GREEN   = "#62e58c"
 _ORANGE  = "#ffb86c"
 _RED     = "#ff5a5f"
 _BLUE    = "#8be9fd"
@@ -38,11 +38,19 @@ _ROW_SEP = "rgba(255,255,255,0.06)"
 _CARD_BG = "#31364a"
 
 _BADGE_COLORS = {
-    "suspend":              (_RED,    "#ffffff"),
-    "consider_non_renewal": (_AMBER,  "#1c1f2b"),
-    "renew_soon":           (_BLUE,   "#1c1f2b"),
-    "resubscribe":          (_PURPLE, "#ffffff"),
-    "uncertain":            (_RED,    "#ffffff"),
+    "suspend":              ("#ff6b6b", "#ffffff"),
+    "consider_non_renewal": (_AMBER,    "#1c1f2b"),
+    "renew_soon":           (_BLUE,     "#1c1f2b"),
+    "resubscribe":          (_PURPLE,   "#ffffff"),
+    "uncertain":            ("#ff6b6b", "#ffffff"),
+}
+
+_ACCENT_COLORS = {
+    "suspend":              "#ff6b6b",
+    "consider_non_renewal": _AMBER,
+    "renew_soon":           _BLUE,
+    "resubscribe":          _PURPLE,
+    "uncertain":            "#ff6b6b",
 }
 
 # Type alias for the attachments dict
@@ -79,6 +87,7 @@ def _build_card(
     cost_rows: list[tuple[str, str]],
     reason: str,
     extra_html: str = "",
+    accent_color: str = "",
 ) -> tuple[str, Attachments]:
     """
     3-section email-safe card. Returns (html, attachments).
@@ -87,7 +96,8 @@ def _build_card(
     logo_html, cid, mime_part = get_service_logo_cid({"name": name, "icon_path": icon_path})
     attachments: Attachments = {cid: mime_part} if cid and mime_part else {}
 
-    # ── HEADER: name / badge / billing date (left) | logo (right) ────────────
+    # ── HEADER: name / badge / billing date (left) | logo top-aligned (right) ──
+    billing_icon = '<span style="font-size:12px;opacity:0.7;padding-right:5px;vertical-align:middle;">📅</span>'
     header = (
         f'<table width="100%" cellpadding="0" cellspacing="0" border="0" '
         f'role="presentation">'
@@ -100,10 +110,10 @@ def _build_card(
         f'<p style="margin:0 0 12px;">{_badge(badge_label, badge_bg, badge_fg)}</p>'
         f'<p style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
         f'font-weight:500;color:{_FG_META};margin:0;line-height:1.4;">'
-        f'{billing_line}</p>'
+        f'{billing_icon}{billing_line}</p>'
         f'</td>'
         f'<td class="ss-logo-col" valign="top" align="right" width="72" '
-        f'style="vertical-align:top;width:72px;">'
+        f'style="vertical-align:top;padding-top:4px;width:72px;">'
         f'{logo_html}'
         f'</td>'
         f'</tr></table>'
@@ -119,15 +129,17 @@ def _build_card(
     )
 
     # ── METRICS ───────────────────────────────────────────────────────────────
+    savings_icon = '<span style="font-size:12px;opacity:0.7;padding-right:5px;vertical-align:middle;">💵</span>'
     rows_html = ""
     for i, (label, value) in enumerate(cost_rows):
         border = f"border-top:1px solid {_ROW_SEP};" if i > 0 else ""
         rows_html += (
             f'<tr>'
             f'<td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
-            f'font-weight:600;color:{_FG};padding:12px 0;{border}">{label}</td>'
+            f'font-weight:600;color:{_FG};padding:12px 0;{border}">'
+            f'{savings_icon}{label}</td>'
             f'<td width="120" align="right" '
-            f'style="font-family:Arial,Helvetica,sans-serif;font-size:15px;'
+            f'style="font-family:Arial,Helvetica,sans-serif;font-size:16px;'
             f'font-weight:700;color:{_GREEN};padding:12px 0;white-space:nowrap;'
             f'font-variant-numeric:tabular-nums;width:120px;text-align:right;{border}">'
             f'{value}</td>'
@@ -140,7 +152,7 @@ def _build_card(
         if rows_html else ""
     )
 
-    # ── REASON ────────────────────────────────────────────────────────────────
+    # ── REASON with "Analysis" label ─────────────────────────────────────────
     reason_divider = (
         f'<table width="100%" cellpadding="0" cellspacing="0" border="0" '
         f'style="margin:12px 0 16px;">'
@@ -148,19 +160,26 @@ def _build_card(
         f'border-top:1px solid {_ROW_SEP};"></td></tr></table>'
     )
     reason_block = (
+        f'<p style="font-family:Arial,Helvetica,sans-serif;font-size:10px;'
+        f'font-weight:700;color:{_FG_META};letter-spacing:0.8px;'
+        f'text-transform:uppercase;margin:0 0 6px;">Analysis</p>'
         f'<p style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
         f'font-weight:400;color:{_FG_DIM};margin:0;line-height:20px;">'
         f'{reason}</p>'
     )
 
+    # Left accent border if type has one
+    accent_style = f"border-left:4px solid {accent_color};" if accent_color else ""
+
     html = (
         f'<table width="100%" cellpadding="0" cellspacing="0" border="0" '
         f'bgcolor="{_CARD_BG}" style="background-color:{_CARD_BG};'
-        f'border-radius:18px;border:1px solid {_DIVIDER};margin-bottom:16px;">'
+        f'border-radius:18px;border:1px solid {_DIVIDER};{accent_style}margin-bottom:16px;">'
         f'<tr><td style="padding:24px;">'
         f'{header}{divider}{metrics}{extra_html}{reason_divider}{reason_block}'
         f'</td></tr></table>'
     )
+    return html, attachments
     return html, attachments
 
 
@@ -189,6 +208,7 @@ def _build_suspend_content(recommendations: list[dict]) -> tuple[str, str, Attac
     names     = ", ".join(r["name"] for r in recommendations)
     preheader = f"Consider pausing: {names} before your next billing date."
     bg, fg    = _BADGE_COLORS["suspend"]
+    accent    = _ACCENT_COLORS["suspend"]
     cards_html, attachments = [], {}
 
     for rec in recommendations:
@@ -202,15 +222,16 @@ def _build_suspend_content(recommendations: list[dict]) -> tuple[str, str, Attac
         card_html, card_atts = _build_card(
             name         = rec["name"],
             icon_path    = rec.get("icon_path"),
-            badge_label  = "Suspend",
+            badge_label  = "Pause",
             badge_bg     = bg,
             badge_fg     = fg,
             billing_line = f"Next billing: {rec['billing_date']}",
             cost_rows    = [
-                ("Monthly savings if paused", f"${monthly:.2f}"),
-                ("Annual savings if paused",  f"${annual:.2f}"),
+                ("Monthly savings", f"${monthly:.2f}/mo"),
+                ("Annual savings",  f"${annual:.2f}/yr"),
             ],
-            reason = rec.get("reason", "No recent activity or upcoming releases detected before renewal."),
+            reason       = rec.get("reason", "No recent activity or upcoming releases detected before renewal."),
+            accent_color = accent,
         )
         cards_html.append(card_html)
         attachments.update(card_atts)
@@ -223,6 +244,7 @@ def _build_consider_non_renewal_content(recommendations: list[dict]) -> tuple[st
     names     = ", ".join(r["name"] for r in recommendations)
     preheader = f"Annual renewal approaching for {names} — low engagement detected."
     bg, fg    = _BADGE_COLORS["consider_non_renewal"]
+    accent    = _ACCENT_COLORS["consider_non_renewal"]
     cards_html, attachments = [], {}
 
     for rec in recommendations:
@@ -241,9 +263,10 @@ def _build_consider_non_renewal_content(recommendations: list[dict]) -> tuple[st
             badge_bg     = bg,
             badge_fg     = fg,
             billing_line = f"Annual renewal in {days_until} days ({rec['billing_date']})",
-            cost_rows    = [("Annual cost", f"${annual:.2f}")],
+            cost_rows    = [("Annual cost", f"${annual:.2f}/yr")],
             reason       = rec.get("reason", "Low engagement near renewal window."),
             extra_html   = extra,
+            accent_color = accent,
         )
         cards_html.append(card_html)
         attachments.update(card_atts)
@@ -259,6 +282,7 @@ def _build_renew_soon_content(recommendations: list[dict]) -> tuple[str, str, At
     names     = ", ".join(r["name"] for r in recommendations)
     preheader = f"Annual renewal approaching for {names} — looks worth keeping."
     bg, fg    = _BADGE_COLORS["renew_soon"]
+    accent    = _ACCENT_COLORS["renew_soon"]
     cards_html, attachments = [], {}
 
     for rec in recommendations:
@@ -271,8 +295,9 @@ def _build_renew_soon_content(recommendations: list[dict]) -> tuple[str, str, At
             badge_bg     = bg,
             badge_fg     = fg,
             billing_line = f"Annual renewal in {days_until} days ({rec['billing_date']})",
-            cost_rows    = [("Annual cost", f"${annual:.2f}")],
+            cost_rows    = [("Annual cost", f"${annual:.2f}/yr")],
             reason       = rec.get("reason", "Active engagement and upcoming content detected."),
+            accent_color = accent,
         )
         cards_html.append(card_html)
         attachments.update(card_atts)
@@ -288,6 +313,7 @@ def _build_resubscribe_content(recommendations: list[dict]) -> tuple[str, str, A
     names     = ", ".join(r["name"] for r in recommendations)
     preheader = f"Shows returning on {names} — time to resubscribe!"
     bg, fg    = _BADGE_COLORS["resubscribe"]
+    accent    = _ACCENT_COLORS["resubscribe"]
     cards_html, attachments = [], {}
 
     for rec in recommendations:
@@ -322,6 +348,7 @@ def _build_resubscribe_content(recommendations: list[dict]) -> tuple[str, str, A
             cost_rows    = [],
             reason       = "High-interest content is returning to this service.",
             extra_html   = extra,
+            accent_color = accent,
         )
         cards_html.append(card_html)
         attachments.update(card_atts)
@@ -393,6 +420,7 @@ def build_digest(analysis_results: dict) -> tuple[str, Attachments] | None:
                 billing_line = "Billing date appears stale",
                 cost_rows    = [],
                 reason       = r.get("reason", "Please update the billing date in Streamsaver."),
+                accent_color = _ACCENT_COLORS["uncertain"],
             )
             unc_html.append(card_html)
             unc_atts.update(card_atts)
