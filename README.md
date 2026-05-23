@@ -1,6 +1,11 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/logos/streamsaver_header_transparent.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/logos/streamsaver_header.jpg">
+  <img alt="Streamsaver — Streaming Cost Intelligence" src="assets/logos/streamsaver_header.jpg" width="480">
+</picture>
+
 # Streamsaver
 
-**Author:** Noah Lee  
 **Stack:** Python 3 · Tkinter · SQLite · Gmail SMTP · Trakt API · TMDb API  
 **Status:** v1.0 — stable
 
