@@ -2,9 +2,9 @@
 
 **Author:** Noah Lee  
 **Stack:** Python 3 · Tkinter · SQLite · Gmail SMTP · Trakt API · TMDb API  
-**Status:** Beta
+**Status:** v1.0 — stable
 
-Smart streaming cost management — tracks your Trakt.tv watch history, scores shows by recent activity, maps them to streaming services via TMDb, and tells you when to suspend or resubscribe to save money.
+Smart streaming cost management — tracks your Trakt.tv watch history, scores shows by recent activity, maps them to streaming services via TMDb, and sends you daily email recommendations on when to suspend, resubscribe, or skip an annual renewal.
 
 ---
 
@@ -13,9 +13,10 @@ Smart streaming cost management — tracks your Trakt.tv watch history, scores s
 - **Interest scoring** — Weights your watch history (+10 watched last 7 days, +5 last 30 days, binge bonus, dormancy penalty) to classify each show as Active, Occasional, Dormant, Anticipated, or Archived
 - **Show → Service matching** — Automatically maps each show to its streaming provider via TMDb's flatrate provider data
 - **Suspend recommendations** — Flags subscribed services with no active shows and no upcoming premieres before the next billing date
+- **Annual billing analysis** — Detects low-engagement services approaching an annual renewal and recommends skipping; flags active services worth renewing
 - **Resubscribe alerts** — Detects anticipated shows with high interest scores returning on services you've suspended
 - **Incremental sync** — Only pulls watch history since the last sync (first sync: last 1 year); caps at 200 shows
-- **Email reports** — Dracula-themed HTML reports sent via Gmail SMTP
+- **Email reports** — Dracula-themed HTML digest emails sent via Gmail SMTP with CID-embedded service logos (compatible with Gmail, Apple Mail, and Outlook)
 
 ---
 
@@ -62,6 +63,8 @@ Enter your passphrase when prompted to unlock credentials.
 
 Go to the **Services** tab, click **Add Service**, and pick from the TMDb provider dropdown. Enter your monthly/annual cost and next billing date.
 
+Service logos are downloaded automatically from TMDb and cached locally in `assets/logos/`. No external image fetches happen during email rendering.
+
 ### 6. Sync and analyse
 
 In **Settings**, click **🔄 Sync Trakt Now** to pull your watch history. Then click **📧 Run Analysis & Send Report** to get suspend/resubscribe recommendations.
@@ -102,8 +105,12 @@ python scheduler.py --run-at 08:00
 |---|---|
 | **Services tab** | Add/edit/delete streaming services with TMDb provider picker. Set status: Subscribed, Suspended, Unsubscribed, Not Subscribed. Enter monthly/annual cost and billing date. |
 | **Shows tab** | View all synced shows with interest score, show state (color-coded), primary streaming provider, last watched date, and next air date. Filter by state. Manually mark shows as abandoned. |
-| **Settings tab** | Set notification email. Configure country for provider data. Sync Trakt, refresh providers, and run analysis on demand. Displays last sync timestamp. |
-| **Email reports** | Dracula-themed HTML reports sent to your notification email for suspend and resubscribe recommendations. |
+| **Settings tab** | Set notification email. Configure country for provider data. Sync Trakt, refresh providers, and run analysis + email on demand. Displays last sync timestamp. |
+| **Email digest** | Single daily email covering all recommendation types — suspend, consider non-renewal, likely worth renewing, and resubscribe. Service logos embedded as CID attachments (no external URLs). |
+| **Suspend** | Monthly services with no active or upcoming content flagged before billing date. Shows monthly + annual savings if paused. |
+| **Consider Non-Renewal** | Annual services nearing renewal with low engagement. Highlights that access continues through the paid period. |
+| **Likely Worth Renewing** | Annual services nearing renewal with active engagement — confirms the renewal is justified. |
+| **Resubscribe** | Previously suspended services with returning high-interest content — lists upcoming show titles and air dates. |
 
 ---
 
@@ -129,13 +136,15 @@ streamsaver/
 ├── setup_credentials.py           # Credential setup wizard (PIN OAuth)
 ├── db.py                          # SQLite init, schema, migrations
 ├── requirements.txt
+├── assets/
+│   └── logos/                     # Cached TMDb provider logos (PNG/JPEG, gitignored)
 ├── config/                        # credentials.enc + .salt (auto-created, gitignored)
 ├── data/                          # streamsaver.db + logs (auto-created, gitignored)
 ├── core/
 │   ├── trakt_client.py            # Trakt REST API wrapper
 │   ├── tmdb_client.py             # TMDb API wrapper (providers + show lookup)
 │   ├── show_tracker.py            # Incremental sync, interest scoring, archive pass
-│   ├── service_manager.py         # Service CRUD and provider cache
+│   ├── service_manager.py         # Service CRUD, provider cache, logo downloader
 │   └── analysis.py                # Suspend / resubscribe recommendation engine
 ├── gui/
 │   ├── app.py                     # Main window + credential unlock
@@ -143,11 +152,12 @@ streamsaver/
 │   ├── widgets.py                 # Shared themed widgets + ttk styles
 │   ├── services_page.py           # Services tab
 │   ├── shows_page.py              # Shows tab (state badges, scores)
-│   └── settings_page.py           # Settings tab
+│   └── settings_page.py           # Settings tab (sync, analysis, email)
 └── email_reports/
-    ├── report_builder.py           # HTML report generator
-    ├── mailer.py                   # Gmail SMTP sender
-    └── templates/base.html         # Dracula email template
+    ├── logo.py                    # Centralized logo helper (CID attachment renderer)
+    ├── report_builder.py          # HTML report + digest builder
+    ├── mailer.py                  # Gmail SMTP sender (multipart/related)
+    └── templates/base.html        # Dracula email shell template
 ```
 
 ---
