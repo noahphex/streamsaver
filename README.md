@@ -30,7 +30,10 @@ Smart streaming cost management — tracks your Trakt.tv watch history, scores s
 ### 1. Prerequisites
 
 - Python 3.11+ with Tkinter  
-  *macOS Homebrew:* `brew install python-tk@3.14`
+  *macOS Homebrew:* Tkinter must match your Python version. Run the following to install the right one automatically:
+  ```bash
+  brew install python-tk@$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+  ```
 
 ### 2. Install dependencies
 

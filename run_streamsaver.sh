@@ -36,6 +36,20 @@ check_venv() {
     fi
 }
 
+check_tkinter() {
+    if ! "$PYTHON" -c "import _tkinter" 2>/dev/null; then
+        PY_VER=$("$PYTHON" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+        echo "❌  Tkinter is not available in your Python $PY_VER installation." >&2
+        echo "" >&2
+        echo "    Fix it by running:" >&2
+        echo "      brew install python-tk@${PY_VER}" >&2
+        echo "" >&2
+        echo "    Then delete the venv and re-run this script:" >&2
+        echo "      rm -rf .venv && ./run_streamsaver.sh" >&2
+        exit 1
+    fi
+}
+
 # ── Argument parsing ──────────────────────────────────────────────────────────
 
 MODE="gui"
@@ -61,6 +75,7 @@ if [[ -f "$SCRIPT_DIR/.env" ]]; then
 fi
 
 check_venv
+check_tkinter
 
 # ── Launch ────────────────────────────────────────────────────────────────────
 
