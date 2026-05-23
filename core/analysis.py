@@ -47,6 +47,33 @@ def _parse_date(raw: Optional[str]) -> Optional[date]:
         return None
 
 
+def _activity_label(watch_score: int, active_count: int) -> str:
+    """Return human-readable viewer activity label from raw scores."""
+    if active_count > 0 or watch_score >= 70:
+        return "High"
+    if watch_score >= LOW_USAGE_SCORE:
+        return "Medium"
+    if watch_score > 0:
+        return "Low"
+    return "None"
+
+
+def _confidence_label(watch_score: int, active_count: int) -> str:
+    """
+    Return recommendation confidence based on signal clarity.
+    High = very clear signal (strongly active or completely inactive).
+    Medium = some signal but mixed.
+    Low = minimal data.
+    """
+    if watch_score == 0 and active_count == 0:
+        return "High"     # completely inactive — unambiguous
+    if active_count >= 2 or watch_score >= 50:
+        return "High"     # strong engagement — unambiguous
+    if watch_score >= LOW_USAGE_SCORE or active_count > 0:
+        return "Medium"
+    return "Low"
+
+
 def _advance_billing_date(anchor: date, cycle: str, today: date) -> tuple[date, bool]:
     """
     Roll a billing anchor forward to the next future billing date.
@@ -224,7 +251,8 @@ def run_analysis() -> dict:
                             **summary,
                             "reason": (
                                 f"Annual plan renews in {days_until_renewal} days. "
-                                f"{signals['active_count']} active show(s), watch score {signals['watch_score']}."
+                                f"{signals['active_count']} active show(s). "
+                                f"Viewer activity: {_activity_label(signals['watch_score'], signals['active_count'])}."
                             ),
                         })
                     else:
@@ -232,7 +260,7 @@ def run_analysis() -> dict:
                             **summary,
                             "reason": (
                                 f"Annual plan renews in {days_until_renewal} days. "
-                                f"Low engagement — watch score {signals['watch_score']}. "
+                                f"Viewer activity: {_activity_label(signals['watch_score'], signals['active_count'])}. "
                                 "Consider disabling auto-renew."
                             ),
                         })
@@ -240,9 +268,9 @@ def run_analysis() -> dict:
                     # Monthly
                     if signals["active_count"] > 0 or signals["watch_score"] >= LOW_USAGE_SCORE:
                         result["keep"].append({
-                            **summary,
-                            "reason": f"{signals['active_count']} active show(s), watch score {signals['watch_score']}.",
-                        })
+                                **summary,
+                                "reason": f"{signals['active_count']} active show(s). Viewer activity: {_activity_label(signals['watch_score'], signals['active_count'])}.",
+                            })
                     else:
                         # Check for upcoming content before billing
                         upcoming_before_billing = [
@@ -258,8 +286,8 @@ def run_analysis() -> dict:
                             result["suspend"].append({
                                 **summary,
                                 "reason": (
-                                    f"No active shows and no upcoming content before {next_billing}. "
-                                    f"Watch score: {signals['watch_score']}."
+                                    f"No active shows or upcoming content before {next_billing}. "
+                                    f"Viewer activity: {_activity_label(signals['watch_score'], signals['active_count'])}."
                                 ),
                             })
 
@@ -297,6 +325,7 @@ def _build_summary(svc: dict, billing_date: date, signals: dict, cycle: str, day
         "icon_path":     svc.get("icon_path"),
         "active_count":  signals["active_count"],
         "watch_score":   signals["watch_score"],
+        "confidence":    _confidence_label(signals["watch_score"], signals["active_count"]),
     }
 
 

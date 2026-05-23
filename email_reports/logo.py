@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-_LOGO_SIZE   = 64
-_IMG_SIZE    = 44
+_LOGO_SIZE   = 60
+_IMG_SIZE    = 52
 _LOGO_BG     = "#1f2230"
 _LOGO_BORDER = "#40445c"
 

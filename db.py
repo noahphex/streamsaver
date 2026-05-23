@@ -153,6 +153,7 @@ def init_db() -> None:
             ("billing_cycle",       "TEXT NOT NULL DEFAULT 'monthly'"),
             ("billing_anchor_date", "TEXT"),
             ("auto_renew",          "INTEGER NOT NULL DEFAULT 1"),
+            ("icon_last_updated",   "TEXT"),
         ])
 
         # Rebuild shows table if it's missing the 'completed' state in its CHECK constraint
