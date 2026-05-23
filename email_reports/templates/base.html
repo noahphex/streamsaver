@@ -6,6 +6,9 @@
 
   Placeholders filled by report_builder.py:
     {{TITLE}}, {{PREHEADER}}, {{CONTENT}}, {{YEAR}}
+
+  Compatibility: Gmail, Apple Mail, Outlook desktop/web, iOS Mail
+  Layout: table-based only — no flexbox, grid, CSS variables, or external fonts
 -->
 <html lang="en">
 <head>
@@ -13,85 +16,72 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{TITLE}}</title>
   <style>
-    /* ── Reset ── */
     body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
-    body { margin: 0; padding: 0; background-color: #1e1f29; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+    body { margin: 0; padding: 0; background-color: #1c1f2b; font-family: Arial, Helvetica, sans-serif; }
     img  { border: 0; display: block; }
-
-    /* ── Dracula palette ── */
-    :root {
-      --bg:          #282a36;
-      --bg-alt:      #44475a;
-      --fg:          #f8f8f2;
-      --comment:     #6272a4;
-      --cyan:        #8be9fd;
-      --green:       #50fa7b;
-      --orange:      #ffb86c;
-      --pink:        #ff79c6;
-      --purple:      #bd93f9;
-      --red:         #ff5555;
-      --yellow:      #f1fa8c;
-    }
-
-    /* ── Layout ── */
-    .wrapper   { width: 100%; background-color: #1e1f29; padding: 20px 0; }
-    .container { max-width: 620px; margin: 0 auto; background-color: #282a36;
-                 border-radius: 8px; overflow: hidden;
-                 border: 1px solid #44475a; }
-
-    /* ── Header ── */
-    .header    { background-color: #44475a; padding: 24px 32px; text-align: center; }
-    .header h1 { color: #bd93f9; font-size: 22px; margin: 0; letter-spacing: 1px; }
-    .header p  { color: #6272a4; font-size: 13px; margin: 6px 0 0; }
-
-    /* ── Body ── */
-    .body      { padding: 28px 32px; }
-    .body p    { color: #f8f8f2; font-size: 15px; line-height: 1.6; margin: 0 0 16px; }
-    .body h2   { color: #8be9fd; font-size: 17px; margin: 24px 0 10px; border-bottom: 1px solid #44475a; padding-bottom: 6px; }
-    .body h3   { color: #bd93f9; font-size: 15px; margin: 16px 0 6px; }
-
-    /* ── Service card (outer container only — internals use inline styles) ── */
-    .service-card { background-color: #282a36; border: 1px solid #44475a;
-                    border-radius: 8px; padding: 18px 20px; margin-bottom: 16px; }
-
-    /* ── CTA button ── */
-    .cta          { text-align: center; margin: 24px 0 8px; }
-    .cta a        { background-color: #bd93f9; color: #282a36;
-                    text-decoration: none; font-weight: bold; font-size: 14px;
-                    padding: 10px 28px; border-radius: 6px; display: inline-block; }
-
-    /* ── Footer ── */
-    .footer       { background-color: #1e1f29; padding: 16px 32px;
-                    text-align: center; }
-    .footer p     { color: #6272a4; font-size: 12px; margin: 0; }
+    table { border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+    h1, h2, h3, p { margin: 0; padding: 0; }
   </style>
 </head>
-<body>
+<body bgcolor="#1c1f2b" style="margin:0;padding:0;background-color:#1c1f2b;">
+
   <!-- Preheader text (hidden, shown in email preview) -->
-  <span style="display:none;font-size:1px;color:#1e1f29;max-height:0;overflow:hidden;">
+  <span style="display:none;font-size:1px;color:#1c1f2b;max-height:0;overflow:hidden;mso-hide:all;">
     {{PREHEADER}}&nbsp;&zwnj;&nbsp;&zwnj;
   </span>
 
-  <div class="wrapper">
-    <div class="container">
+  <!-- Outer wrapper -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#1c1f2b"
+    style="background-color:#1c1f2b;">
+    <tr>
+      <td align="center" style="padding:24px 12px;">
 
-      <!-- Header -->
-      <div class="header">
-        <h1>💾 Streamsaver</h1>
-        <p>Streaming cost intelligence</p>
-      </div>
+        <!-- Container: max 620px -->
+        <table width="620" cellpadding="0" cellspacing="0" border="0"
+          style="max-width:620px;width:100%;background-color:#262a3a;border-radius:10px;
+                 border:1px solid #3a3d52;">
 
-      <!-- Content injected by report_builder.py -->
-      <div class="body">
-        {{CONTENT}}
-      </div>
+          <!-- App header -->
+          <tr>
+            <td align="center" bgcolor="#262a3a"
+              style="padding:28px 32px 22px;border-bottom:1px solid #3a3d52;
+                     background-color:#262a3a;border-radius:10px 10px 0 0;">
+              <p style="font-family:Arial,Helvetica,sans-serif;font-size:36px;
+                         font-weight:700;color:#bd93f9;letter-spacing:1px;">
+                Streamsaver
+              </p>
+              <p style="font-family:Arial,Helvetica,sans-serif;font-size:13px;
+                         color:#6272a4;margin-top:6px;">
+                Streaming cost intelligence
+              </p>
+            </td>
+          </tr>
 
-      <!-- Footer -->
-      <div class="footer">
-        <p>Streamsaver &bull; Automated report &bull; {{YEAR}}</p>
-      </div>
+          <!-- Content injected by report_builder.py -->
+          <tr>
+            <td style="padding:28px 28px 8px;background-color:#262a3a;">
+              {{CONTENT}}
+            </td>
+          </tr>
 
-    </div>
-  </div>
+          <!-- Footer -->
+          <tr>
+            <td align="center" bgcolor="#1c1f2b"
+              style="padding:16px 32px;background-color:#1c1f2b;
+                     border-top:1px solid #3a3d52;border-radius:0 0 10px 10px;">
+              <p style="font-family:Arial,Helvetica,sans-serif;font-size:12px;
+                         color:#6272a4;">
+                Streamsaver &bull; Automated daily digest &bull; {{YEAR}}
+              </p>
+            </td>
+          </tr>
+
+        </table>
+
+      </td>
+    </tr>
+  </table>
+
 </body>
 </html>
+

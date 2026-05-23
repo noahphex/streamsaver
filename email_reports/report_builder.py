@@ -3,25 +3,49 @@ email_reports/report_builder.py
 Streamsaver — HTML email report builder
 Author: Noah Lee
 
-Single digest email with all actionable recommendation sections.
-All layout uses <table> elements with HTML attributes for email client compatibility.
-No emoji or CSS-only features — ensures correct rendering in Gmail, Apple Mail, Outlook.
+Builds Dracula-themed digest emails using strict <table> layout.
+Compatible with: Gmail, Apple Mail, Outlook desktop/web, iOS Mail.
+No flexbox, no CSS grid, no CSS variables, no external fonts.
+
+Card structure per recommendation:
+  HEADER ROW   — service name + badge (78%) | logo block (22%)
+  DIVIDER      — solid 1px separator
+  METRICS      — 2-column rows (label | value) with dashed dividers
+  REASON ROW   — muted explanation text
 """
 
 import os
+import base64
 from datetime import date
 from typing import Literal
 
 _TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "templates", "base.html")
 
-_FG      = "#f8f8f2"
-_FG_DIM  = "#6272a4"
-_GREEN   = "#50fa7b"
-_ORANGE  = "#ffb86c"
-_RED     = "#ff5555"
-_DIVIDER = "#44475a"
-_CARD_BG = "#282a36"
+# ── Color palette ─────────────────────────────────────────────────────────────
+_FG        = "#f8f8f2"   # primary text
+_FG_DIM    = "#9aa3c7"   # muted / reason text
+_FG_META   = "#6272a4"   # billing date / metadata
+_GREEN     = "#50fa7b"
+_ORANGE    = "#ffb86c"
+_RED       = "#ff5a5f"
+_BLUE      = "#8be9fd"
+_PURPLE    = "#bd93f9"
+_AMBER     = "#ffb86c"
+_DIVIDER   = "#3a3d52"
+_CARD_BG   = "#2f3447"
+_LOGO_BG   = "#1c1f2b"
+
+# Avatar fallback colors keyed by service name hash
 _AVATAR_COLORS = ["#bd93f9", "#8be9fd", "#ffb86c", "#ff79c6", "#50fa7b", "#6272a4"]
+
+# Semantic badge colors per recommendation type
+_BADGE_COLORS = {
+    "suspend":              (_RED,    "#ffffff"),
+    "consider_non_renewal": (_AMBER,  "#1c1f2b"),
+    "renew_soon":           (_BLUE,   "#1c1f2b"),
+    "resubscribe":          (_PURPLE, "#ffffff"),
+    "uncertain":            (_RED,    "#ffffff"),
+}
 
 
 def _load_template() -> str:
@@ -37,129 +61,176 @@ def _render(template: str, **kwargs) -> str:
 
 def _logo_html(icon_path: str | None, name: str, size: int = 72) -> str:
     """
-    Inline-base64 <img> if icon exists; otherwise a colored initial-letter square.
-    Uses HTML attributes (width/height/bgcolor) for email client compatibility.
+    Returns an email-safe logo block:
+    - Inline base64 <img> if icon file exists on disk.
+    - Colored initial-letter avatar table as fallback.
+    Logo is wrapped in a dark bordered box matching the spec.
     """
+    inner_size = size - 20  # 10px padding each side
+
     if icon_path and os.path.exists(icon_path):
-        import base64
         with open(icon_path, "rb") as fh:
             data = base64.b64encode(fh.read()).decode()
-        ext  = os.path.splitext(icon_path)[1].lstrip(".")
-        mime = "image/png" if ext == "png" else f"image/{ext}"
-        return (
+        ext  = os.path.splitext(icon_path)[1].lstrip(".").lower()
+        mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
+        img  = (
             f'<img src="data:{mime};base64,{data}" alt="" border="0" '
-            f'width="{size}" height="{size}" '
-            f'style="display:block;border-radius:10px;">'
+            f'width="{inner_size}" height="{inner_size}" '
+            f'style="display:block;border-radius:6px;object-fit:contain;">'
         )
-    initial = name[0].upper() if name else "?"
-    color   = _AVATAR_COLORS[hash(name) % len(_AVATAR_COLORS)]
-    fsize   = size // 3
-    # bgcolor + width/height as HTML attributes ensure rendering in all email clients
+    else:
+        initial = name[0].upper() if name else "?"
+        color   = _AVATAR_COLORS[hash(name) % len(_AVATAR_COLORS)]
+        fsize   = inner_size // 3
+        img = (
+            f'<table width="{inner_size}" height="{inner_size}" cellpadding="0" '
+            f'cellspacing="0" border="0" bgcolor="{color}" '
+            f'style="background-color:{color};border-radius:6px;">'
+            f'<tr><td width="{inner_size}" height="{inner_size}" align="center" '
+            f'valign="middle" style="font-size:{fsize}px;font-weight:700;'
+            f'color:#1c1f2b;font-family:Arial,Helvetica,sans-serif;">'
+            f'{initial}</td></tr></table>'
+        )
+
+    # Dark bordered container box
     return (
-        f'<table width="{size}" height="{size}" cellpadding="0" cellspacing="0" '
-        f'border="0" bgcolor="{color}" '
-        f'style="background-color:{color};border-radius:10px;">'
-        f'<tr><td width="{size}" height="{size}" align="center" valign="middle" '
-        f'style="font-size:{fsize}px;font-weight:bold;color:#282a36;'
-        f'font-family:Arial,sans-serif;text-align:center;">'
-        f'{initial}</td></tr></table>'
+        f'<table width="{size}" height="{size}" cellpadding="10" cellspacing="0" '
+        f'border="0" bgcolor="{_LOGO_BG}" '
+        f'style="background-color:{_LOGO_BG};border-radius:14px;'
+        f'border:1px solid {_DIVIDER};width:{size}px;height:{size}px;">'
+        f'<tr><td align="center" valign="middle">{img}</td></tr></table>'
     )
 
 
-def _badge(label: str, bg: str, fg: str = "#282a36") -> str:
+def _badge(label: str, bg: str, fg: str) -> str:
     return (
         f'<span style="display:inline-block;background:{bg};color:{fg};'
-        f'font-size:11px;font-weight:bold;padding:3px 10px;border-radius:4px;'
-        f'text-transform:uppercase;letter-spacing:0.5px;margin-left:8px;">{label}</span>'
+        f'font-size:11px;font-weight:700;letter-spacing:0.6px;'
+        f'padding:6px 12px;border-radius:8px;font-family:Arial,Helvetica,sans-serif;'
+        f'text-transform:uppercase;">{label}</span>'
     )
 
 
 def _build_card(
     name: str,
     icon_path: str | None,
-    badge_html: str,
+    badge_label: str,
+    badge_bg: str,
+    badge_fg: str,
     billing_line: str,
     cost_rows: list[tuple[str, str]],   # (label, value)
     reason: str,
     extra_html: str = "",
 ) -> str:
     """
-    Email-safe service card using nested <table> elements.
-    Header: name/badge/billing date left, logo right.
-    Body: plain 2-column cost rows, optional extra block, reason footer.
-    No emoji — avoids rendering inconsistencies across email clients.
+    Strict 3-section email-safe card:
+      HEADER  — 78% info | 22% logo
+      METRICS — 2-col rows with dashed dividers
+      REASON  — muted footer text
     """
     logo = _logo_html(icon_path, name)
 
-    # Two-column header: info left, logo right
+    # ── HEADER ROW: 78% info | 22% logo ─────────────────────────────────────
     header = (
-        f'<table width="100%" cellpadding="0" cellspacing="0" border="0">'
+        f'<table width="100%" cellpadding="0" cellspacing="0" border="0" '
+        f'role="presentation">'
         f'<tr>'
-        f'<td valign="top" style="padding-right:16px;">'
-        f'<p style="margin:0 0 8px;color:{_FG};font-size:17px;font-weight:bold;'
-        f'font-family:Arial,sans-serif;line-height:1.3;">{name}{badge_html}</p>'
-        f'<p style="margin:0;color:{_FG_DIM};font-size:13px;'
-        f'font-family:Arial,sans-serif;">{billing_line}</p>'
+        # Info cell — owns 78% of width
+        f'<td width="78%" valign="top" '
+        f'style="padding:0 16px 0 0;vertical-align:top;">'
+        f'<p style="font-family:Arial,Helvetica,sans-serif;font-size:16px;'
+        f'font-weight:700;color:{_FG};margin:0 0 8px;line-height:1.3;">'
+        f'{name}</p>'
+        f'<p style="margin:0 0 10px;">{_badge(badge_label, badge_bg, badge_fg)}</p>'
+        f'<p style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
+        f'font-weight:500;color:{_FG_META};margin:0;line-height:1.4;">'
+        f'{billing_line}</p>'
         f'</td>'
-        f'<td valign="top" align="right" width="{72}" style="width:72px;">'
+        # Logo cell — fixed 22%, right-aligned
+        f'<td width="22%" valign="top" align="right" '
+        f'style="vertical-align:top;">'
         f'{logo}'
         f'</td>'
         f'</tr></table>'
     )
 
-    # Solid divider after header
+    # ── SOLID DIVIDER ────────────────────────────────────────────────────────
     divider = (
         f'<table width="100%" cellpadding="0" cellspacing="0" border="0" '
-        f'style="margin:14px 0 0;">'
+        f'style="margin:18px 0 0;">'
         f'<tr><td height="1" bgcolor="{_DIVIDER}" '
-        f'style="font-size:0;line-height:0;background-color:{_DIVIDER};">'
-        f'</td></tr></table>'
+        f'style="font-size:0;line-height:0;background-color:{_DIVIDER};"></td></tr>'
+        f'</table>'
     )
 
-    # Cost rows: plain 2-column (label | value), dashed dividers between rows
+    # ── METRICS ROWS: 2-col, dashed dividers between rows ────────────────────
     rows_html = ""
     for i, (label, value) in enumerate(cost_rows):
         border = f"border-top:1px dashed {_DIVIDER};" if i > 0 else ""
         rows_html += (
             f'<tr>'
-            f'<td style="color:{_FG};font-size:14px;font-family:Arial,sans-serif;'
-            f'padding:8px 0;{border}">{label}</td>'
-            f'<td align="right" style="color:{_GREEN};font-size:14px;font-weight:bold;'
-            f'font-family:Arial,sans-serif;padding:8px 0;white-space:nowrap;{border}">'
-            f'{value}</td>'
+            f'<td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
+            f'font-weight:600;color:{_FG};padding:12px 0;{border}">{label}</td>'
+            f'<td align="right" style="font-family:Arial,Helvetica,sans-serif;'
+            f'font-size:15px;font-weight:700;color:{_GREEN};padding:12px 0;'
+            f'white-space:nowrap;{border}">{value}</td>'
             f'</tr>'
         )
-    costs = (
+    metrics = (
         f'<table width="100%" cellpadding="0" cellspacing="0" border="0">'
         f'{rows_html}</table>'
         if rows_html else ""
     )
 
-    # Dashed divider before reason footer
+    # ── REASON FOOTER ────────────────────────────────────────────────────────
     reason_divider = (
         f'<table width="100%" cellpadding="0" cellspacing="0" border="0" '
-        f'style="margin:10px 0 6px;">'
-        f'<tr><td height="1" style="font-size:0;line-height:0;'
+        f'style="margin:8px 0 10px;">'
+        f'<tr><td style="font-size:0;line-height:0;'
         f'border-top:1px dashed {_DIVIDER};"></td></tr></table>'
     )
     reason_block = (
-        f'<p style="color:{_FG_DIM};font-size:13px;font-family:Arial,sans-serif;'
-        f'margin:0;line-height:1.5;">{reason}</p>'
+        f'<p style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
+        f'font-weight:400;color:{_FG_DIM};margin:0;line-height:20px;">'
+        f'{reason}</p>'
     )
 
     return (
-        f'<div style="background:{_CARD_BG};border:1px solid {_DIVIDER};'
-        f'border-radius:8px;padding:18px 20px;margin-bottom:16px;">'
-        f'{header}{divider}{costs}{extra_html}{reason_divider}{reason_block}'
-        f'</div>'
+        f'<table width="100%" cellpadding="20" cellspacing="0" border="0" '
+        f'bgcolor="{_CARD_BG}" style="background-color:{_CARD_BG};'
+        f'border-radius:10px;border:1px solid {_DIVIDER};'
+        f'margin-bottom:16px;">'
+        f'<tr><td style="padding:20px;">'
+        f'{header}{divider}{metrics}{extra_html}{reason_divider}{reason_block}'
+        f'</td></tr></table>'
     )
 
 
 # ── Section builders ───────────────────────────────────────────────────────────
 
+def _section_header(title: str, subtitle: str) -> str:
+    return (
+        f'<p style="font-family:Arial,Helvetica,sans-serif;font-size:18px;'
+        f'font-weight:700;color:{_FG};margin:0 0 6px;">{title}</p>'
+        f'<p style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
+        f'font-weight:400;color:{_FG_DIM};margin:0 0 16px;line-height:20px;">'
+        f'{subtitle}</p>'
+    )
+
+
+def _section_wrap(content: str) -> str:
+    """Add top padding/border between sections."""
+    return (
+        f'<table width="100%" cellpadding="0" cellspacing="0" border="0" '
+        f'style="padding-top:18px;margin-top:18px;border-top:1px solid {_DIVIDER};">'
+        f'<tr><td>{content}</td></tr></table>'
+    )
+
+
 def _build_suspend_content(recommendations: list[dict]) -> tuple[str, str]:
     names     = ", ".join(r["name"] for r in recommendations)
-    preheader = f"Consider suspending: {names} before your next billing date."
+    preheader = f"Consider pausing: {names} before your next billing date."
+    bg, fg    = _BADGE_COLORS["suspend"]
     cards     = []
 
     for rec in recommendations:
@@ -173,61 +244,65 @@ def _build_suspend_content(recommendations: list[dict]) -> tuple[str, str]:
         cards.append(_build_card(
             name         = rec["name"],
             icon_path    = rec.get("icon_path"),
-            badge_html   = _badge("Suspend", _RED),
+            badge_label  = "Suspend",
+            badge_bg     = bg,
+            badge_fg     = fg,
             billing_line = f"Next billing: {rec['billing_date']}",
             cost_rows    = [
-                ("Monthly savings if suspended:", f"${monthly:.2f}"),
-                ("Annual savings if suspended:",  f"${annual:.2f}"),
+                ("Monthly savings if paused", f"${monthly:.2f}"),
+                ("Annual savings if paused",  f"${annual:.2f}"),
             ],
             reason = rec.get("reason", "No upcoming content before next billing date."),
         ))
 
-    return (
-        f'<h2 style="color:{_FG};font-family:Arial,sans-serif;">Services to Suspend</h2>'
-        f'<p style="color:{_FG_DIM};font-family:Arial,sans-serif;">The following monthly '
-        f'subscriptions have low engagement and no upcoming content before the next billing '
-        f'date. Consider suspending to save money.</p>'
-        + "".join(cards),
-        preheader,
+    content = (
+        _section_header("Services to Pause", "Low activity services that may be safe to suspend.")
+        + "".join(cards)
     )
+    return content, preheader
 
 
 def _build_consider_non_renewal_content(recommendations: list[dict]) -> tuple[str, str]:
     names     = ", ".join(r["name"] for r in recommendations)
     preheader = f"Annual renewal approaching for {names} — low engagement detected."
+    bg, fg    = _BADGE_COLORS["consider_non_renewal"]
     cards     = []
 
     for rec in recommendations:
         annual     = float(rec.get("estimated_annual_spend") or rec.get("annual_cost") or 0.0)
         days_until = rec.get("days_until_renewal", "?")
         extra = (
-            f'<p style="color:{_ORANGE};font-size:12px;font-family:Arial,sans-serif;'
-            f'margin:6px 0 0;">Your plan is already paid through {rec["billing_date"]}. '
-            f'You can disable auto-renew now without losing access.</p>'
+            f'<p style="font-family:Arial,Helvetica,sans-serif;font-size:12px;'
+            f'color:{_ORANGE};margin:8px 0 0;line-height:18px;">'
+            f'Your plan is paid through {rec["billing_date"]}. '
+            f'You can disable auto-renew without losing access.</p>'
         )
         cards.append(_build_card(
             name         = rec["name"],
             icon_path    = rec.get("icon_path"),
-            badge_html   = _badge("Consider Non-Renewal", _ORANGE),
+            badge_label  = "Consider Non-Renewal",
+            badge_bg     = bg,
+            badge_fg     = fg,
             billing_line = f"Annual renewal in {days_until} days ({rec['billing_date']})",
-            cost_rows    = [("Annual cost:", f"${annual:.2f}")],
+            cost_rows    = [("Annual cost", f"${annual:.2f}")],
             reason       = rec.get("reason", "Low engagement near renewal window."),
             extra_html   = extra,
         ))
 
-    return (
-        f'<h2 style="color:{_FG};font-family:Arial,sans-serif;">Annual Subscriptions Nearing Renewal</h2>'
-        f'<p style="color:{_FG_DIM};font-family:Arial,sans-serif;">The following annual plans are '
-        f'approaching renewal with low recent engagement. Consider disabling auto-renew if you '
-        f'no longer find value.</p>'
-        + "".join(cards),
-        preheader,
+    content = (
+        _section_header(
+            "Annual Renewals to Review",
+            "Low engagement near renewal — consider disabling auto-renew.",
+        )
+        + "".join(cards)
     )
+    return content, preheader
 
 
 def _build_renew_soon_content(recommendations: list[dict]) -> tuple[str, str]:
     names     = ", ".join(r["name"] for r in recommendations)
     preheader = f"Annual renewal approaching for {names} — looks worth keeping."
+    bg, fg    = _BADGE_COLORS["renew_soon"]
     cards     = []
 
     for rec in recommendations:
@@ -236,42 +311,47 @@ def _build_renew_soon_content(recommendations: list[dict]) -> tuple[str, str]:
         cards.append(_build_card(
             name         = rec["name"],
             icon_path    = rec.get("icon_path"),
-            badge_html   = _badge("Likely Worth Renewing", _GREEN),
+            badge_label  = "Likely Worth Renewing",
+            badge_bg     = bg,
+            badge_fg     = fg,
             billing_line = f"Annual renewal in {days_until} days ({rec['billing_date']})",
-            cost_rows    = [("Annual cost:", f"${annual:.2f}")],
+            cost_rows    = [("Annual cost", f"${annual:.2f}")],
             reason       = rec.get("reason", "Active engagement and upcoming content detected."),
         ))
 
-    return (
-        f'<h2 style="color:{_FG};font-family:Arial,sans-serif;">Annual Subscriptions Approaching Renewal</h2>'
-        f'<p style="color:{_FG_DIM};font-family:Arial,sans-serif;">The following annual plans are '
-        f'nearing renewal and show strong engagement signals. These subscriptions are likely '
-        f'worth keeping.</p>'
-        + "".join(cards),
-        preheader,
+    content = (
+        _section_header(
+            "Annual Renewals Approaching",
+            "Strong engagement signals — these subscriptions look worth keeping.",
+        )
+        + "".join(cards)
     )
+    return content, preheader
 
 
 def _build_resubscribe_content(recommendations: list[dict]) -> tuple[str, str]:
     names     = ", ".join(r["name"] for r in recommendations)
-    preheader = f"Shows returning on: {names} — time to resubscribe!"
+    preheader = f"Shows returning on {names} — time to resubscribe!"
+    bg, fg    = _BADGE_COLORS["resubscribe"]
     cards     = []
 
     for rec in recommendations:
         shows = rec.get("shows", [])
         show_rows = "".join(
             f'<tr>'
-            f'<td style="color:{_FG};font-size:14px;font-family:Arial,sans-serif;'
-            f'padding:6px 0;border-top:1px dashed {_DIVIDER};">{s["title"]}</td>'
-            f'<td align="right" style="color:{_ORANGE};font-size:13px;white-space:nowrap;'
-            f'font-family:Arial,sans-serif;padding:6px 0;border-top:1px dashed {_DIVIDER};">'
+            f'<td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
+            f'color:{_FG};padding:8px 0;border-top:1px dashed {_DIVIDER};">'
+            f'{s["title"]}</td>'
+            f'<td align="right" style="font-family:Arial,Helvetica,sans-serif;'
+            f'font-size:13px;color:{_ORANGE};padding:8px 0;white-space:nowrap;'
+            f'border-top:1px dashed {_DIVIDER};">'
             f'{s.get("next_air_date", "—")}</td>'
             f'</tr>'
             for s in shows
         )
         extra = (
-            f'<p style="color:{_FG};font-size:13px;font-weight:bold;'
-            f'font-family:Arial,sans-serif;margin:8px 0 4px;">Upcoming shows:</p>'
+            f'<p style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
+            f'font-weight:600;color:{_FG};margin:10px 0 6px;">Upcoming shows</p>'
             f'<table width="100%" cellpadding="0" cellspacing="0" border="0">'
             f'{show_rows}</table>'
         ) if shows else ""
@@ -279,20 +359,23 @@ def _build_resubscribe_content(recommendations: list[dict]) -> tuple[str, str]:
         cards.append(_build_card(
             name         = rec["name"],
             icon_path    = rec.get("icon_path"),
-            badge_html   = _badge("Resubscribe", _GREEN) + _badge(rec["status"].title(), "#f1fa8c"),
+            badge_label  = "Resubscribe",
+            badge_bg     = bg,
+            badge_fg     = fg,
             billing_line = f"Last billing date on file: {rec['billing_date']}",
             cost_rows    = [],
             reason       = "High-interest content is returning to this service.",
             extra_html   = extra,
         ))
 
-    return (
-        f'<h2 style="color:{_FG};font-family:Arial,sans-serif;">Services to Resubscribe</h2>'
-        f'<p style="color:{_FG_DIM};font-family:Arial,sans-serif;">The following suspended or '
-        f'unsubscribed services have high-interest shows returning soon. Consider resubscribing.</p>'
-        + "".join(cards),
-        preheader,
+    content = (
+        _section_header(
+            "Services to Resubscribe",
+            "Previously paused services with high-interest content returning soon.",
+        )
+        + "".join(cards)
     )
+    return content, preheader
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
@@ -303,7 +386,7 @@ def build_report(
 ) -> str:
     """Build a single-type HTML email report."""
     dispatch = {
-        "suspend":              (_build_suspend_content,              "Streamsaver — Services to Suspend"),
+        "suspend":              (_build_suspend_content,              "Streamsaver — Services to Pause"),
         "consider_non_renewal": (_build_consider_non_renewal_content, "Streamsaver — Annual Renewals to Review"),
         "renew_soon":           (_build_renew_soon_content,           "Streamsaver — Annual Renewals Approaching"),
         "resubscribe":          (_build_resubscribe_content,          "Streamsaver — Services to Resubscribe"),
@@ -318,14 +401,14 @@ def build_report(
 
 def build_digest(analysis_results: dict) -> str | None:
     """
-    Build a single digest email with all actionable sections.
+    Build a single digest email covering all actionable recommendation types.
     Returns None if there is nothing to report.
     """
     sections      = []
     preview_parts = []
 
     _SECTIONS = [
-        ("suspend",              _build_suspend_content,              "Suspend"),
+        ("suspend",              _build_suspend_content,              "Pause"),
         ("consider_non_renewal", _build_consider_non_renewal_content, "Review renewal"),
         ("renew_soon",           _build_renew_soon_content,           "Renewing soon"),
         ("resubscribe",          _build_resubscribe_content,          "Resubscribe"),
@@ -335,29 +418,33 @@ def build_digest(analysis_results: dict) -> str | None:
         recs = analysis_results.get(key, [])
         if recs:
             content, _ = builder(recs)
-            sections.append(content)
+            sections.append(content if not sections else _section_wrap(content))
             preview_parts.append(f"{prefix}: {', '.join(r['name'] for r in recs)}")
 
     uncertain = analysis_results.get("uncertain", [])
     if uncertain:
+        bg, fg = _BADGE_COLORS["uncertain"]
         unc_cards = "".join(
             _build_card(
                 name         = r["name"],
                 icon_path    = r.get("icon_path"),
-                badge_html   = _badge("Verify Billing", _RED, "#f8f8f2"),
+                badge_label  = "Verify Billing",
+                badge_bg     = bg,
+                badge_fg     = fg,
                 billing_line = "Billing date appears stale",
                 cost_rows    = [],
                 reason       = r.get("reason", "Please update the billing date in Streamsaver."),
             )
             for r in uncertain
         )
-        sections.append(
-            f'<h2 style="color:{_FG};font-family:Arial,sans-serif;">Billing Dates Need Verification</h2>'
-            f'<p style="color:{_FG_DIM};font-family:Arial,sans-serif;">The billing dates for these '
-            f'services appear stale. Please update them in Streamsaver to ensure accurate '
-            f'recommendations.</p>'
+        unc_content = (
+            _section_header(
+                "Billing Dates Need Verification",
+                "These billing dates appear stale — update them in Streamsaver.",
+            )
             + unc_cards
         )
+        sections.append(unc_content if not sections else _section_wrap(unc_content))
         preview_parts.append(f"Verify billing: {', '.join(r['name'] for r in uncertain)}")
 
     if not sections:
