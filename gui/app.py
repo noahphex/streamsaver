@@ -107,7 +107,7 @@ class StreamsaverApp(tk.Tk):
             )
             return
 
-        passphrase = simpledialog.askstring(
+        passphrase = os.environ.get("STREAMSAVER_PASSPHRASE") or simpledialog.askstring(
             "Unlock Streamsaver",
             "Enter your passphrase to decrypt credentials:",
             show="*",

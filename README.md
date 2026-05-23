@@ -88,9 +88,14 @@ The scheduler runs a daily sync + analysis + email pipeline automatically.
 ```
 
 **Passphrase options (in priority order):**
-1. Environment variable: `STREAMSAVER_PASSPHRASE=your_passphrase`
-2. CLI argument: `--passphrase your_passphrase`
-3. Interactive prompt
+1. `.env` file in the project root — `run_streamsaver.sh` sources this automatically:
+   ```bash
+   # .env  (never committed — listed in .gitignore)
+   STREAMSAVER_PASSPHRASE=your_passphrase
+   ```
+2. Environment variable already set in your shell: `STREAMSAVER_PASSPHRASE=your_passphrase`
+3. CLI argument (scheduler only): `--passphrase your_passphrase`
+4. Interactive prompt
 
 ### Cron (macOS/Linux)
 

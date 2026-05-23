@@ -51,6 +51,15 @@ done
 # ── Pre-flight ────────────────────────────────────────────────────────────────
 
 cd "$SCRIPT_DIR"
+
+# Load .env if present (sets STREAMSAVER_PASSPHRASE etc. without committing secrets)
+if [[ -f "$SCRIPT_DIR/.env" ]]; then
+    set -o allexport
+    # shellcheck source=/dev/null
+    source "$SCRIPT_DIR/.env"
+    set +o allexport
+fi
+
 check_venv
 
 # ── Launch ────────────────────────────────────────────────────────────────────
