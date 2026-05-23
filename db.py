@@ -146,11 +146,106 @@ def init_db() -> None:
 
         # Safe migrations for tables that already exist with older schemas
         _migrate_columns(conn, "services", [
-            ("tmdb_provider_id", "INTEGER"),
+            ("tmdb_provider_id",    "INTEGER"),
+            ("billing_cycle",       "TEXT NOT NULL DEFAULT 'monthly'"),
+            ("billing_anchor_date", "TEXT"),
+            ("auto_renew",          "INTEGER NOT NULL DEFAULT 1"),
         ])
 
+        # Rebuild shows table if it's missing the 'completed' state in its CHECK constraint
+        _migrate_shows_check_constraint(conn)
+
+    _migrate_billing_data()
     _seed_default_bundles()
     print(f"✅  Database ready: {DB_PATH}")
+
+
+# ── Schema migrations ───────────────────────────────────────────────────────────
+
+def _migrate_shows_check_constraint(conn) -> None:
+    """
+    Rebuild the shows table if it's missing 'completed' from the show_state
+    CHECK constraint. SQLite doesn't support ALTER COLUMN, so we use the
+    rename-copy-drop pattern. Safe to call repeatedly.
+    """
+    # Detect old constraint by attempting a test insert
+    try:
+        conn.execute(
+            "INSERT INTO shows (trakt_id, title, show_state) VALUES ('__chk__', '__chk__', 'completed')"
+        )
+        conn.execute("DELETE FROM shows WHERE trakt_id = '__chk__'")
+        return  # already supports 'completed'
+    except Exception:
+        pass  # needs migration
+
+    conn.executescript("""
+        PRAGMA foreign_keys = OFF;
+
+        CREATE TABLE IF NOT EXISTS shows_new (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            trakt_id            TEXT    NOT NULL UNIQUE,
+            tmdb_id             INTEGER,
+            title               TEXT    NOT NULL,
+            trakt_status        TEXT,
+            show_state          TEXT    NOT NULL DEFAULT 'dormant'
+                                        CHECK(show_state IN (
+                                            'active','occasional','dormant','completed',
+                                            'abandoned','anticipated',
+                                            'ignored','archived'
+                                        )),
+            interest_score      INTEGER NOT NULL DEFAULT 0,
+            last_season_seen    INTEGER DEFAULT 0,
+            completion_percent  REAL    DEFAULT 0.0,
+            last_watch_date     TEXT,
+            next_air_date       TEXT,
+            primary_provider    TEXT,
+            primary_provider_id INTEGER,
+            abandoned_override  BOOLEAN NOT NULL DEFAULT 0,
+            service_id          INTEGER REFERENCES services(id) ON DELETE SET NULL
+        );
+
+        INSERT INTO shows_new SELECT * FROM shows;
+        DROP TABLE shows;
+        ALTER TABLE shows_new RENAME TO shows;
+
+        PRAGMA foreign_keys = ON;
+    """)
+
+
+def _migrate_billing_data() -> None:
+    """
+    One-time migration: auto-detect billing_cycle from cost fields and clear
+    fake annual_cost values (monthly * 12 approximations) for monthly services.
+    Sets billing_anchor_date = next_billing_date for all services as initial anchor.
+    Safe to run repeatedly.
+    """
+    with db_session() as conn:
+        rows = conn.execute(
+            "SELECT id, monthly_cost, annual_cost, next_billing_date, billing_cycle FROM services"
+        ).fetchall()
+
+        for r in rows:
+            mc = r["monthly_cost"] or 0.0
+            ac = r["annual_cost"] or 0.0
+            cycle = r["billing_cycle"]
+            anchor = r["next_billing_date"]
+
+            # Auto-detect cycle if still at default
+            if cycle == "monthly" and ac > 0 and mc == 0:
+                # Only annual cost set → this is an annual plan
+                cycle = "annual"
+            elif cycle == "monthly" and ac > 0 and mc > 0:
+                # Both set → monthly plan with fake derived annual; clear annual
+                ac = 0.0
+
+            conn.execute(
+                """UPDATE services
+                   SET billing_cycle = ?,
+                       annual_cost = ?,
+                       billing_anchor_date = COALESCE(billing_anchor_date, ?)
+                   WHERE id = ?""",
+                (cycle, ac, anchor, r["id"]),
+            )
 
 
 # ── Default bundle seeds ────────────────────────────────────────────────────────

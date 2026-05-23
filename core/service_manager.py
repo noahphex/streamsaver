@@ -179,6 +179,22 @@ def get_network_provider_id(name: str) -> Optional[int]:
     return row["provider_id"] if row else None
 
 
+def estimated_monthly_spend(svc: dict) -> float:
+    """Derive a normalized monthly spend regardless of billing cycle."""
+    cycle = svc.get("billing_cycle", "monthly")
+    if cycle == "annual":
+        return round((svc.get("annual_cost") or 0.0) / 12, 2)
+    return svc.get("monthly_cost") or 0.0
+
+
+def estimated_annual_spend(svc: dict) -> float:
+    """Derive a normalized annual spend regardless of billing cycle."""
+    cycle = svc.get("billing_cycle", "monthly")
+    if cycle == "monthly":
+        return round((svc.get("monthly_cost") or 0.0) * 12, 2)
+    return svc.get("annual_cost") or 0.0
+
+
 # ── CRUD ───────────────────────────────────────────────────────────────────────
 
 def add_service(
@@ -190,17 +206,30 @@ def add_service(
     trakt_network_id: Optional[str] = None,
     tmdb_provider_id: Optional[int] = None,
     icon_path: Optional[str] = None,
+    billing_cycle: str = "monthly",
+    billing_anchor_date: Optional[str] = None,
+    auto_renew: int = 1,
 ) -> int:
     """
     Insert a new service. Returns the new row id.
-    If annual_cost is 0 and monthly_cost > 0, annual_cost is auto-calculated.
     Auto-downloads the provider icon from TMDb cache if not already supplied.
+    billing_cycle should be 'monthly' or 'annual'; only supply the matching cost field.
     """
     if status not in VALID_STATUSES:
         raise ValueError(f"Invalid status '{status}'. Must be one of: {VALID_STATUSES}")
 
-    if annual_cost == 0.0 and monthly_cost > 0:
-        annual_cost = round(monthly_cost * 12, 2)
+    # Auto-detect billing cycle from cost fields if not explicitly set
+    if billing_cycle == "monthly" and annual_cost > 0 and monthly_cost == 0:
+        billing_cycle = "annual"
+
+    # Clear the cost that doesn't match the cycle (no fake derived values)
+    if billing_cycle == "annual":
+        monthly_cost = 0.0
+    else:
+        annual_cost = 0.0
+
+    if not billing_anchor_date:
+        billing_anchor_date = next_billing_date
 
     # Auto-resolve icon from network cache if not provided
     if not icon_path:
@@ -219,11 +248,13 @@ def add_service(
             """
             INSERT INTO services
                 (name, trakt_network_id, tmdb_provider_id, icon_path, status,
-                 monthly_cost, annual_cost, next_billing_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 monthly_cost, annual_cost, next_billing_date,
+                 billing_cycle, billing_anchor_date, auto_renew)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (name, trakt_network_id, tmdb_provider_id, icon_path, status,
-             monthly_cost, annual_cost, next_billing_date),
+             monthly_cost, annual_cost, next_billing_date,
+             billing_cycle, billing_anchor_date, auto_renew),
         )
         return cursor.lastrowid
 
@@ -238,6 +269,9 @@ def update_service(
     trakt_network_id: Optional[str] = None,
     tmdb_provider_id: Optional[int] = None,
     icon_path: Optional[str] = None,
+    billing_cycle: Optional[str] = None,
+    billing_anchor_date: Optional[str] = None,
+    auto_renew: Optional[int] = None,
 ) -> None:
     """Update one or more fields on an existing service."""
     if status and status not in VALID_STATUSES:
@@ -247,14 +281,17 @@ def update_service(
     values = []
 
     updates = {
-        "name":              name,
-        "status":            status,
-        "monthly_cost":      monthly_cost,
-        "annual_cost":       annual_cost,
-        "next_billing_date": next_billing_date,
-        "trakt_network_id":  trakt_network_id,
-        "tmdb_provider_id":  tmdb_provider_id,
-        "icon_path":         icon_path,
+        "name":                name,
+        "status":              status,
+        "monthly_cost":        monthly_cost,
+        "annual_cost":         annual_cost,
+        "next_billing_date":   next_billing_date,
+        "trakt_network_id":    trakt_network_id,
+        "tmdb_provider_id":    tmdb_provider_id,
+        "icon_path":           icon_path,
+        "billing_cycle":       billing_cycle,
+        "billing_anchor_date": billing_anchor_date,
+        "auto_renew":          auto_renew,
     }
     for col, val in updates.items():
         if val is not None:
@@ -320,11 +357,13 @@ def set_service_status(service_id: int, new_status: str) -> None:
 
 def get_cost_totals(status_filter: Optional[str] = None) -> dict:
     """
-    Calculate total monthly and annual costs.
+    Calculate total estimated monthly and annual spend.
+
+    Uses estimated_monthly_spend / estimated_annual_spend (derived at runtime)
+    so the totals reflect real subscription cost regardless of billing cycle.
 
     Args:
         status_filter: If provided, only include services matching this status.
-                       Pass None to include all services.
 
     Returns:
         dict with keys: monthly_total, annual_total, services (list of dicts)
@@ -333,8 +372,8 @@ def get_cost_totals(status_filter: Optional[str] = None) -> dict:
     if status_filter:
         services = [s for s in services if s["status"] == status_filter]
 
-    monthly_total = sum(s["monthly_cost"] or 0.0 for s in services)
-    annual_total  = sum(s["annual_cost"]  or 0.0 for s in services)
+    monthly_total = sum(estimated_monthly_spend(s) for s in services)
+    annual_total  = sum(estimated_annual_spend(s)  for s in services)
 
     return {
         "monthly_total": round(monthly_total, 2),

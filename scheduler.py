@@ -110,10 +110,14 @@ def run_daily_job(creds: dict) -> None:
     try:
         results = run_analysis()
         logger.info(
-            "Analysis — suspend: %d, resubscribe: %d, ok: %d",
-            len(results["suspend"]),
-            len(results["resubscribe"]),
-            len(results["ok"]),
+            "Analysis — keep: %d, suspend: %d, consider_non_renewal: %d, "
+            "renew_soon: %d, resubscribe: %d, uncertain: %d",
+            len(results.get("keep", [])),
+            len(results.get("suspend", [])),
+            len(results.get("consider_non_renewal", [])),
+            len(results.get("renew_soon", [])),
+            len(results.get("resubscribe", [])),
+            len(results.get("uncertain", [])),
         )
     except Exception as exc:
         logger.error("Analysis failed: %s", exc)
@@ -127,35 +131,28 @@ def run_daily_job(creds: dict) -> None:
 
     sent = 0
 
-    if results["suspend"]:
-        names = ", ".join(r["name"] for r in results["suspend"])
-        try:
-            html = build_report("suspend", results["suspend"])
-            send_report_with_credentials(
-                creds=creds,
-                to_address=notify_email,
-                subject=f"Streamsaver: Consider suspending — {names}",
-                html_body=html,
-            )
-            logger.info("Sent suspend digest for: %s", names)
-            sent += 1
-        except Exception as exc:
-            logger.error("Failed to send suspend digest: %s", exc)
-
-    if results["resubscribe"]:
-        names = ", ".join(r["name"] for r in results["resubscribe"])
-        try:
-            html = build_report("resubscribe", results["resubscribe"])
-            send_report_with_credentials(
-                creds=creds,
-                to_address=notify_email,
-                subject=f"Streamsaver: Time to resubscribe — {names}",
-                html_body=html,
-            )
-            logger.info("Sent resubscribe digest for: %s", names)
-            sent += 1
-        except Exception as exc:
-            logger.error("Failed to send resubscribe digest: %s", exc)
+    _REPORT_TYPES = [
+        ("suspend",              "Consider suspending"),
+        ("consider_non_renewal", "Annual renewal to review"),
+        ("renew_soon",           "Annual renewal approaching"),
+        ("resubscribe",          "Time to resubscribe"),
+    ]
+    for rtype, subject_prefix in _REPORT_TYPES:
+        recs = results.get(rtype, [])
+        if recs:
+            names = ", ".join(r["name"] for r in recs)
+            try:
+                html = build_report(rtype, recs)
+                send_report_with_credentials(
+                    creds=creds,
+                    to_address=notify_email,
+                    subject=f"Streamsaver: {subject_prefix} — {names}",
+                    html_body=html,
+                )
+                logger.info("Sent %s digest for: %s", rtype, names)
+                sent += 1
+            except Exception as exc:
+                logger.error("Failed to send %s digest: %s", rtype, exc)
 
     logger.info("Daily job complete. %d email(s) sent.", sent)
     logger.info("=" * 60)

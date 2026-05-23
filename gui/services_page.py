@@ -312,26 +312,46 @@ class ServiceDialog(tk.Toplevel):
         self._name_var.trace_add("write", self._on_name_change)
 
         # ── Cost / billing fields ────────────────────────────────────────
-        self._monthly = self._entry_row(f, "Monthly Cost ($):",           1)
-        self._annual  = self._entry_row(f, "Annual Cost ($):",            2)
-        self._billing = self._entry_row(f, "Next Billing Date\n(YYYY-MM-DD):", 3)
+        # Billing cycle selector
+        ttk.Label(f, text="Billing Cycle:", style="TLabel").grid(
+            row=1, column=0, sticky="w", padx=(0, theme.PAD), pady=4
+        )
+        self._cycle_var = tk.StringVar(value="monthly")
+        cycle_frame = ttk.Frame(f, style="TFrame")
+        cycle_frame.grid(row=1, column=1, sticky="w", pady=4)
+        ttk.Radiobutton(cycle_frame, text="Monthly", variable=self._cycle_var,
+                        value="monthly", command=self._on_cycle_change).pack(side="left", padx=(0, theme.PAD))
+        ttk.Radiobutton(cycle_frame, text="Annual", variable=self._cycle_var,
+                        value="annual", command=self._on_cycle_change).pack(side="left")
+
+        self._monthly_lbl_w = ttk.Label(f, text="Monthly Cost ($):", style="TLabel")
+        self._monthly_lbl_w.grid(row=2, column=0, sticky="w", padx=(0, theme.PAD), pady=4)
+        self._monthly = ttk.Entry(f, width=32)
+        self._monthly.grid(row=2, column=1, sticky="ew", pady=4)
+
+        self._annual_lbl_w = ttk.Label(f, text="Annual Cost ($):", style="TLabel")
+        self._annual_lbl_w.grid(row=3, column=0, sticky="w", padx=(0, theme.PAD), pady=4)
+        self._annual = ttk.Entry(f, width=32)
+        self._annual.grid(row=3, column=1, sticky="ew", pady=4)
+
+        self._billing = self._entry_row(f, "Billing Anchor Date\n(YYYY-MM-DD):", 4)
 
         # ── Status ────────────────────────────────────────────────────────
         ttk.Label(f, text="Status:", style="TLabel").grid(
-            row=4, column=0, sticky="w", padx=(0, theme.PAD), pady=4
+            row=5, column=0, sticky="w", padx=(0, theme.PAD), pady=4
         )
         self._status_var = tk.StringVar()
         ttk.Combobox(
             f, textvariable=self._status_var,
             values=STATUSES, state="readonly", width=30,
-        ).grid(row=4, column=1, sticky="ew", pady=4)
+        ).grid(row=5, column=1, sticky="ew", pady=4)
 
         # ── Bundle Providers ─────────────────────────────────────────────
         ttk.Separator(f, orient="horizontal").grid(
-            row=5, column=0, columnspan=2, sticky="ew", pady=(theme.PAD, 4)
+            row=6, column=0, columnspan=2, sticky="ew", pady=(theme.PAD, 4)
         )
         bundle_lf = ttk.LabelFrame(f, text="Bundle / Included Providers", padding=6)
-        bundle_lf.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        bundle_lf.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(0, 4))
         bundle_lf.columnconfigure(0, weight=1)
 
         tk.Label(
@@ -377,11 +397,19 @@ class ServiceDialog(tk.Toplevel):
         # ── Pre-fill for edit mode ────────────────────────────────────────
         if self._svc:
             self._name_var.set(self._svc.get("name", ""))
-            self._monthly.insert(0, str(self._svc.get("monthly_cost", "") or ""))
-            self._annual.insert(0,  str(self._svc.get("annual_cost",  "") or ""))
-            self._billing.insert(0, self._svc.get("next_billing_date", "") or "")
+            cycle = self._svc.get("billing_cycle") or "monthly"
+            self._cycle_var.set(cycle)
+            if cycle == "annual":
+                self._monthly.insert(0, "")
+                self._annual.insert(0,  str(self._svc.get("annual_cost", "") or ""))
+            else:
+                self._monthly.insert(0, str(self._svc.get("monthly_cost", "") or ""))
+                self._annual.insert(0,  "")
+            anchor = self._svc.get("billing_anchor_date") or self._svc.get("next_billing_date") or ""
+            self._billing.insert(0, anchor)
             self._status_var.set(self._svc.get("status", "not_subscribed"))
             self._update_icon_preview(self._svc.get("icon_path"))
+            self._on_cycle_change()
         else:
             self._status_var.set("subscribed")
 
@@ -389,7 +417,7 @@ class ServiceDialog(tk.Toplevel):
 
         # ── Buttons ───────────────────────────────────────────────────────
         btn_frame = ttk.Frame(f, style="TFrame")
-        btn_frame.grid(row=7, column=0, columnspan=2, pady=(theme.PAD, 0))
+        btn_frame.grid(row=9, column=0, columnspan=2, pady=(theme.PAD, 0))
         ttk.Button(btn_frame, text="Save", style="Accent.TButton",
                    command=self._on_save).pack(side="left", padx=theme.PAD_SMALL)
         ttk.Button(btn_frame, text="Cancel",
@@ -458,6 +486,20 @@ class ServiceDialog(tk.Toplevel):
             self._icon_img = None
             self._icon_lbl.configure(image="", text="")
 
+    def _on_cycle_change(self) -> None:
+        """Show/hide cost fields based on billing cycle selection."""
+        cycle = self._cycle_var.get()
+        if cycle == "annual":
+            self._monthly_lbl_w.grid_remove()
+            self._monthly.grid_remove()
+            self._annual_lbl_w.grid()
+            self._annual.grid()
+        else:
+            self._annual_lbl_w.grid_remove()
+            self._annual.grid_remove()
+            self._monthly_lbl_w.grid()
+            self._monthly.grid()
+
     def _on_save(self) -> None:
         name = self._name_var.get().strip()
         if not name:
@@ -482,14 +524,20 @@ class ServiceDialog(tk.Toplevel):
                 )
                 return
 
+        cycle = self._cycle_var.get()
+        monthly_cost = _float(self._monthly.get()) if cycle == "monthly" else 0.0
+        annual_cost  = _float(self._annual.get())  if cycle == "annual"  else 0.0
+
         self.result = {
-            "name":              name,
-            "trakt_network_id":  name,
-            "tmdb_provider_id":  get_network_provider_id(name),
-            "monthly_cost":      _float(self._monthly.get()),
-            "annual_cost":       _float(self._annual.get()),
-            "next_billing_date": billing,
-            "status":            self._status_var.get() or "subscribed",
-            "bundle_providers":  list(self._bundle),
+            "name":                name,
+            "trakt_network_id":    name,
+            "tmdb_provider_id":    get_network_provider_id(name),
+            "monthly_cost":        monthly_cost,
+            "annual_cost":         annual_cost,
+            "next_billing_date":   billing,
+            "billing_cycle":       cycle,
+            "billing_anchor_date": billing,
+            "status":              self._status_var.get() or "subscribed",
+            "bundle_providers":    list(self._bundle),
         }
         self.destroy()

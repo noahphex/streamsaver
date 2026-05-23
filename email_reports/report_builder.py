@@ -3,7 +3,8 @@ email_reports/report_builder.py
 Streamsaver — HTML email report builder
 Author: Noah Lee
 
-Builds Dracula-themed HTML emails for suspend and resubscribe recommendations.
+Builds Dracula-themed HTML emails for all recommendation types:
+  suspend, consider_non_renewal, renew_soon, resubscribe
 """
 
 import os
@@ -44,8 +45,6 @@ def _service_icon_tag(icon_path: str | None, name: str) -> str:
     return "📺 "
 
 
-# ── Suspend report ─────────────────────────────────────────────────────────────
-
 def _build_suspend_content(recommendations: list[dict]) -> tuple[str, str]:
     """Return (html_content, preheader) for a suspend report."""
     names     = ", ".join(r["name"] for r in recommendations)
@@ -53,15 +52,13 @@ def _build_suspend_content(recommendations: list[dict]) -> tuple[str, str]:
 
     cards = []
     for rec in recommendations:
-        icon = _service_icon_tag(rec.get("icon_path"), rec["name"])
-
-        # Use stored costs; derive the missing value if only one is set.
-        savings_monthly = float(rec.get("monthly_cost") or 0.0)
-        savings_annual  = float(rec.get("annual_cost")  or 0.0)
-        if savings_monthly and not savings_annual:
-            savings_annual = round(savings_monthly * 12, 2)
-        elif savings_annual and not savings_monthly:
-            savings_monthly = round(savings_annual / 12, 2)
+        icon            = _service_icon_tag(rec.get("icon_path"), rec["name"])
+        monthly_savings = rec.get("estimated_monthly_spend") or rec.get("monthly_cost") or 0.0
+        annual_savings  = rec.get("estimated_annual_spend")  or rec.get("annual_cost")  or 0.0
+        if monthly_savings and not annual_savings:
+            annual_savings = round(float(monthly_savings) * 12, 2)
+        elif annual_savings and not monthly_savings:
+            monthly_savings = round(float(annual_savings) / 12, 2)
 
         cards.append(f"""
         <div class="service-card">
@@ -69,11 +66,11 @@ def _build_suspend_content(recommendations: list[dict]) -> tuple[str, str]:
           <p class="service-meta">Next billing: {rec['billing_date']}</p>
           <div class="cost-row">
             <span>Monthly savings if suspended:</span>
-            <span class="cost-value">${savings_monthly:.2f}</span>
+            <span class="cost-value">${float(monthly_savings):.2f}</span>
           </div>
           <div class="cost-row">
             <span>Annual savings:</span>
-            <span class="cost-value">${savings_annual:.2f}</span>
+            <span class="cost-value">${float(annual_savings):.2f}</span>
           </div>
           <p style="color:#6272a4;font-size:13px;margin:10px 0 0;">
             {rec.get('reason', 'No upcoming content before next billing date.')}
@@ -83,8 +80,89 @@ def _build_suspend_content(recommendations: list[dict]) -> tuple[str, str]:
 
     content = f"""
     <h2>🔴 Services to Suspend</h2>
-    <p>The following subscribed service(s) have no upcoming episodes or
-    premieres before the next billing date. Consider suspending to save money.</p>
+    <p>The following monthly subscriptions have low engagement and no upcoming content
+    before the next billing date. Consider suspending to save money.</p>
+    {''.join(cards)}
+    """
+    return content, preheader
+
+
+# ── Consider non-renewal report ────────────────────────────────────────────────
+
+def _build_consider_non_renewal_content(recommendations: list[dict]) -> tuple[str, str]:
+    """Return (html_content, preheader) for a consider-non-renewal report."""
+    names     = ", ".join(r["name"] for r in recommendations)
+    preheader = f"Annual renewal approaching for {names} — low engagement detected."
+
+    cards = []
+    for rec in recommendations:
+        icon         = _service_icon_tag(rec.get("icon_path"), rec["name"])
+        annual_cost  = float(rec.get("estimated_annual_spend") or rec.get("annual_cost") or 0.0)
+        days_until   = rec.get("days_until_renewal", "?")
+
+        cards.append(f"""
+        <div class="service-card">
+          <p class="service-name">{icon}{rec['name']}
+            <span class="badge badge-suspend">Consider Non-Renewal</span>
+          </p>
+          <p class="service-meta">Annual renewal in {days_until} days ({rec['billing_date']})</p>
+          <div class="cost-row">
+            <span>Annual cost:</span>
+            <span class="cost-value">${annual_cost:.2f}</span>
+          </div>
+          <p style="color:#6272a4;font-size:13px;margin:10px 0 0;">
+            {rec.get('reason', 'Low engagement near renewal window.')}
+          </p>
+          <p style="color:#ffb86c;font-size:12px;margin:6px 0 0;">
+            💡 Your plan is already paid through {rec['billing_date']}.
+            You can disable auto-renew now without losing access.
+          </p>
+        </div>
+        """)
+
+    content = f"""
+    <h2>🟡 Annual Subscriptions Nearing Renewal</h2>
+    <p>The following annual plans are approaching renewal with low recent engagement.
+    Your access continues through the renewal date — consider disabling auto-renew
+    if you no longer find value.</p>
+    {''.join(cards)}
+    """
+    return content, preheader
+
+
+# ── Renew soon report ──────────────────────────────────────────────────────────
+
+def _build_renew_soon_content(recommendations: list[dict]) -> tuple[str, str]:
+    """Return (html_content, preheader) for a renew-soon report."""
+    names     = ", ".join(r["name"] for r in recommendations)
+    preheader = f"Annual renewal approaching for {names} — looks worth keeping."
+
+    cards = []
+    for rec in recommendations:
+        icon       = _service_icon_tag(rec.get("icon_path"), rec["name"])
+        annual_cost = float(rec.get("estimated_annual_spend") or rec.get("annual_cost") or 0.0)
+        days_until  = rec.get("days_until_renewal", "?")
+
+        cards.append(f"""
+        <div class="service-card">
+          <p class="service-name">{icon}{rec['name']}
+            <span class="badge badge-resubscribe">Likely Worth Renewing</span>
+          </p>
+          <p class="service-meta">Annual renewal in {days_until} days ({rec['billing_date']})</p>
+          <div class="cost-row">
+            <span>Annual cost:</span>
+            <span class="cost-value">${annual_cost:.2f}</span>
+          </div>
+          <p style="color:#6272a4;font-size:13px;margin:10px 0 0;">
+            {rec.get('reason', 'Active engagement and upcoming content detected.')}
+          </p>
+        </div>
+        """)
+
+    content = f"""
+    <h2>🟢 Annual Subscriptions Approaching Renewal</h2>
+    <p>The following annual plans are nearing renewal and show strong engagement signals.
+    These subscriptions are likely worth keeping.</p>
     {''.join(cards)}
     """
     return content, preheader
@@ -135,14 +213,14 @@ def _build_resubscribe_content(recommendations: list[dict]) -> tuple[str, str]:
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 def build_report(
-    report_type: Literal["suspend", "resubscribe"],
+    report_type: Literal["suspend", "consider_non_renewal", "renew_soon", "resubscribe"],
     recommendations: list[dict],
 ) -> str:
     """
     Build and return a complete HTML email string.
 
     Args:
-        report_type:     "suspend" or "resubscribe"
+        report_type:     One of suspend | consider_non_renewal | renew_soon | resubscribe
         recommendations: List of service recommendation dicts from analysis.py
 
     Returns:
@@ -153,6 +231,12 @@ def build_report(
     if report_type == "suspend":
         content, preheader = _build_suspend_content(recommendations)
         title = "Streamsaver — Services to Suspend"
+    elif report_type == "consider_non_renewal":
+        content, preheader = _build_consider_non_renewal_content(recommendations)
+        title = "Streamsaver — Annual Renewals to Review"
+    elif report_type == "renew_soon":
+        content, preheader = _build_renew_soon_content(recommendations)
+        title = "Streamsaver — Annual Renewals Approaching"
     else:
         content, preheader = _build_resubscribe_content(recommendations)
         title = "Streamsaver — Services to Resubscribe"

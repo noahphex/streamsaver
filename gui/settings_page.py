@@ -361,33 +361,32 @@ class SettingsPage(ttk.Frame):
 
                 # Send one digest email per recommendation type
                 sent = 0
-                if results["suspend"]:
-                    names = ", ".join(r["name"] for r in results["suspend"])
-                    html  = build_report("suspend", results["suspend"])
-                    send_report(
-                        to_address=notify_email,
-                        subject=f"Streamsaver: Consider suspending — {names}",
-                        html_body=html,
-                        from_address=from_address,
-                        app_password=app_password,
-                    )
-                    sent += 1
-                if results["resubscribe"]:
-                    names = ", ".join(r["name"] for r in results["resubscribe"])
-                    html  = build_report("resubscribe", results["resubscribe"])
-                    send_report(
-                        to_address=notify_email,
-                        subject=f"Streamsaver: Time to resubscribe — {names}",
-                        html_body=html,
-                        from_address=from_address,
-                        app_password=app_password,
-                    )
-                    sent += 1
+                _REPORT_TYPES = [
+                    ("suspend",              "Consider suspending"),
+                    ("consider_non_renewal", "Annual renewal to review"),
+                    ("renew_soon",           "Annual renewal approaching"),
+                    ("resubscribe",          "Time to resubscribe"),
+                ]
+                for rtype, subject_prefix in _REPORT_TYPES:
+                    recs = results.get(rtype, [])
+                    if recs:
+                        names = ", ".join(r["name"] for r in recs)
+                        html  = build_report(rtype, recs)
+                        send_report(
+                            to_address=notify_email,
+                            subject=f"Streamsaver: {subject_prefix} — {names}",
+                            html_body=html,
+                            from_address=from_address,
+                            app_password=app_password,
+                        )
+                        sent += 1
 
                 msg = (
                     f"✅  Analysis complete — "
-                    f"{len(results['suspend'])} suspend, "
-                    f"{len(results['resubscribe'])} resubscribe recommendations. "
+                    f"{len(results.get('suspend', []))} suspend, "
+                    f"{len(results.get('consider_non_renewal', []))} non-renewal, "
+                    f"{len(results.get('renew_soon', []))} renew-soon, "
+                    f"{len(results.get('resubscribe', []))} resubscribe. "
                     f"{sent} email(s) sent."
                 )
                 self.after(0, lambda: self._set_status(msg, theme.SUCCESS))
