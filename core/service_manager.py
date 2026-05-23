@@ -12,7 +12,7 @@ Valid status values: subscribed | suspended | unsubscribed | not_subscribed
 import logging
 import os
 import time
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 import requests
@@ -27,6 +27,8 @@ _BASE_DIR  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _LOGOS_DIR = os.path.join(_BASE_DIR, "assets", "logos")
 _TMDB_IMG  = "https://image.tmdb.org/t/p/w92"
 
+ICON_TTL_DAYS = 30   # Re-download logos older than this many days
+
 
 # ── Icon helpers ───────────────────────────────────────────────────────────────
 
@@ -40,18 +42,22 @@ def _logo_abs_path(provider_id: int) -> str:
     return os.path.join(_LOGOS_DIR, f"{provider_id}.jpg")
 
 
-def download_icon_for_provider(provider_id: int, logo_path: str) -> Optional[str]:
+def download_icon_for_provider(
+    provider_id: int,
+    logo_path: str,
+    force: bool = False,
+) -> Optional[str]:
     """
     Download a TMDb provider logo to assets/logos/{provider_id}.jpg.
     Returns the RELATIVE path on success, None on failure.
-    Skips download if the file already exists.
+    Skips download if the file already exists unless force=True.
     """
     if not logo_path:
         return None
     os.makedirs(_LOGOS_DIR, exist_ok=True)
     rel  = _logo_path_for(provider_id)
     dest = _logo_abs_path(provider_id)
-    if os.path.exists(dest):
+    if os.path.exists(dest) and not force:
         return rel
     try:
         url  = f"{_TMDB_IMG}{logo_path}"
@@ -59,6 +65,7 @@ def download_icon_for_provider(provider_id: int, logo_path: str) -> Optional[str
         resp.raise_for_status()
         with open(dest, "wb") as f:
             f.write(resp.content)
+        logger.debug("Downloaded icon for provider %d.", provider_id)
         return rel
     except Exception as exc:
         logger.debug("Could not download icon for provider %d: %s", provider_id, exc)
@@ -148,15 +155,58 @@ def backfill_service_icons() -> int:
         if local:
             with db_session() as conn:
                 conn.execute(
-                    "UPDATE services SET icon_path = ?, tmdb_provider_id = ? WHERE id = ?",
-                    (local, provider_id, svc["id"]),
+                    "UPDATE services SET icon_path = ?, tmdb_provider_id = ?, icon_last_updated = ? WHERE id = ?",
+                    (local, provider_id, date.today().isoformat(), svc["id"]),
                 )
             updated += 1
             time.sleep(0.1)
 
     if updated:
         logger.info("Backfilled icons for %d service(s).", updated)
+
+    refresh_stale_icons()
     return updated
+
+
+def refresh_stale_icons() -> int:
+    """
+    Re-download logos for services whose icon_last_updated is older than
+    ICON_TTL_DAYS or has never been set. Logos rarely change; this just
+    ensures they stay current without hammering TMDb on every run.
+    Returns the number of logos refreshed.
+    """
+    cutoff = (date.today() - timedelta(days=ICON_TTL_DAYS)).isoformat()
+
+    with db_session() as conn:
+        stale = conn.execute(
+            """SELECT s.id, s.tmdb_provider_id, n.logo_path, s.icon_last_updated
+               FROM services s
+               JOIN networks n ON n.provider_id = s.tmdb_provider_id
+               WHERE s.icon_path IS NOT NULL AND s.icon_path != ''
+                 AND (s.icon_last_updated IS NULL OR s.icon_last_updated < ?)""",
+            (cutoff,),
+        ).fetchall()
+
+    if not stale:
+        logger.debug("All service icons are up to date (TTL: %d days).", ICON_TTL_DAYS)
+        return 0
+
+    today = date.today().isoformat()
+    refreshed = 0
+    for row in stale:
+        local = download_icon_for_provider(row["tmdb_provider_id"], row["logo_path"], force=True)
+        if local:
+            with db_session() as conn:
+                conn.execute(
+                    "UPDATE services SET icon_path = ?, icon_last_updated = ? WHERE id = ?",
+                    (local, today, row["id"]),
+                )
+            refreshed += 1
+            time.sleep(0.15)
+
+    if refreshed:
+        logger.info("Refreshed %d stale icon(s) (TTL: %d days).", refreshed, ICON_TTL_DAYS)
+    return refreshed
 
 
 def fetch_and_cache_networks(tmdb_client) -> int:
