@@ -9,10 +9,13 @@ and wiring between tabs.
 
 import getpass
 import logging
+import os
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 
 from gui import theme
+
+_LOGO_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "logos", "streamsaver_logo_transparent.png")
 from gui.widgets import configure_ttk_styles
 from gui.services_page import ServicesPage
 from gui.shows_page    import ShowsPage
@@ -43,19 +46,53 @@ class StreamsaverApp(tk.Tk):
 
     # ── UI construction ────────────────────────────────────────────────────────
 
+    def _load_logo(self, height: int = 32):
+        """Load the sidebar logo, scaled to *height* px. Returns PhotoImage or None."""
+        try:
+            from PIL import Image, ImageTk
+            img = Image.open(_LOGO_PATH).convert("RGBA")
+            ratio = height / img.height
+            img = img.resize((max(1, int(img.width * ratio)), height), Image.LANCZOS)
+            # Composite transparent PNG against the title bar background colour so
+            # pixels that Tkinter would otherwise leave transparent render correctly.
+            bg_hex = theme.BG_ALT.lstrip("#")
+            bg_rgb = tuple(int(bg_hex[i:i+2], 16) for i in (0, 2, 4))
+            background = Image.new("RGBA", img.size, bg_rgb + (255,))
+            background.paste(img, mask=img.split()[3])
+            return ImageTk.PhotoImage(background.convert("RGB"))
+        except Exception:
+            logger.debug("Could not load logo from %s", _LOGO_PATH, exc_info=True)
+            return None
+
     def _build_ui(self) -> None:
         # Title bar
         title_bar = tk.Frame(self, bg=theme.BG_ALT, height=46)
         title_bar.pack(fill="x", side="top")
         title_bar.pack_propagate(False)
 
-        tk.Label(
-            title_bar,
-            text="💾  Streamsaver",
-            bg=theme.BG_ALT,
-            fg=theme.PURPLE,
-            font=theme.FONT_TITLE,
-        ).pack(side="left", padx=theme.PAD * 2)
+        self._logo_img = self._load_logo(height=32)
+        if self._logo_img:
+            tk.Label(
+                title_bar,
+                image=self._logo_img,
+                bg=theme.BG_ALT,
+                bd=0,
+            ).pack(side="left", padx=(theme.PAD * 2, 6))
+            tk.Label(
+                title_bar,
+                text="Streamsaver",
+                bg=theme.BG_ALT,
+                fg=theme.FG,
+                font=theme.FONT_TITLE,
+            ).pack(side="left", padx=(0, theme.PAD * 2))
+        else:
+            tk.Label(
+                title_bar,
+                text="💾  Streamsaver",
+                bg=theme.BG_ALT,
+                fg=theme.FG,
+                font=theme.FONT_TITLE,
+            ).pack(side="left", padx=theme.PAD * 2)
 
         self._status_bar = tk.Label(
             title_bar,
