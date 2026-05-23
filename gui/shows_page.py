@@ -19,6 +19,7 @@ _STATE_DISPLAY = {
     "active":      ("Active",      "active"),
     "occasional":  ("Occasional",  "occasional"),
     "dormant":     ("Dormant",     "dormant"),
+    "completed":   ("Completed",   "completed"),
     "abandoned":   ("Abandoned",   "abandoned"),
     "anticipated": ("Anticipated", "anticipated"),
     "ignored":     ("Ignored",     "ignored"),
@@ -104,6 +105,7 @@ class ShowsPage(ttk.Frame):
         self._tree.tag_configure("active",      foreground=theme.GREEN)
         self._tree.tag_configure("occasional",  foreground=theme.CYAN)
         self._tree.tag_configure("anticipated", foreground=theme.YELLOW)
+        self._tree.tag_configure("completed",   foreground=theme.ORANGE)
         self._tree.tag_configure("dormant",     foreground=theme.FG_DIM)
         self._tree.tag_configure("abandoned",   foreground=theme.COMMENT)
         self._tree.tag_configure("ignored",     foreground=theme.COMMENT)

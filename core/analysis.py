@@ -54,7 +54,7 @@ def _service_watch_score(service_id: int, conn) -> dict:
         SELECT show_state, interest_score, title, next_air_date
         FROM   shows
         WHERE  service_id = ?
-          AND  show_state NOT IN ('ignored', 'archived')
+          AND  show_state NOT IN ('ignored', 'archived', 'completed')
         """,
         (service_id,),
     ).fetchall()

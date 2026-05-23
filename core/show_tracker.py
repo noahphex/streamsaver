@@ -198,6 +198,7 @@ def sync_watched_shows(
             logger.error("Error syncing show '%s': %s", show_data["title"], exc)
 
     _update_last_sync(now)
+    backfill_service_ids()
     logger.info("Synced %d shows.", count)
     return count
 
@@ -229,11 +230,22 @@ def _upsert_show(
             next_ep = client.get_next_episode(trakt_id)
             if next_ep:
                 next_air_date = _to_date_str(next_ep.get("first_aired"))
+
+            # Completed: show is definitively over
+            if trakt_status in ("ended", "canceled"):
+                show_state = "completed"
+            # Completed: Trakt says "returning" but no next episode + not watched recently
+            elif trakt_status == "returning series" and not next_air_date:
+                last_dt = _parse_dt(show_data.get("last_at_raw"))
+                days_since = (datetime.now(timezone.utc) - last_dt).days if last_dt else 999
+                if days_since >= 30:
+                    show_state = "completed"
             # Anticipated: returning show with a known air date
-            if trakt_status == "returning series" and next_air_date:
+            elif trakt_status == "returning series" and next_air_date:
                 show_state = "anticipated"
-            # Boost score for returning show
-            if trakt_status == "returning series":
+
+            # Boost score for returning show (only when still active)
+            if trakt_status == "returning series" and show_state != "completed":
                 score = min(score + 8, 100)
         except Exception as exc:
             logger.debug("Could not fetch Trakt summary for %s: %s", trakt_id, exc)
@@ -358,6 +370,28 @@ def _resolve_service_id_conn(
         if row:
             return row["service_id"]
     return None
+
+
+def backfill_service_ids() -> int:
+    """
+    Update service_id for any show where it is NULL but primary_provider_id/name
+    can be resolved via the services or service_bundles tables.
+    Run after every sync and after bundle config changes.
+    Returns number of rows updated.
+    """
+    updated = 0
+    with db_session() as conn:
+        orphans = conn.execute(
+            "SELECT id, primary_provider_id, primary_provider FROM shows WHERE service_id IS NULL"
+        ).fetchall()
+        for row in orphans:
+            sid = _resolve_service_id_conn(row["primary_provider_id"], row["primary_provider"], conn)
+            if sid:
+                conn.execute("UPDATE shows SET service_id = ? WHERE id = ?", (sid, row["id"]))
+                updated += 1
+    if updated:
+        logger.info("Backfilled service_id for %d shows.", updated)
+    return updated
 
 
 def _update_last_sync(now: datetime) -> None:
