@@ -97,7 +97,17 @@ def _build_card(
     attachments: Attachments = {cid: mime_part} if cid and mime_part else {}
 
     # ── HEADER: name / badge / billing date (left) | logo top-aligned (right) ──
-    billing_icon = '<span style="font-size:12px;opacity:0.7;padding-right:5px;vertical-align:middle;">📅</span>'
+    billing_cell = (
+        f'<table cellpadding="0" cellspacing="0" border="0" style="margin:0;">'
+        f'<tr>'
+        f'<td width="18" valign="middle" style="vertical-align:middle;padding-right:4px;'
+        f'font-size:13px;line-height:1;color:{_FG_META};">📅</td>'
+        f'<td valign="middle" style="vertical-align:middle;'
+        f'font-family:Arial,Helvetica,sans-serif;font-size:13px;'
+        f'font-weight:500;color:{_FG_META};line-height:1.4;">'
+        f'{billing_line}</td>'
+        f'</tr></table>'
+    )
     header = (
         f'<table width="100%" cellpadding="0" cellspacing="0" border="0" '
         f'role="presentation">'
@@ -108,9 +118,7 @@ def _build_card(
         f'font-weight:700;color:{_FG};margin:0 0 10px;line-height:1.3;">'
         f'{name}</p>'
         f'<p style="margin:0 0 12px;">{_badge(badge_label, badge_bg, badge_fg)}</p>'
-        f'<p style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
-        f'font-weight:500;color:{_FG_META};margin:0;line-height:1.4;">'
-        f'{billing_icon}{billing_line}</p>'
+        f'{billing_cell}'
         f'</td>'
         f'<td class="ss-logo-col" valign="top" align="right" width="72" '
         f'style="vertical-align:top;padding-top:4px;width:72px;">'
@@ -129,16 +137,22 @@ def _build_card(
     )
 
     # ── METRICS ───────────────────────────────────────────────────────────────
-    savings_icon = '<span style="font-size:12px;opacity:0.7;padding-right:5px;vertical-align:middle;">💵</span>'
     rows_html = ""
     for i, (label, value) in enumerate(cost_rows):
         border = f"border-top:1px solid {_ROW_SEP};" if i > 0 else ""
         rows_html += (
             f'<tr>'
-            f'<td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
-            f'font-weight:600;color:{_FG};padding:12px 0;{border}">'
-            f'{savings_icon}{label}</td>'
-            f'<td width="120" align="right" '
+            f'<td valign="middle" style="padding:12px 0;{border}">'
+            f'<table cellpadding="0" cellspacing="0" border="0" style="margin:0;">'
+            f'<tr>'
+            f'<td width="18" valign="middle" style="vertical-align:middle;padding-right:4px;'
+            f'font-size:13px;line-height:1;color:{_FG_META};">💵</td>'
+            f'<td valign="middle" style="vertical-align:middle;'
+            f'font-family:Arial,Helvetica,sans-serif;font-size:13px;'
+            f'font-weight:600;color:{_FG};line-height:1.3;">{label}</td>'
+            f'</tr></table>'
+            f'</td>'
+            f'<td width="120" align="right" valign="middle" '
             f'style="font-family:Arial,Helvetica,sans-serif;font-size:16px;'
             f'font-weight:700;color:{_GREEN};padding:12px 0;white-space:nowrap;'
             f'font-variant-numeric:tabular-nums;width:120px;text-align:right;{border}">'
