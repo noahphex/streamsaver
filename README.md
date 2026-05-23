@@ -63,7 +63,7 @@ Enter your passphrase when prompted to unlock credentials.
 
 Go to the **Services** tab, click **Add Service**, and pick from the TMDb provider dropdown. Enter your monthly/annual cost and next billing date.
 
-Service logos are downloaded automatically from TMDb and cached locally in `assets/logos/`. No external image fetches happen during email rendering.
+Service logos are downloaded automatically from TMDb and cached locally in `assets/logos/`. Logos are refreshed automatically every 30 days. No external image fetches happen during email rendering.
 
 ### 6. Sync and analyse
 
@@ -106,11 +106,13 @@ python scheduler.py --run-at 08:00
 | **Services tab** | Add/edit/delete streaming services with TMDb provider picker. Set status: Subscribed, Suspended, Unsubscribed, Not Subscribed. Enter monthly/annual cost and billing date. |
 | **Shows tab** | View all synced shows with interest score, show state (color-coded), primary streaming provider, last watched date, and next air date. Filter by state. Manually mark shows as abandoned. |
 | **Settings tab** | Set notification email. Configure country for provider data. Sync Trakt, refresh providers, and run analysis + email on demand. Displays last sync timestamp. |
-| **Email digest** | Single daily email covering all recommendation types — suspend, consider non-renewal, likely worth renewing, and resubscribe. Service logos embedded as CID attachments (no external URLs). |
-| **Suspend** | Monthly services with no active or upcoming content flagged before billing date. Shows monthly + annual savings if paused. |
+| **Email digest** | Single daily email covering all recommendation types — suspend, consider non-renewal, likely worth renewing, and resubscribe. Service logos embedded as CID attachments (no external URLs). Includes a summary metrics row (monthly spend, potential savings, services analyzed) and per-card confidence scores. |
+| **Suspend** | Monthly services with no active or upcoming content flagged before billing date. Shows monthly + annual savings if paused. Top recommendation in each section is highlighted. |
 | **Consider Non-Renewal** | Annual services nearing renewal with low engagement. Highlights that access continues through the paid period. |
 | **Likely Worth Renewing** | Annual services nearing renewal with active engagement — confirms the renewal is justified. |
 | **Resubscribe** | Previously suspended services with returning high-interest content — lists upcoming show titles and air dates. |
+| **Recommendation confidence** | Each card shows a `Confidence: High/Medium/Low` signal derived from watch score and active show count. |
+| **Logo TTL refresh** | Service logos are cached locally and automatically refreshed from TMDb every 30 days. |
 
 ---
 
