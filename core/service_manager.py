@@ -113,8 +113,6 @@ def backfill_service_icons() -> int:
     return updated
 
 
-# ── Network / provider cache ───────────────────────────────────────────────────
-
 def fetch_and_cache_networks(tmdb_client) -> int:
     """
     Pull the TV streaming provider list from TMDb and store it in the local

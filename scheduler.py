@@ -39,7 +39,7 @@ from core.trakt_client import TraktClient
 from core.tmdb_client  import TMDbClient
 from core.show_tracker import run_full_sync
 from core.analysis     import run_analysis
-from email_reports.report_builder import build_report
+from email_reports.report_builder import build_digest
 from email_reports.mailer          import send_report_with_credentials
 from setup_credentials             import load_credentials
 
@@ -123,38 +123,43 @@ def run_daily_job(creds: dict) -> None:
         logger.error("Analysis failed: %s", exc)
         return
 
-    # ── 3. Email reports ───────────────────────────────────────────────────
+    # ── 3. Email digest ────────────────────────────────────────────────────
     notify_email = _get_setting("notification_email") or creds.get("notify_email", "")
     if not notify_email:
         logger.warning("No notification email configured — skipping email reports.")
         return
 
-    sent = 0
+    html = build_digest(results)
+    if not html:
+        logger.info("No actionable recommendations today — no email sent.")
+        logger.info("Daily job complete.")
+        logger.info("=" * 60)
+        return
 
-    _REPORT_TYPES = [
-        ("suspend",              "Consider suspending"),
-        ("consider_non_renewal", "Annual renewal to review"),
-        ("renew_soon",           "Annual renewal approaching"),
-        ("resubscribe",          "Time to resubscribe"),
-    ]
-    for rtype, subject_prefix in _REPORT_TYPES:
-        recs = results.get(rtype, [])
-        if recs:
-            names = ", ".join(r["name"] for r in recs)
-            try:
-                html = build_report(rtype, recs)
-                send_report_with_credentials(
-                    creds=creds,
-                    to_address=notify_email,
-                    subject=f"Streamsaver: {subject_prefix} — {names}",
-                    html_body=html,
-                )
-                logger.info("Sent %s digest for: %s", rtype, names)
-                sent += 1
-            except Exception as exc:
-                logger.error("Failed to send %s digest: %s", rtype, exc)
+    # Build a concise subject from what's in the digest
+    subject_parts = []
+    if results.get("suspend"):
+        subject_parts.append(f"Suspend {len(results['suspend'])}")
+    if results.get("consider_non_renewal"):
+        subject_parts.append(f"Review {len(results['consider_non_renewal'])} renewal(s)")
+    if results.get("renew_soon"):
+        subject_parts.append(f"Renew {len(results['renew_soon'])} soon")
+    if results.get("resubscribe"):
+        subject_parts.append(f"Resubscribe {len(results['resubscribe'])}")
+    subject = "Streamsaver Digest — " + " · ".join(subject_parts) if subject_parts else "Streamsaver Daily Digest"
 
-    logger.info("Daily job complete. %d email(s) sent.", sent)
+    try:
+        send_report_with_credentials(
+            creds=creds,
+            to_address=notify_email,
+            subject=subject,
+            html_body=html,
+        )
+        logger.info("Sent daily digest to %s", notify_email)
+    except Exception as exc:
+        logger.error("Failed to send digest: %s", exc)
+
+    logger.info("Daily job complete.")
     logger.info("=" * 60)
 
 

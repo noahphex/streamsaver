@@ -50,31 +50,9 @@
     .body h2   { color: #8be9fd; font-size: 17px; margin: 24px 0 10px; border-bottom: 1px solid #44475a; padding-bottom: 6px; }
     .body h3   { color: #bd93f9; font-size: 15px; margin: 16px 0 6px; }
 
-    /* ── Service card ── */
-    .service-card { background-color: #44475a; border-radius: 6px;
-                    padding: 16px 20px; margin-bottom: 16px; }
-    .service-name { color: #f1fa8c; font-size: 18px; font-weight: bold; margin: 0 0 4px; }
-    .service-meta { color: #6272a4; font-size: 13px; margin: 0 0 10px; }
-
-    /* ── Badge ── */
-    .badge        { display: inline-block; border-radius: 4px; font-size: 12px;
-                    padding: 2px 8px; font-weight: bold; text-transform: uppercase;
-                    letter-spacing: 0.5px; }
-    .badge-suspend   { background-color: #ff5555; color: #282a36; }
-    .badge-resubscribe { background-color: #50fa7b; color: #282a36; }
-    .badge-suspended   { background-color: #f1fa8c; color: #282a36; }
-
-    /* ── Show list ── */
-    .show-list    { margin: 10px 0 0; padding: 0; list-style: none; }
-    .show-list li { color: #f8f8f2; font-size: 14px; padding: 4px 0;
-                    border-bottom: 1px solid #6272a450; }
-    .show-list li:last-child { border-bottom: none; }
-    .premiere-date { color: #ffb86c; font-size: 13px; float: right; }
-
-    /* ── Cost row ── */
-    .cost-row     { display: flex; justify-content: space-between;
-                    color: #f8f8f2; font-size: 14px; padding: 4px 0; }
-    .cost-value   { color: #50fa7b; font-weight: bold; }
+    /* ── Service card (outer container only — internals use inline styles) ── */
+    .service-card { background-color: #282a36; border: 1px solid #44475a;
+                    border-radius: 8px; padding: 18px 20px; margin-bottom: 16px; }
 
     /* ── CTA button ── */
     .cta          { text-align: center; margin: 24px 0 8px; }

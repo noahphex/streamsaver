@@ -61,18 +61,21 @@ def init_db() -> None:
         conn.executescript("""
             -- Streaming services
             CREATE TABLE IF NOT EXISTS services (
-                id                INTEGER PRIMARY KEY AUTOINCREMENT,
-                name              TEXT    NOT NULL UNIQUE,
-                trakt_network_id  TEXT,
-                icon_path         TEXT,
-                status            TEXT    NOT NULL DEFAULT 'not_subscribed'
-                                          CHECK(status IN (
-                                              'subscribed','suspended',
-                                              'unsubscribed','not_subscribed'
-                                          )),
-                monthly_cost      REAL    DEFAULT 0.0,
-                annual_cost       REAL    DEFAULT 0.0,
-                next_billing_date TEXT
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                name                TEXT    NOT NULL UNIQUE,
+                trakt_network_id    TEXT,
+                icon_path           TEXT,
+                status              TEXT    NOT NULL DEFAULT 'not_subscribed'
+                                            CHECK(status IN (
+                                                'subscribed','suspended',
+                                                'unsubscribed','not_subscribed'
+                                            )),
+                monthly_cost        REAL    DEFAULT 0.0,
+                annual_cost         REAL    DEFAULT 0.0,
+                billing_cycle       TEXT    NOT NULL DEFAULT 'monthly',
+                billing_anchor_date TEXT,
+                auto_renew          INTEGER NOT NULL DEFAULT 1,
+                next_billing_date   TEXT    -- legacy; prefer billing_anchor_date
             );
 
             -- TV shows — compact activity profiles (one row per show)
