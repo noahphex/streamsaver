@@ -15,7 +15,7 @@ from tkinter import ttk, messagebox, simpledialog
 
 from gui import theme
 
-_LOGO_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "logos", "streamsaver_logo.jpg")
+_LOGO_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "logos", "streamsaver_logo_transparent.png")
 from gui.widgets import configure_ttk_styles
 from gui.services_page import ServicesPage
 from gui.shows_page    import ShowsPage
@@ -50,10 +50,16 @@ class StreamsaverApp(tk.Tk):
         """Load the sidebar logo, scaled to *height* px. Returns PhotoImage or None."""
         try:
             from PIL import Image, ImageTk
-            img = Image.open(_LOGO_PATH)
+            img = Image.open(_LOGO_PATH).convert("RGBA")
             ratio = height / img.height
             img = img.resize((max(1, int(img.width * ratio)), height), Image.LANCZOS)
-            return ImageTk.PhotoImage(img)
+            # Composite transparent PNG against the title bar background colour so
+            # pixels that Tkinter would otherwise leave transparent render correctly.
+            bg_hex = theme.BG_ALT.lstrip("#")
+            bg_rgb = tuple(int(bg_hex[i:i+2], 16) for i in (0, 2, 4))
+            background = Image.new("RGBA", img.size, bg_rgb + (255,))
+            background.paste(img, mask=img.split()[3])
+            return ImageTk.PhotoImage(background.convert("RGB"))
         except Exception:
             logger.debug("Could not load logo from %s", _LOGO_PATH, exc_info=True)
             return None
@@ -76,7 +82,7 @@ class StreamsaverApp(tk.Tk):
                 title_bar,
                 text="Streamsaver",
                 bg=theme.BG_ALT,
-                fg=theme.PURPLE,
+                fg=theme.FG,
                 font=theme.FONT_TITLE,
             ).pack(side="left", padx=(0, theme.PAD * 2))
         else:
@@ -84,7 +90,7 @@ class StreamsaverApp(tk.Tk):
                 title_bar,
                 text="💾  Streamsaver",
                 bg=theme.BG_ALT,
-                fg=theme.PURPLE,
+                fg=theme.FG,
                 font=theme.FONT_TITLE,
             ).pack(side="left", padx=theme.PAD * 2)
 

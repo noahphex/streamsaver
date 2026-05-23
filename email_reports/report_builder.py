@@ -26,7 +26,7 @@ _TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "templates", "base.html
 # ── Header logo ────────────────────────────────────────────────────────────────
 _HEADER_LOGO_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "assets", "logos", "streamsaver_header.jpg",
+    "assets", "logos", "streamsaver_header_transparent.png",
 )
 _HEADER_LOGO_CID = "streamsaver_header"
 
@@ -52,10 +52,10 @@ def _get_header_logo() -> tuple[str, str | None, MIMEImage | None]:
             with open(_HEADER_LOGO_PATH, "rb") as fh:
                 raw = fh.read()
             if raw:
-                mime_part = MIMEImage(raw, _subtype="jpeg")
+                mime_part = MIMEImage(raw, _subtype="png")
                 mime_part.add_header("Content-ID", f"<{_HEADER_LOGO_CID}>")
                 mime_part.add_header("Content-Disposition", "inline",
-                                     filename="streamsaver_header.jpg")
+                                     filename="streamsaver_header.png")
                 img_html = (
                     f'<img src="cid:{_HEADER_LOGO_CID}" '
                     f'alt="Streamsaver — Streaming Cost Intelligence" '
