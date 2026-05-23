@@ -31,29 +31,35 @@ _TMDB_IMG  = "https://image.tmdb.org/t/p/w92"
 # ── Icon helpers ───────────────────────────────────────────────────────────────
 
 def _logo_path_for(provider_id: int) -> str:
-    """Return the local file path for a provider logo regardless of whether it exists."""
+    """Return the RELATIVE path for a provider logo (stored in DB and on disk)."""
+    return os.path.join("assets", "logos", f"{provider_id}.jpg")
+
+
+def _logo_abs_path(provider_id: int) -> str:
+    """Return the absolute path for a provider logo (used for file I/O)."""
     return os.path.join(_LOGOS_DIR, f"{provider_id}.jpg")
 
 
 def download_icon_for_provider(provider_id: int, logo_path: str) -> Optional[str]:
     """
     Download a TMDb provider logo to assets/logos/{provider_id}.jpg.
-    Returns the local path on success, None on failure.
+    Returns the RELATIVE path on success, None on failure.
     Skips download if the file already exists.
     """
     if not logo_path:
         return None
     os.makedirs(_LOGOS_DIR, exist_ok=True)
-    dest = _logo_path_for(provider_id)
+    rel  = _logo_path_for(provider_id)
+    dest = _logo_abs_path(provider_id)
     if os.path.exists(dest):
-        return dest
+        return rel
     try:
         url  = f"{_TMDB_IMG}{logo_path}"
         resp = requests.get(url, timeout=10)
         resp.raise_for_status()
         with open(dest, "wb") as f:
             f.write(resp.content)
-        return dest
+        return rel
     except Exception as exc:
         logger.debug("Could not download icon for provider %d: %s", provider_id, exc)
         return None
@@ -81,17 +87,22 @@ def backfill_service_icons() -> int:
       1. Exact name match against the networks cache.
       2. Bundle provider lookup — use the first bundle provider that has a logo.
       3. Download from TMDb if the file is missing.
-    Also fixes any stale icon_path values pointing to the old service_icons directory.
+    Also migrates stale absolute paths and old service_icons directory paths to
+    relative paths so the project is portable across machines.
     Returns the number of services updated.
     """
     with db_session() as conn:
-        # Fix stale paths pointing to old service_icons directory
+        # Migrate old service_icons directory paths
         conn.execute(
             "UPDATE services SET icon_path = REPLACE(icon_path, '/assets/service_icons/', '/assets/logos/') "
             "WHERE icon_path LIKE '%/assets/service_icons/%'"
         )
-
-        # Clean up any name typos (data hygiene)
+        # Migrate absolute paths → relative (strip everything before 'assets/')
+        conn.execute(
+            "UPDATE services SET icon_path = SUBSTR(icon_path, INSTR(icon_path, 'assets/')) "
+            "WHERE icon_path LIKE '/%' AND icon_path LIKE '%/assets/logos/%'"
+        )
+        # Clean up name typos
         conn.execute(
             "UPDATE services SET name = TRIM(TRIM(name, '=')) WHERE name LIKE '%='"
         )
@@ -105,7 +116,6 @@ def backfill_service_icons() -> int:
                 "SELECT name, provider_id, logo_path FROM networks WHERE logo_path != ''"
             ).fetchall()
         }
-        # Bundle providers per service: {service_id: [(provider_id, logo_path), ...]}
         bundle_map: dict[int, list[tuple[int, str]]] = {}
         for r in conn.execute(
             """SELECT sb.service_id, sb.tmdb_provider_id, n.logo_path
@@ -122,12 +132,10 @@ def backfill_service_icons() -> int:
     for svc in services:
         provider_id, logo_path = None, None
 
-        # Strategy 1: exact name match
         match = networks_map.get(svc["name"].lower())
         if match:
             provider_id, logo_path = match
 
-        # Strategy 2: bundle provider fallback
         if not provider_id:
             for pid, lpath in bundle_map.get(svc["id"], []):
                 provider_id, logo_path = pid, lpath

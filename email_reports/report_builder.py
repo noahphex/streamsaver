@@ -15,9 +15,10 @@ Card structure per recommendation:
 """
 
 import os
-import base64
 from datetime import date
 from typing import Literal
+
+from email_reports.logo import get_service_logo_html
 
 _TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "templates", "base.html")
 
@@ -31,13 +32,9 @@ _RED         = "#ff5a5f"
 _BLUE        = "#8be9fd"
 _PURPLE      = "#bd93f9"
 _AMBER       = "#ffb86c"
-_DIVIDER     = "#3a3d52"           # structural borders
-_ROW_SEP     = "rgba(255,255,255,0.06)"  # subtle row separators
+_DIVIDER     = "#3a3d52"
+_ROW_SEP     = "rgba(255,255,255,0.06)"
 _CARD_BG     = "#31364a"
-_LOGO_BG     = "#1f2230"
-_LOGO_BORDER = "#40445c"
-
-_AVATAR_COLORS = ["#bd93f9", "#8be9fd", "#ffb86c", "#ff79c6", "#50fa7b", "#6272a4"]
 
 _BADGE_COLORS = {
     "suspend":              (_RED,    "#ffffff"),
@@ -57,47 +54,6 @@ def _render(template: str, **kwargs) -> str:
     for key, value in kwargs.items():
         template = template.replace(f"{{{{{key}}}}}", str(value))
     return template
-
-
-def _logo_html(icon_path: str | None, name: str, size: int = 64) -> str:
-    """
-    Returns an email-safe 64×64 logo block.
-    Inline base64 <img> if file exists; colored letter-avatar fallback otherwise.
-    """
-    inner = size - 20  # 10px padding each side
-
-    if icon_path and os.path.exists(icon_path):
-        with open(icon_path, "rb") as fh:
-            data = base64.b64encode(fh.read()).decode()
-        ext  = os.path.splitext(icon_path)[1].lstrip(".").lower()
-        mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
-        content = (
-            f'<img src="data:{mime};base64,{data}" alt="" border="0" '
-            f'width="{inner}" height="{inner}" '
-            f'style="display:block;border-radius:6px;object-fit:contain;">'
-        )
-    else:
-        initial = name[0].upper() if name else "?"
-        color   = _AVATAR_COLORS[hash(name) % len(_AVATAR_COLORS)]
-        fsize   = inner // 3
-        content = (
-            f'<table width="{inner}" height="{inner}" cellpadding="0" cellspacing="0" '
-            f'border="0" bgcolor="{color}" '
-            f'style="background-color:{color};border-radius:6px;">'
-            f'<tr><td width="{inner}" height="{inner}" align="center" valign="middle" '
-            f'style="font-size:{fsize}px;font-weight:700;color:#1c1f2b;'
-            f'font-family:Arial,Helvetica,sans-serif;">'
-            f'{initial}</td></tr></table>'
-        )
-
-    return (
-        f'<table class="ss-logo-box" width="{size}" height="{size}" cellpadding="10" '
-        f'cellspacing="0" border="0" bgcolor="{_LOGO_BG}" '
-        f'style="background-color:{_LOGO_BG};border-radius:14px;'
-        f'border:1px solid {_LOGO_BORDER};width:{size}px;height:{size}px;'
-        f'box-shadow:inset 0 0 0 1px rgba(255,255,255,0.03);">'
-        f'<tr><td align="center" valign="middle">{content}</td></tr></table>'
-    )
 
 
 def _badge(label: str, bg: str, fg: str) -> str:
@@ -127,7 +83,7 @@ def _build_card(
       REASON  — muted footer text
     Mobile: logo cell stacks below header via @media query in base.html.
     """
-    logo = _logo_html(icon_path, name)
+    logo = get_service_logo_html({"name": name, "icon_path": icon_path})
 
     # ── HEADER: name stacked above badge, then billing date ───────────────────
     header = (
