@@ -79,6 +79,10 @@ Service logos are downloaded automatically from TMDb and cached locally in `asse
 
 In **Settings**, click **🔄 Sync Trakt Now** to pull your watch history. Then click **📧 Run Analysis & Send Report** to get suspend/resubscribe recommendations.
 
+### Backup restore behavior
+
+If you restore from **Settings → Restore Backup**, Streamsaver now automatically backfills `icon_path` values for restored services right after import. This repopulates local logo files and ensures email logos render without needing a separate manual **Refresh Provider List** step.
+
 ---
 
 ## Scheduler

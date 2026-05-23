@@ -21,7 +21,8 @@ Restore is a clean-slate replace:
   1. Delete all existing service_bundles and services.
   2. Re-insert services (auto-assigned new IDs).
   3. Re-insert their bundles.
-  4. Merge settings (only non-runtime keys; sync timestamps are left alone).
+    4. Merge settings (only non-runtime keys; sync timestamps are left alone).
+    5. Immediately backfill service icons from the cached provider map.
 
 icon_path is intentionally excluded — logos are re-fetched from TMDb
 automatically on the next provider-list refresh.
@@ -106,6 +107,8 @@ def export_backup(path: str) -> int:
 def import_backup(path: str) -> tuple[int, int]:
     """
     Restore from a JSON backup at *path* (clean-slate replace).
+    Automatically attempts to repopulate service icon_path values after restore
+    so email logos work without a separate manual refresh step.
     Returns (services_restored, settings_restored).
     Raises ValueError on schema/version mismatch.
     Raises OSError on read failure.
@@ -171,4 +174,15 @@ def import_backup(path: str) -> tuple[int, int]:
         "Backup restored from %s — %d services, %d settings",
         path, len(services), settings_count,
     )
+
+    # Keep restore successful even if icon backfill encounters transient issues.
+    # This runs after DB writes so restored records are visible to the backfill pass.
+    try:
+        from core.service_manager import backfill_service_icons
+
+        updated_icons = backfill_service_icons()
+        logger.info("Post-restore icon backfill updated %d service(s).", updated_icons)
+    except Exception as exc:
+        logger.warning("Post-restore icon backfill failed: %s", exc)
+
     return len(services), settings_count
