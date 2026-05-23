@@ -11,7 +11,7 @@ Settings managed here:
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 import threading
 
 from gui import theme
@@ -193,8 +193,41 @@ class SettingsPage(ttk.Frame):
                                      font=theme.FONT_SMALL)
         self._status_lbl.grid(row=row, column=0, columnspan=2, sticky="w",
                                pady=(theme.PAD, 0))
+        row += 1
 
-    # ── Helpers ────────────────────────────────────────────────────────────────
+        ttk.Separator(wrap, orient="horizontal").grid(
+            row=row, column=0, columnspan=2, sticky="ew", pady=theme.PAD
+        )
+        row += 1
+
+        # ── Backup & Restore ──────────────────────────────────────────────
+        SectionHeader(wrap, text="Backup & Restore").grid(
+            row=row, column=0, columnspan=2, sticky="w",
+            pady=(0, theme.PAD_SMALL)
+        )
+        row += 1
+
+        ttk.Label(
+            wrap,
+            text="Export your services and settings to a JSON file for safekeeping or migration to another host.",
+            style="Dim.TLabel",
+            font=theme.FONT_SMALL,
+            wraplength=500,
+        ).grid(row=row, column=0, columnspan=2, sticky="w", pady=(0, theme.PAD_SMALL))
+        row += 1
+
+        backup_frame = ttk.Frame(wrap, style="TFrame")
+        backup_frame.grid(row=row, column=0, columnspan=2, sticky="w")
+
+        ttk.Button(
+            backup_frame, text="📤 Export Backup",
+            command=self._on_export_backup,
+        ).pack(side="left", padx=(0, theme.PAD_SMALL))
+
+        ttk.Button(
+            backup_frame, text="📥 Restore Backup",
+            command=self._on_restore_backup,
+        ).pack(side="left")
 
     def _on_mode_change(self) -> None:
         """Enable/disable threshold combobox based on mode selection."""
@@ -330,6 +363,61 @@ class SettingsPage(ttk.Frame):
 
         threading.Thread(target=_do, daemon=True).start()
 
+    def _on_export_backup(self) -> None:
+        path = filedialog.asksaveasfilename(
+            parent=self,
+            title="Export Streamsaver Backup",
+            defaultextension=".json",
+            filetypes=[("JSON backup", "*.json"), ("All files", "*.*")],
+            initialfile="streamsaver_backup.json",
+        )
+        if not path:
+            return
+        try:
+            from core.backup import export_backup
+            count = export_backup(path)
+            self._set_status(
+                f"✅  Backup exported — {count} service(s) saved to {path}",
+                theme.SUCCESS,
+            )
+        except Exception as exc:
+            messagebox.showerror("Export Failed", str(exc), parent=self)
+            self._set_status(f"❌  Export failed: {exc}", theme.DANGER)
+
+    def _on_restore_backup(self) -> None:
+        path = filedialog.askopenfilename(
+            parent=self,
+            title="Restore Streamsaver Backup",
+            filetypes=[("JSON backup", "*.json"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+
+        confirmed = messagebox.askyesno(
+            "⚠️  Replace All Data?",
+            "Restoring will permanently delete ALL current services and settings,\n"
+            "then replace them with the contents of the backup.\n\n"
+            "This cannot be undone. Export a backup first if you want to keep your current data.\n\n"
+            "Continue with restore?",
+            icon="warning",
+            parent=self,
+        )
+        if not confirmed:
+            return
+
+        try:
+            from core.backup import import_backup
+            services_count, settings_count = import_backup(path)
+            self._set_status(
+                f"✅  Restore complete — {services_count} service(s), {settings_count} setting(s) loaded.",
+                theme.SUCCESS,
+            )
+            self._load()
+            self.event_generate("<<SyncComplete>>")
+        except Exception as exc:
+            messagebox.showerror("Restore Failed", str(exc), parent=self)
+            self._set_status(f"❌  Restore failed: {exc}", theme.DANGER)
+
     def _on_run_analysis(self) -> None:
         self._set_status("Running analysis…", color=theme.INFO)
 
@@ -371,11 +459,12 @@ class SettingsPage(ttk.Frame):
                     recs = results.get(rtype, [])
                     if recs:
                         names = ", ".join(r["name"] for r in recs)
-                        html  = build_report(rtype, recs)
+                        html, attachments = build_report(rtype, recs)
                         send_report(
                             to_address=notify_email,
                             subject=f"Streamsaver: {subject_prefix} — {names}",
                             html_body=html,
+                            attachments=attachments,
                             from_address=from_address,
                             app_password=app_password,
                         )
