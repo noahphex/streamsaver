@@ -8,9 +8,9 @@ Compatible with: Gmail, Apple Mail, Outlook desktop/web, iOS Mail.
 No flexbox, no CSS grid, no CSS variables, no external fonts.
 
 Card structure per recommendation:
-  HEADER ROW   — service name + badge (78%) | logo block (22%)
+  HEADER ROW   — service name / badge / billing date (78%) | logo block (22%)
   DIVIDER      — solid 1px separator
-  METRICS      — 2-column rows (label | value) with dashed dividers
+  METRICS      — 2-column rows (label | right-aligned value)
   REASON ROW   — muted explanation text
 """
 
@@ -22,23 +22,23 @@ from typing import Literal
 _TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "templates", "base.html")
 
 # ── Color palette ─────────────────────────────────────────────────────────────
-_FG        = "#f8f8f2"   # primary text
-_FG_DIM    = "#9aa3c7"   # muted / reason text
-_FG_META   = "#6272a4"   # billing date / metadata
-_GREEN     = "#50fa7b"
-_ORANGE    = "#ffb86c"
-_RED       = "#ff5a5f"
-_BLUE      = "#8be9fd"
-_PURPLE    = "#bd93f9"
-_AMBER     = "#ffb86c"
-_DIVIDER   = "#3a3d52"
-_CARD_BG   = "#2f3447"
-_LOGO_BG   = "#1c1f2b"
+_FG          = "#f8f8f2"
+_FG_DIM      = "#9aa3c7"
+_FG_META     = "#6272a4"
+_GREEN       = "#50fa7b"
+_ORANGE      = "#ffb86c"
+_RED         = "#ff5a5f"
+_BLUE        = "#8be9fd"
+_PURPLE      = "#bd93f9"
+_AMBER       = "#ffb86c"
+_DIVIDER     = "#3a3d52"           # structural borders
+_ROW_SEP     = "rgba(255,255,255,0.06)"  # subtle row separators
+_CARD_BG     = "#31364a"
+_LOGO_BG     = "#1f2230"
+_LOGO_BORDER = "#40445c"
 
-# Avatar fallback colors keyed by service name hash
 _AVATAR_COLORS = ["#bd93f9", "#8be9fd", "#ffb86c", "#ff79c6", "#50fa7b", "#6272a4"]
 
-# Semantic badge colors per recommendation type
 _BADGE_COLORS = {
     "suspend":              (_RED,    "#ffffff"),
     "consider_non_renewal": (_AMBER,  "#1c1f2b"),
@@ -59,46 +59,44 @@ def _render(template: str, **kwargs) -> str:
     return template
 
 
-def _logo_html(icon_path: str | None, name: str, size: int = 72) -> str:
+def _logo_html(icon_path: str | None, name: str, size: int = 64) -> str:
     """
-    Returns an email-safe logo block:
-    - Inline base64 <img> if icon file exists on disk.
-    - Colored initial-letter avatar table as fallback.
-    Logo is wrapped in a dark bordered box matching the spec.
+    Returns an email-safe 64×64 logo block.
+    Inline base64 <img> if file exists; colored letter-avatar fallback otherwise.
     """
-    inner_size = size - 20  # 10px padding each side
+    inner = size - 20  # 10px padding each side
 
     if icon_path and os.path.exists(icon_path):
         with open(icon_path, "rb") as fh:
             data = base64.b64encode(fh.read()).decode()
         ext  = os.path.splitext(icon_path)[1].lstrip(".").lower()
         mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
-        img  = (
+        content = (
             f'<img src="data:{mime};base64,{data}" alt="" border="0" '
-            f'width="{inner_size}" height="{inner_size}" '
+            f'width="{inner}" height="{inner}" '
             f'style="display:block;border-radius:6px;object-fit:contain;">'
         )
     else:
         initial = name[0].upper() if name else "?"
         color   = _AVATAR_COLORS[hash(name) % len(_AVATAR_COLORS)]
-        fsize   = inner_size // 3
-        img = (
-            f'<table width="{inner_size}" height="{inner_size}" cellpadding="0" '
-            f'cellspacing="0" border="0" bgcolor="{color}" '
+        fsize   = inner // 3
+        content = (
+            f'<table width="{inner}" height="{inner}" cellpadding="0" cellspacing="0" '
+            f'border="0" bgcolor="{color}" '
             f'style="background-color:{color};border-radius:6px;">'
-            f'<tr><td width="{inner_size}" height="{inner_size}" align="center" '
-            f'valign="middle" style="font-size:{fsize}px;font-weight:700;'
-            f'color:#1c1f2b;font-family:Arial,Helvetica,sans-serif;">'
+            f'<tr><td width="{inner}" height="{inner}" align="center" valign="middle" '
+            f'style="font-size:{fsize}px;font-weight:700;color:#1c1f2b;'
+            f'font-family:Arial,Helvetica,sans-serif;">'
             f'{initial}</td></tr></table>'
         )
 
-    # Dark bordered container box
     return (
-        f'<table width="{size}" height="{size}" cellpadding="10" cellspacing="0" '
-        f'border="0" bgcolor="{_LOGO_BG}" '
+        f'<table class="ss-logo-box" width="{size}" height="{size}" cellpadding="10" '
+        f'cellspacing="0" border="0" bgcolor="{_LOGO_BG}" '
         f'style="background-color:{_LOGO_BG};border-radius:14px;'
-        f'border:1px solid {_DIVIDER};width:{size}px;height:{size}px;">'
-        f'<tr><td align="center" valign="middle">{img}</td></tr></table>'
+        f'border:1px solid {_LOGO_BORDER};width:{size}px;height:{size}px;'
+        f'box-shadow:inset 0 0 0 1px rgba(255,255,255,0.03);">'
+        f'<tr><td align="center" valign="middle">{content}</td></tr></table>'
     )
 
 
@@ -118,76 +116,78 @@ def _build_card(
     badge_bg: str,
     badge_fg: str,
     billing_line: str,
-    cost_rows: list[tuple[str, str]],   # (label, value)
+    cost_rows: list[tuple[str, str]],
     reason: str,
     extra_html: str = "",
 ) -> str:
     """
-    Strict 3-section email-safe card:
-      HEADER  — 78% info | 22% logo
-      METRICS — 2-col rows with dashed dividers
+    3-section email-safe card (table-based, no flexbox):
+      HEADER  — 78% info (name / badge / billing) | 22% logo
+      METRICS — 2-col rows, right-aligned values, subtle row separators
       REASON  — muted footer text
+    Mobile: logo cell stacks below header via @media query in base.html.
     """
     logo = _logo_html(icon_path, name)
 
-    # ── HEADER ROW: 78% info | 22% logo ─────────────────────────────────────
+    # ── HEADER: name stacked above badge, then billing date ───────────────────
     header = (
         f'<table width="100%" cellpadding="0" cellspacing="0" border="0" '
         f'role="presentation">'
         f'<tr>'
-        # Info cell — owns 78% of width
-        f'<td width="78%" valign="top" '
+        f'<td class="ss-info-col" valign="top" '
         f'style="padding:0 16px 0 0;vertical-align:top;">'
         f'<p style="font-family:Arial,Helvetica,sans-serif;font-size:16px;'
-        f'font-weight:700;color:{_FG};margin:0 0 8px;line-height:1.3;">'
+        f'font-weight:700;color:{_FG};margin:0 0 10px;line-height:1.3;">'
         f'{name}</p>'
-        f'<p style="margin:0 0 10px;">{_badge(badge_label, badge_bg, badge_fg)}</p>'
+        f'<p style="margin:0 0 12px;">{_badge(badge_label, badge_bg, badge_fg)}</p>'
         f'<p style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
         f'font-weight:500;color:{_FG_META};margin:0;line-height:1.4;">'
         f'{billing_line}</p>'
         f'</td>'
-        # Logo cell — fixed 22%, right-aligned
-        f'<td width="22%" valign="top" align="right" '
-        f'style="vertical-align:top;">'
+        f'<td class="ss-logo-col" valign="top" align="right" width="72" '
+        f'style="vertical-align:top;width:72px;">'
         f'{logo}'
         f'</td>'
         f'</tr></table>'
     )
 
-    # ── SOLID DIVIDER ────────────────────────────────────────────────────────
+    # ── SOLID SECTION DIVIDER ─────────────────────────────────────────────────
     divider = (
         f'<table width="100%" cellpadding="0" cellspacing="0" border="0" '
-        f'style="margin:18px 0 0;">'
+        f'style="margin:20px 0 0;">'
         f'<tr><td height="1" bgcolor="{_DIVIDER}" '
         f'style="font-size:0;line-height:0;background-color:{_DIVIDER};"></td></tr>'
         f'</table>'
     )
 
-    # ── METRICS ROWS: 2-col, dashed dividers between rows ────────────────────
+    # ── METRICS: label left | value right (120px, tabular-nums) ──────────────
     rows_html = ""
     for i, (label, value) in enumerate(cost_rows):
-        border = f"border-top:1px dashed {_DIVIDER};" if i > 0 else ""
+        border = f"border-top:1px solid {_ROW_SEP};" if i > 0 else ""
         rows_html += (
             f'<tr>'
             f'<td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
             f'font-weight:600;color:{_FG};padding:12px 0;{border}">{label}</td>'
-            f'<td align="right" style="font-family:Arial,Helvetica,sans-serif;'
-            f'font-size:15px;font-weight:700;color:{_GREEN};padding:12px 0;'
-            f'white-space:nowrap;{border}">{value}</td>'
+            f'<td width="120" align="right" '
+            f'style="font-family:Arial,Helvetica,sans-serif;font-size:15px;'
+            f'font-weight:700;color:{_GREEN};padding:12px 0;white-space:nowrap;'
+            f'font-variant-numeric:tabular-nums;width:120px;text-align:right;{border}">'
+            f'{value}</td>'
             f'</tr>'
         )
     metrics = (
-        f'<table width="100%" cellpadding="0" cellspacing="0" border="0">'
+        f'<table width="100%" cellpadding="0" cellspacing="0" border="0" '
+        f'style="padding-top:20px;padding-bottom:4px;">'
         f'{rows_html}</table>'
         if rows_html else ""
     )
 
-    # ── REASON FOOTER ────────────────────────────────────────────────────────
+    # ── REASON ────────────────────────────────────────────────────────────────
     reason_divider = (
         f'<table width="100%" cellpadding="0" cellspacing="0" border="0" '
-        f'style="margin:8px 0 10px;">'
-        f'<tr><td style="font-size:0;line-height:0;'
-        f'border-top:1px dashed {_DIVIDER};"></td></tr></table>'
+        f'style="margin:12px 0 16px;">'
+        f'<tr><td style="font-size:0;line-height:1px;'
+        f'border-top:1px solid {_ROW_SEP};"></td></tr></table>'
     )
     reason_block = (
         f'<p style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
@@ -196,11 +196,10 @@ def _build_card(
     )
 
     return (
-        f'<table width="100%" cellpadding="20" cellspacing="0" border="0" '
+        f'<table width="100%" cellpadding="0" cellspacing="0" border="0" '
         f'bgcolor="{_CARD_BG}" style="background-color:{_CARD_BG};'
-        f'border-radius:10px;border:1px solid {_DIVIDER};'
-        f'margin-bottom:16px;">'
-        f'<tr><td style="padding:20px;">'
+        f'border-radius:18px;border:1px solid {_DIVIDER};margin-bottom:16px;">'
+        f'<tr><td style="padding:24px;">'
         f'{header}{divider}{metrics}{extra_html}{reason_divider}{reason_block}'
         f'</td></tr></table>'
     )
@@ -219,10 +218,9 @@ def _section_header(title: str, subtitle: str) -> str:
 
 
 def _section_wrap(content: str) -> str:
-    """Add top padding/border between sections."""
     return (
         f'<table width="100%" cellpadding="0" cellspacing="0" border="0" '
-        f'style="padding-top:18px;margin-top:18px;border-top:1px solid {_DIVIDER};">'
+        f'style="padding-top:20px;margin-top:20px;border-top:1px solid {_DIVIDER};">'
         f'<tr><td>{content}</td></tr></table>'
     )
 
@@ -252,11 +250,11 @@ def _build_suspend_content(recommendations: list[dict]) -> tuple[str, str]:
                 ("Monthly savings if paused", f"${monthly:.2f}"),
                 ("Annual savings if paused",  f"${annual:.2f}"),
             ],
-            reason = rec.get("reason", "No upcoming content before next billing date."),
+            reason = rec.get("reason", "No recent activity or upcoming releases detected before renewal."),
         ))
 
     content = (
-        _section_header("Services to Pause", "Low activity services that may be safe to suspend.")
+        _section_header("Services to Pause", "Services with low recent engagement.")
         + "".join(cards)
     )
     return content, preheader
@@ -322,7 +320,7 @@ def _build_renew_soon_content(recommendations: list[dict]) -> tuple[str, str]:
     content = (
         _section_header(
             "Annual Renewals Approaching",
-            "Strong engagement signals — these subscriptions look worth keeping.",
+            "Active engagement detected — these look worth keeping.",
         )
         + "".join(cards)
     )
@@ -340,11 +338,12 @@ def _build_resubscribe_content(recommendations: list[dict]) -> tuple[str, str]:
         show_rows = "".join(
             f'<tr>'
             f'<td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
-            f'color:{_FG};padding:8px 0;border-top:1px dashed {_DIVIDER};">'
+            f'color:{_FG};padding:8px 0;border-top:1px solid {_ROW_SEP};">'
             f'{s["title"]}</td>'
-            f'<td align="right" style="font-family:Arial,Helvetica,sans-serif;'
-            f'font-size:13px;color:{_ORANGE};padding:8px 0;white-space:nowrap;'
-            f'border-top:1px dashed {_DIVIDER};">'
+            f'<td align="right" width="120" '
+            f'style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
+            f'color:{_ORANGE};padding:8px 0;white-space:nowrap;'
+            f'border-top:1px solid {_ROW_SEP};">'
             f'{s.get("next_air_date", "—")}</td>'
             f'</tr>'
             for s in shows
@@ -371,7 +370,7 @@ def _build_resubscribe_content(recommendations: list[dict]) -> tuple[str, str]:
     content = (
         _section_header(
             "Services to Resubscribe",
-            "Previously paused services with high-interest content returning soon.",
+            "Previously paused services with returning content.",
         )
         + "".join(cards)
     )
