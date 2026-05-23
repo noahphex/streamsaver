@@ -35,12 +35,14 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+> **Shortcut:** `run_streamsaver.sh` will create the venv and install dependencies automatically on first run if they're missing.
+
 ### 3. Configure credentials
 
 Run the setup wizard once to securely encrypt your API keys and Gmail App Password:
 
 ```bash
-python setup_credentials.py
+./run_streamsaver.sh --setup
 ```
 
 You will need:
@@ -52,7 +54,7 @@ You will need:
 ### 4. Launch the GUI
 
 ```bash
-python main.py
+./run_streamsaver.sh
 ```
 
 Enter your passphrase when prompted to unlock credentials.
@@ -76,14 +78,13 @@ In **Settings**, click **🔄 Sync Trakt Now** to pull your watch history. Then 
 The scheduler runs a daily sync + analysis + email pipeline automatically.
 
 ```bash
-# Run once immediately
-python scheduler.py --run-once
+# Run once immediately (via launch script)
+./run_streamsaver.sh --scheduler
 
-# Run continuously (schedules at 2:00 AM daily)
-python scheduler.py
-
-# Custom time
-python scheduler.py --run-at 08:00
+# Or run directly for more options
+.venv/bin/python scheduler.py --run-once   # run once
+.venv/bin/python scheduler.py              # continuous (2:00 AM daily)
+.venv/bin/python scheduler.py --run-at 08:00  # custom time
 ```
 
 **Passphrase options (in priority order):**
