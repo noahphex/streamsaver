@@ -23,6 +23,50 @@ from email_reports.logo import get_service_logo_cid
 
 _TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "templates", "base.html")
 
+# ── Header logo ────────────────────────────────────────────────────────────────
+_HEADER_LOGO_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "assets", "logos", "streamsaver_header.jpg",
+)
+_HEADER_LOGO_CID = "streamsaver_header"
+
+# Fallback when the image file is missing or unreadable
+_HEADER_TEXT_FALLBACK = (
+    '<p style="font-family:Arial,Helvetica,sans-serif;font-size:36px;'
+    'font-weight:700;color:#bd93f9;letter-spacing:-0.5px;margin:0;">'
+    'Streamsaver</p>'
+    '<p style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
+    'color:#6272a4;margin-top:8px;margin-bottom:0;">'
+    'Streaming cost intelligence</p>'
+)
+
+
+def _get_header_logo() -> tuple[str, str | None, MIMEImage | None]:
+    """
+    Load streamsaver_header.jpg for CID embedding.
+    Returns (img_html, cid, mime_part).
+    Falls back to styled text if the file is missing.
+    """
+    if os.path.exists(_HEADER_LOGO_PATH):
+        try:
+            with open(_HEADER_LOGO_PATH, "rb") as fh:
+                raw = fh.read()
+            if raw:
+                mime_part = MIMEImage(raw, _subtype="jpeg")
+                mime_part.add_header("Content-ID", f"<{_HEADER_LOGO_CID}>")
+                mime_part.add_header("Content-Disposition", "inline",
+                                     filename="streamsaver_header.jpg")
+                img_html = (
+                    f'<img src="cid:{_HEADER_LOGO_CID}" '
+                    f'alt="Streamsaver — Streaming Cost Intelligence" '
+                    f'border="0" width="320" '
+                    f'style="display:block;max-width:320px;height:auto;margin:0 auto;">'
+                )
+                return img_html, _HEADER_LOGO_CID, mime_part
+        except OSError:
+            pass
+    return _HEADER_TEXT_FALLBACK, None, None
+
 # ── Color palette ─────────────────────────────────────────────────────────────
 _FG      = "#f8f8f2"
 _FG_DIM  = "#9aa3c7"
@@ -416,9 +460,13 @@ def build_report(
     }
     builder, title = dispatch.get(report_type, dispatch["resubscribe"])
     content, preheader, attachments = builder(recommendations)
+    header_img, header_cid, header_mime = _get_header_logo()
+    if header_cid and header_mime:
+        attachments[header_cid] = header_mime
     html = _render(
         _load_template(),
-        TITLE=title, PREHEADER=preheader, CONTENT=content, YEAR=str(date.today().year),
+        TITLE=title, PREHEADER=preheader, CONTENT=content,
+        YEAR=str(date.today().year), HEADER_IMG=header_img,
     )
     return html, attachments
 
@@ -531,6 +579,9 @@ def build_digest(analysis_results: dict) -> tuple[str, Attachments] | None:
         return None
 
     summary_metrics = _build_summary_metrics(analysis_results)
+    header_img, header_cid, header_mime = _get_header_logo()
+    if header_cid and header_mime:
+        attachments[header_cid] = header_mime
 
     html = _render(
         _load_template(),
@@ -538,5 +589,6 @@ def build_digest(analysis_results: dict) -> tuple[str, Attachments] | None:
         PREHEADER=" · ".join(preview_parts),
         CONTENT=summary_metrics + "\n".join(sections),
         YEAR=str(date.today().year),
+        HEADER_IMG=header_img,
     )
     return html, attachments
