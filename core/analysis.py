@@ -58,6 +58,22 @@ def _activity_label(watch_score: int, active_count: int) -> str:
     return "None"
 
 
+def _confidence_label(watch_score: int, active_count: int) -> str:
+    """
+    Return recommendation confidence based on signal clarity.
+    High = very clear signal (strongly active or completely inactive).
+    Medium = some signal but mixed.
+    Low = minimal data.
+    """
+    if watch_score == 0 and active_count == 0:
+        return "High"     # completely inactive — unambiguous
+    if active_count >= 2 or watch_score >= 50:
+        return "High"     # strong engagement — unambiguous
+    if watch_score >= LOW_USAGE_SCORE or active_count > 0:
+        return "Medium"
+    return "Low"
+
+
 def _advance_billing_date(anchor: date, cycle: str, today: date) -> tuple[date, bool]:
     """
     Roll a billing anchor forward to the next future billing date.
@@ -309,6 +325,7 @@ def _build_summary(svc: dict, billing_date: date, signals: dict, cycle: str, day
         "icon_path":     svc.get("icon_path"),
         "active_count":  signals["active_count"],
         "watch_score":   signals["watch_score"],
+        "confidence":    _confidence_label(signals["watch_score"], signals["active_count"]),
     }
 
 

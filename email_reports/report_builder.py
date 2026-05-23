@@ -88,6 +88,8 @@ def _build_card(
     reason: str,
     extra_html: str = "",
     accent_color: str = "",
+    confidence: str = "",
+    is_top: bool = False,
 ) -> tuple[str, Attachments]:
     """
     3-section email-safe card. Returns (html, attachments).
@@ -117,7 +119,14 @@ def _build_card(
         f'<p style="font-family:Arial,Helvetica,sans-serif;font-size:16px;'
         f'font-weight:700;color:{_FG};margin:0 0 10px;line-height:1.3;">'
         f'{name}</p>'
-        f'<p style="margin:0 0 12px;">{_badge(badge_label, badge_bg, badge_fg)}</p>'
+        f'<p style="margin:0 0 8px;">{_badge(badge_label, badge_bg, badge_fg)}</p>'
+        + (
+            f'<p style="font-family:Arial,Helvetica,sans-serif;font-size:11px;'
+            f'font-weight:500;color:{_FG_META};margin:0 0 12px;line-height:1.3;">'
+            f'Confidence: {confidence}</p>'
+            if confidence else
+            f'<p style="margin:0 0 12px;"></p>'
+        ) +
         f'{billing_cell}'
         f'</td>'
         f'<td class="ss-logo-col" valign="top" align="right" width="72" '
@@ -185,7 +194,7 @@ def _build_card(
     # Left accent border if type has one
     accent_style = f"border-left:4px solid {accent_color};" if accent_color else ""
 
-    html = (
+    card_html = (
         f'<table width="100%" cellpadding="0" cellspacing="0" border="0" '
         f'bgcolor="{_CARD_BG}" style="background-color:{_CARD_BG};'
         f'border-radius:18px;border:1px solid {_DIVIDER};{accent_style}margin-bottom:16px;">'
@@ -193,7 +202,17 @@ def _build_card(
         f'{header}{divider}{metrics}{extra_html}{reason_divider}{reason_block}'
         f'</td></tr></table>'
     )
-    return html, attachments
+
+    if is_top:
+        top_label = (
+            f'<p style="font-family:Arial,Helvetica,sans-serif;font-size:10px;'
+            f'font-weight:700;color:{accent_color or _FG_META};letter-spacing:1px;'
+            f'text-transform:uppercase;margin:0 0 6px;">★ Top Recommendation</p>'
+        )
+        html = top_label + card_html
+    else:
+        html = card_html
+
     return html, attachments
 
 
@@ -225,7 +244,7 @@ def _build_suspend_content(recommendations: list[dict]) -> tuple[str, str, Attac
     accent    = _ACCENT_COLORS["suspend"]
     cards_html, attachments = [], {}
 
-    for rec in recommendations:
+    for i, rec in enumerate(recommendations):
         monthly = float(rec.get("estimated_monthly_spend") or rec.get("monthly_cost") or 0.0)
         annual  = float(rec.get("estimated_annual_spend")  or rec.get("annual_cost")  or 0.0)
         if monthly and not annual:
@@ -246,6 +265,8 @@ def _build_suspend_content(recommendations: list[dict]) -> tuple[str, str, Attac
             ],
             reason       = rec.get("reason", "No recent activity or upcoming releases detected before renewal."),
             accent_color = accent,
+            confidence   = rec.get("confidence", ""),
+            is_top       = (i == 0),
         )
         cards_html.append(card_html)
         attachments.update(card_atts)
@@ -261,7 +282,7 @@ def _build_consider_non_renewal_content(recommendations: list[dict]) -> tuple[st
     accent    = _ACCENT_COLORS["consider_non_renewal"]
     cards_html, attachments = [], {}
 
-    for rec in recommendations:
+    for i, rec in enumerate(recommendations):
         annual     = float(rec.get("estimated_annual_spend") or rec.get("annual_cost") or 0.0)
         days_until = rec.get("days_until_renewal", "?")
         extra = (
@@ -281,6 +302,8 @@ def _build_consider_non_renewal_content(recommendations: list[dict]) -> tuple[st
             reason       = rec.get("reason", "Low engagement near renewal window."),
             extra_html   = extra,
             accent_color = accent,
+            confidence   = rec.get("confidence", ""),
+            is_top       = (i == 0),
         )
         cards_html.append(card_html)
         attachments.update(card_atts)
@@ -299,7 +322,7 @@ def _build_renew_soon_content(recommendations: list[dict]) -> tuple[str, str, At
     accent    = _ACCENT_COLORS["renew_soon"]
     cards_html, attachments = [], {}
 
-    for rec in recommendations:
+    for i, rec in enumerate(recommendations):
         annual     = float(rec.get("estimated_annual_spend") or rec.get("annual_cost") or 0.0)
         days_until = rec.get("days_until_renewal", "?")
         card_html, card_atts = _build_card(
@@ -312,6 +335,8 @@ def _build_renew_soon_content(recommendations: list[dict]) -> tuple[str, str, At
             cost_rows    = [("Annual cost", f"${annual:.2f}/yr")],
             reason       = rec.get("reason", "Active engagement and upcoming content detected."),
             accent_color = accent,
+            confidence   = rec.get("confidence", ""),
+            is_top       = (i == 0),
         )
         cards_html.append(card_html)
         attachments.update(card_atts)
@@ -330,7 +355,7 @@ def _build_resubscribe_content(recommendations: list[dict]) -> tuple[str, str, A
     accent    = _ACCENT_COLORS["resubscribe"]
     cards_html, attachments = [], {}
 
-    for rec in recommendations:
+    for i, rec in enumerate(recommendations):
         shows = rec.get("shows", [])
         show_rows = "".join(
             f'<tr>'
@@ -363,6 +388,8 @@ def _build_resubscribe_content(recommendations: list[dict]) -> tuple[str, str, A
             reason       = "High-interest content is returning to this service.",
             extra_html   = extra,
             accent_color = accent,
+            confidence   = rec.get("confidence", ""),
+            is_top       = (i == 0),
         )
         cards_html.append(card_html)
         attachments.update(card_atts)
@@ -394,6 +421,58 @@ def build_report(
         TITLE=title, PREHEADER=preheader, CONTENT=content, YEAR=str(date.today().year),
     )
     return html, attachments
+
+
+def _build_summary_metrics(analysis_results: dict) -> str:
+    """
+    3-column stat row: Monthly spend · Potential savings · Services analyzed.
+    Rendered before recommendation sections in the digest.
+    """
+    all_recs = []
+    for key in ("suspend", "consider_non_renewal", "renew_soon", "resubscribe", "keep", "uncertain"):
+        all_recs.extend(analysis_results.get(key, []))
+
+    total_monthly = sum(
+        float(r.get("estimated_monthly_spend") or r.get("monthly_cost") or 0.0)
+        for r in all_recs
+    )
+    savings_recs = (
+        analysis_results.get("suspend", [])
+        + analysis_results.get("consider_non_renewal", [])
+    )
+    potential_savings = sum(
+        float(r.get("estimated_monthly_spend") or r.get("monthly_cost") or 0.0)
+        for r in savings_recs
+    )
+    services_analyzed = len(all_recs)
+
+    stats = [
+        ("Monthly spend",     f"${total_monthly:.2f}"),
+        ("Potential savings", f"${potential_savings:.2f}"),
+        ("Services analyzed", str(services_analyzed)),
+    ]
+
+    cells = "".join(
+        f'<td align="center" valign="top" width="33%" style="width:33%;padding:0 8px;">'
+        f'<p style="font-family:Arial,Helvetica,sans-serif;font-size:22px;'
+        f'font-weight:700;color:{_GREEN};margin:0 0 4px;line-height:1.2;">{value}</p>'
+        f'<p style="font-family:Arial,Helvetica,sans-serif;font-size:11px;'
+        f'font-weight:500;color:{_FG_META};margin:0;text-transform:uppercase;'
+        f'letter-spacing:0.6px;">{label}</p>'
+        f'</td>'
+        for label, value in stats
+    )
+
+    return (
+        f'<table width="100%" cellpadding="0" cellspacing="0" border="0" '
+        f'bgcolor="{_CARD_BG}" style="background-color:{_CARD_BG};'
+        f'border-radius:14px;border:1px solid {_DIVIDER};margin-bottom:24px;">'
+        f'<tr><td style="padding:20px 16px;">'
+        f'<table width="100%" cellpadding="0" cellspacing="0" border="0">'
+        f'<tr>{cells}</tr>'
+        f'</table>'
+        f'</td></tr></table>'
+    )
 
 
 def build_digest(analysis_results: dict) -> tuple[str, Attachments] | None:
@@ -451,11 +530,13 @@ def build_digest(analysis_results: dict) -> tuple[str, Attachments] | None:
     if not sections:
         return None
 
+    summary_metrics = _build_summary_metrics(analysis_results)
+
     html = _render(
         _load_template(),
         TITLE="Streamsaver — Daily Subscription Digest",
         PREHEADER=" · ".join(preview_parts),
-        CONTENT="\n".join(sections),
+        CONTENT=summary_metrics + "\n".join(sections),
         YEAR=str(date.today().year),
     )
     return html, attachments
