@@ -136,6 +136,8 @@ def run_daily_job(creds: dict) -> None:
         logger.info("=" * 60)
         return
 
+    html, attachments = html
+
     # Build a concise subject from what's in the digest
     subject_parts = []
     if results.get("suspend"):
@@ -154,6 +156,7 @@ def run_daily_job(creds: dict) -> None:
             to_address=notify_email,
             subject=subject,
             html_body=html,
+            attachments=attachments,
         )
         logger.info("Sent daily digest to %s", notify_email)
     except Exception as exc:

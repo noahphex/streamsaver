@@ -4,6 +4,7 @@ Streamsaver — Gmail SMTP email sender
 Author: Noah Lee
 
 Sends HTML email reports via Gmail using an App Password.
+Uses multipart/related MIME for CID-embedded logos.
 Credentials are loaded from the encrypted config file each call,
 so the passphrase must have been provided at startup.
 """
@@ -11,6 +12,7 @@ so the passphrase must have been provided at startup.
 import logging
 import smtplib
 import ssl
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional
@@ -25,36 +27,49 @@ def send_report(
     to_address: str,
     subject: str,
     html_body: str,
+    attachments: Optional[dict[str, MIMEImage]] = None,
     from_address: Optional[str] = None,
     app_password: Optional[str] = None,
 ) -> None:
     """
-    Send an HTML email via Gmail SMTP.
-
-    If from_address and app_password are not provided, they are loaded
-    from the encrypted credentials file using the global passphrase
-    set at application startup.
+    Send an HTML email with CID-embedded images via Gmail SMTP.
 
     Args:
         to_address:   Recipient email address.
         subject:      Email subject line.
-        html_body:    Full HTML content string.
+        html_body:    Full HTML content string (may contain cid: references).
+        attachments:  Dict of {cid_str: MIMEImage} from report_builder.
         from_address: Gmail sender address (optional, loaded from creds if absent).
         app_password: Gmail App Password (optional, loaded from creds if absent).
     """
     if not to_address:
         raise ValueError("Recipient address (to_address) must not be empty.")
 
-    # Resolve credentials if not explicitly passed
     if not from_address or not app_password:
         from_address, app_password = _load_gmail_creds()
 
-    # Build the message
-    msg = MIMEMultipart("alternative")
+    attachments = attachments or {}
+
+    # multipart/related wraps HTML body + inline image attachments.
+    # This is required for cid: references to resolve in Gmail.
+    msg = MIMEMultipart("related")
     msg["Subject"] = subject
     msg["From"]    = f"Streamsaver <{from_address}>"
     msg["To"]      = to_address
     msg.attach(MIMEText(html_body, "html", "utf-8"))
+
+    # Attach each unique logo once; deduplicated by CID key from build_digest.
+    attached_cids: set[str] = set()
+    for cid, mime_part in attachments.items():
+        if cid not in attached_cids:
+            msg.attach(mime_part)
+            attached_cids.add(cid)
+            logger.info("Attached CID: %s", cid)
+
+    # Pre-send validation: warn if any cid: ref in HTML has no attachment
+    missing = [f"cid:{c}" for c in _extract_cid_refs(html_body) if c not in attached_cids]
+    if missing:
+        logger.warning("CID refs in HTML without matching attachment: %s", missing)
 
     context = ssl.create_default_context()
     try:
@@ -71,14 +86,17 @@ def send_report(
         raise RuntimeError(f"Failed to send email: {exc}") from exc
 
 
+def _extract_cid_refs(html: str) -> list[str]:
+    """Return all CID values referenced in src="cid:..." within the HTML."""
+    import re
+    return re.findall(r'src="cid:([^"]+)"', html)
+
+
 def _load_gmail_creds() -> tuple[str, str]:
     """
     Load gmail_sender and gmail_app_password from the encrypted credentials file.
     Requires the application to have been unlocked at startup.
     """
-    # The app stores the decrypted credentials in memory on the client object.
-    # For the standalone mailer (scheduler usage) we require the passphrase via env
-    # or prompt. Here we defer to the app-level session; if unavailable we raise.
     try:
         from _runtime import get_credentials  # type: ignore[import]
         creds = get_credentials()
@@ -95,6 +113,7 @@ def send_report_with_credentials(
     to_address: str,
     subject: str,
     html_body: str,
+    attachments: Optional[dict[str, MIMEImage]] = None,
 ) -> None:
     """
     Convenience wrapper that accepts a credentials dict directly.
@@ -104,6 +123,7 @@ def send_report_with_credentials(
         to_address=to_address,
         subject=subject,
         html_body=html_body,
+        attachments=attachments,
         from_address=creds["gmail_sender"],
         app_password=creds["gmail_app_password"],
     )

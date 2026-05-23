@@ -7,34 +7,35 @@ Builds Dracula-themed digest emails using strict <table> layout.
 Compatible with: Gmail, Apple Mail, Outlook desktop/web, iOS Mail.
 No flexbox, no CSS grid, no CSS variables, no external fonts.
 
-Card structure per recommendation:
-  HEADER ROW   — service name / badge / billing date (78%) | logo block (22%)
-  DIVIDER      — solid 1px separator
-  METRICS      — 2-column rows (label | right-aligned value)
-  REASON ROW   — muted explanation text
+Public API:
+  build_digest(analysis_results) → (html, attachments) | None
+  build_report(report_type, recs) → (html, attachments)
+
+attachments: dict[cid_str, MIMEImage] — deduplicated, ready to embed.
 """
 
 import os
 from datetime import date
+from email.mime.image import MIMEImage
 from typing import Literal
 
-from email_reports.logo import get_service_logo_html
+from email_reports.logo import get_service_logo_cid
 
 _TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "templates", "base.html")
 
 # ── Color palette ─────────────────────────────────────────────────────────────
-_FG          = "#f8f8f2"
-_FG_DIM      = "#9aa3c7"
-_FG_META     = "#6272a4"
-_GREEN       = "#50fa7b"
-_ORANGE      = "#ffb86c"
-_RED         = "#ff5a5f"
-_BLUE        = "#8be9fd"
-_PURPLE      = "#bd93f9"
-_AMBER       = "#ffb86c"
-_DIVIDER     = "#3a3d52"
-_ROW_SEP     = "rgba(255,255,255,0.06)"
-_CARD_BG     = "#31364a"
+_FG      = "#f8f8f2"
+_FG_DIM  = "#9aa3c7"
+_FG_META = "#6272a4"
+_GREEN   = "#50fa7b"
+_ORANGE  = "#ffb86c"
+_RED     = "#ff5a5f"
+_BLUE    = "#8be9fd"
+_PURPLE  = "#bd93f9"
+_AMBER   = "#ffb86c"
+_DIVIDER = "#3a3d52"
+_ROW_SEP = "rgba(255,255,255,0.06)"
+_CARD_BG = "#31364a"
 
 _BADGE_COLORS = {
     "suspend":              (_RED,    "#ffffff"),
@@ -43,6 +44,9 @@ _BADGE_COLORS = {
     "resubscribe":          (_PURPLE, "#ffffff"),
     "uncertain":            (_RED,    "#ffffff"),
 }
+
+# Type alias for the attachments dict
+Attachments = dict[str, MIMEImage]
 
 
 def _load_template() -> str:
@@ -75,17 +79,15 @@ def _build_card(
     cost_rows: list[tuple[str, str]],
     reason: str,
     extra_html: str = "",
-) -> str:
+) -> tuple[str, Attachments]:
     """
-    3-section email-safe card (table-based, no flexbox):
-      HEADER  — 78% info (name / badge / billing) | 22% logo
-      METRICS — 2-col rows, right-aligned values, subtle row separators
-      REASON  — muted footer text
-    Mobile: logo cell stacks below header via @media query in base.html.
+    3-section email-safe card. Returns (html, attachments).
+    attachments: {cid: MIMEImage} — empty dict if logo unavailable (avatar used).
     """
-    logo = get_service_logo_html({"name": name, "icon_path": icon_path})
+    logo_html, cid, mime_part = get_service_logo_cid({"name": name, "icon_path": icon_path})
+    attachments: Attachments = {cid: mime_part} if cid and mime_part else {}
 
-    # ── HEADER: name stacked above badge, then billing date ───────────────────
+    # ── HEADER: name / badge / billing date (left) | logo (right) ────────────
     header = (
         f'<table width="100%" cellpadding="0" cellspacing="0" border="0" '
         f'role="presentation">'
@@ -102,12 +104,12 @@ def _build_card(
         f'</td>'
         f'<td class="ss-logo-col" valign="top" align="right" width="72" '
         f'style="vertical-align:top;width:72px;">'
-        f'{logo}'
+        f'{logo_html}'
         f'</td>'
         f'</tr></table>'
     )
 
-    # ── SOLID SECTION DIVIDER ─────────────────────────────────────────────────
+    # ── DIVIDER ───────────────────────────────────────────────────────────────
     divider = (
         f'<table width="100%" cellpadding="0" cellspacing="0" border="0" '
         f'style="margin:20px 0 0;">'
@@ -116,7 +118,7 @@ def _build_card(
         f'</table>'
     )
 
-    # ── METRICS: label left | value right (120px, tabular-nums) ──────────────
+    # ── METRICS ───────────────────────────────────────────────────────────────
     rows_html = ""
     for i, (label, value) in enumerate(cost_rows):
         border = f"border-top:1px solid {_ROW_SEP};" if i > 0 else ""
@@ -151,7 +153,7 @@ def _build_card(
         f'{reason}</p>'
     )
 
-    return (
+    html = (
         f'<table width="100%" cellpadding="0" cellspacing="0" border="0" '
         f'bgcolor="{_CARD_BG}" style="background-color:{_CARD_BG};'
         f'border-radius:18px;border:1px solid {_DIVIDER};margin-bottom:16px;">'
@@ -159,9 +161,11 @@ def _build_card(
         f'{header}{divider}{metrics}{extra_html}{reason_divider}{reason_block}'
         f'</td></tr></table>'
     )
+    return html, attachments
 
 
 # ── Section builders ───────────────────────────────────────────────────────────
+# Each returns (html, preheader, attachments).
 
 def _section_header(title: str, subtitle: str) -> str:
     return (
@@ -181,11 +185,11 @@ def _section_wrap(content: str) -> str:
     )
 
 
-def _build_suspend_content(recommendations: list[dict]) -> tuple[str, str]:
+def _build_suspend_content(recommendations: list[dict]) -> tuple[str, str, Attachments]:
     names     = ", ".join(r["name"] for r in recommendations)
     preheader = f"Consider pausing: {names} before your next billing date."
     bg, fg    = _BADGE_COLORS["suspend"]
-    cards     = []
+    cards_html, attachments = [], {}
 
     for rec in recommendations:
         monthly = float(rec.get("estimated_monthly_spend") or rec.get("monthly_cost") or 0.0)
@@ -195,7 +199,7 @@ def _build_suspend_content(recommendations: list[dict]) -> tuple[str, str]:
         elif annual and not monthly:
             monthly = round(annual / 12, 2)
 
-        cards.append(_build_card(
+        card_html, card_atts = _build_card(
             name         = rec["name"],
             icon_path    = rec.get("icon_path"),
             badge_label  = "Suspend",
@@ -207,20 +211,19 @@ def _build_suspend_content(recommendations: list[dict]) -> tuple[str, str]:
                 ("Annual savings if paused",  f"${annual:.2f}"),
             ],
             reason = rec.get("reason", "No recent activity or upcoming releases detected before renewal."),
-        ))
+        )
+        cards_html.append(card_html)
+        attachments.update(card_atts)
 
-    content = (
-        _section_header("Services to Pause", "Services with low recent engagement.")
-        + "".join(cards)
-    )
-    return content, preheader
+    content = _section_header("Services to Pause", "Services with low recent engagement.") + "".join(cards_html)
+    return content, preheader, attachments
 
 
-def _build_consider_non_renewal_content(recommendations: list[dict]) -> tuple[str, str]:
+def _build_consider_non_renewal_content(recommendations: list[dict]) -> tuple[str, str, Attachments]:
     names     = ", ".join(r["name"] for r in recommendations)
     preheader = f"Annual renewal approaching for {names} — low engagement detected."
     bg, fg    = _BADGE_COLORS["consider_non_renewal"]
-    cards     = []
+    cards_html, attachments = [], {}
 
     for rec in recommendations:
         annual     = float(rec.get("estimated_annual_spend") or rec.get("annual_cost") or 0.0)
@@ -231,7 +234,7 @@ def _build_consider_non_renewal_content(recommendations: list[dict]) -> tuple[st
             f'Your plan is paid through {rec["billing_date"]}. '
             f'You can disable auto-renew without losing access.</p>'
         )
-        cards.append(_build_card(
+        card_html, card_atts = _build_card(
             name         = rec["name"],
             icon_path    = rec.get("icon_path"),
             badge_label  = "Consider Non-Renewal",
@@ -241,28 +244,27 @@ def _build_consider_non_renewal_content(recommendations: list[dict]) -> tuple[st
             cost_rows    = [("Annual cost", f"${annual:.2f}")],
             reason       = rec.get("reason", "Low engagement near renewal window."),
             extra_html   = extra,
-        ))
+        )
+        cards_html.append(card_html)
+        attachments.update(card_atts)
 
     content = (
-        _section_header(
-            "Annual Renewals to Review",
-            "Low engagement near renewal — consider disabling auto-renew.",
-        )
-        + "".join(cards)
+        _section_header("Annual Renewals to Review", "Low engagement near renewal — consider disabling auto-renew.")
+        + "".join(cards_html)
     )
-    return content, preheader
+    return content, preheader, attachments
 
 
-def _build_renew_soon_content(recommendations: list[dict]) -> tuple[str, str]:
+def _build_renew_soon_content(recommendations: list[dict]) -> tuple[str, str, Attachments]:
     names     = ", ".join(r["name"] for r in recommendations)
     preheader = f"Annual renewal approaching for {names} — looks worth keeping."
     bg, fg    = _BADGE_COLORS["renew_soon"]
-    cards     = []
+    cards_html, attachments = [], {}
 
     for rec in recommendations:
         annual     = float(rec.get("estimated_annual_spend") or rec.get("annual_cost") or 0.0)
         days_until = rec.get("days_until_renewal", "?")
-        cards.append(_build_card(
+        card_html, card_atts = _build_card(
             name         = rec["name"],
             icon_path    = rec.get("icon_path"),
             badge_label  = "Likely Worth Renewing",
@@ -271,23 +273,22 @@ def _build_renew_soon_content(recommendations: list[dict]) -> tuple[str, str]:
             billing_line = f"Annual renewal in {days_until} days ({rec['billing_date']})",
             cost_rows    = [("Annual cost", f"${annual:.2f}")],
             reason       = rec.get("reason", "Active engagement and upcoming content detected."),
-        ))
+        )
+        cards_html.append(card_html)
+        attachments.update(card_atts)
 
     content = (
-        _section_header(
-            "Annual Renewals Approaching",
-            "Active engagement detected — these look worth keeping.",
-        )
-        + "".join(cards)
+        _section_header("Annual Renewals Approaching", "Active engagement detected — these look worth keeping.")
+        + "".join(cards_html)
     )
-    return content, preheader
+    return content, preheader, attachments
 
 
-def _build_resubscribe_content(recommendations: list[dict]) -> tuple[str, str]:
+def _build_resubscribe_content(recommendations: list[dict]) -> tuple[str, str, Attachments]:
     names     = ", ".join(r["name"] for r in recommendations)
     preheader = f"Shows returning on {names} — time to resubscribe!"
     bg, fg    = _BADGE_COLORS["resubscribe"]
-    cards     = []
+    cards_html, attachments = [], {}
 
     for rec in recommendations:
         shows = rec.get("shows", [])
@@ -311,7 +312,7 @@ def _build_resubscribe_content(recommendations: list[dict]) -> tuple[str, str]:
             f'{show_rows}</table>'
         ) if shows else ""
 
-        cards.append(_build_card(
+        card_html, card_atts = _build_card(
             name         = rec["name"],
             icon_path    = rec.get("icon_path"),
             badge_label  = "Resubscribe",
@@ -321,16 +322,15 @@ def _build_resubscribe_content(recommendations: list[dict]) -> tuple[str, str]:
             cost_rows    = [],
             reason       = "High-interest content is returning to this service.",
             extra_html   = extra,
-        ))
+        )
+        cards_html.append(card_html)
+        attachments.update(card_atts)
 
     content = (
-        _section_header(
-            "Services to Resubscribe",
-            "Previously paused services with returning content.",
-        )
-        + "".join(cards)
+        _section_header("Services to Resubscribe", "Previously paused services with returning content.")
+        + "".join(cards_html)
     )
-    return content, preheader
+    return content, preheader, attachments
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
@@ -338,8 +338,8 @@ def _build_resubscribe_content(recommendations: list[dict]) -> tuple[str, str]:
 def build_report(
     report_type: Literal["suspend", "consider_non_renewal", "renew_soon", "resubscribe"],
     recommendations: list[dict],
-) -> str:
-    """Build a single-type HTML email report."""
+) -> tuple[str, Attachments]:
+    """Build a single-type HTML email. Returns (html, attachments)."""
     dispatch = {
         "suspend":              (_build_suspend_content,              "Streamsaver — Services to Pause"),
         "consider_non_renewal": (_build_consider_non_renewal_content, "Streamsaver — Annual Renewals to Review"),
@@ -347,20 +347,22 @@ def build_report(
         "resubscribe":          (_build_resubscribe_content,          "Streamsaver — Services to Resubscribe"),
     }
     builder, title = dispatch.get(report_type, dispatch["resubscribe"])
-    content, preheader = builder(recommendations)
-    return _render(
+    content, preheader, attachments = builder(recommendations)
+    html = _render(
         _load_template(),
         TITLE=title, PREHEADER=preheader, CONTENT=content, YEAR=str(date.today().year),
     )
+    return html, attachments
 
 
-def build_digest(analysis_results: dict) -> str | None:
+def build_digest(analysis_results: dict) -> tuple[str, Attachments] | None:
     """
-    Build a single digest email covering all actionable recommendation types.
-    Returns None if there is nothing to report.
+    Build a digest email covering all actionable recommendation types.
+    Returns (html, attachments) or None if nothing to report.
+    attachments is deduplicated — each CID appears once regardless of how
+    many cards reference the same service logo.
     """
-    sections      = []
-    preview_parts = []
+    sections, preview_parts, attachments = [], [], {}
 
     _SECTIONS = [
         ("suspend",              _build_suspend_content,              "Pause"),
@@ -372,15 +374,17 @@ def build_digest(analysis_results: dict) -> str | None:
     for key, builder, prefix in _SECTIONS:
         recs = analysis_results.get(key, [])
         if recs:
-            content, _ = builder(recs)
+            content, _, section_atts = builder(recs)
             sections.append(content if not sections else _section_wrap(content))
+            attachments.update(section_atts)
             preview_parts.append(f"{prefix}: {', '.join(r['name'] for r in recs)}")
 
     uncertain = analysis_results.get("uncertain", [])
     if uncertain:
         bg, fg = _BADGE_COLORS["uncertain"]
-        unc_cards = "".join(
-            _build_card(
+        unc_html, unc_atts = [], {}
+        for r in uncertain:
+            card_html, card_atts = _build_card(
                 name         = r["name"],
                 icon_path    = r.get("icon_path"),
                 badge_label  = "Verify Billing",
@@ -390,25 +394,26 @@ def build_digest(analysis_results: dict) -> str | None:
                 cost_rows    = [],
                 reason       = r.get("reason", "Please update the billing date in Streamsaver."),
             )
-            for r in uncertain
-        )
+            unc_html.append(card_html)
+            unc_atts.update(card_atts)
+
         unc_content = (
-            _section_header(
-                "Billing Dates Need Verification",
-                "These billing dates appear stale — update them in Streamsaver.",
-            )
-            + unc_cards
+            _section_header("Billing Dates Need Verification",
+                            "These billing dates appear stale — update them in Streamsaver.")
+            + "".join(unc_html)
         )
         sections.append(unc_content if not sections else _section_wrap(unc_content))
+        attachments.update(unc_atts)
         preview_parts.append(f"Verify billing: {', '.join(r['name'] for r in uncertain)}")
 
     if not sections:
         return None
 
-    return _render(
+    html = _render(
         _load_template(),
         TITLE="Streamsaver — Daily Subscription Digest",
         PREHEADER=" · ".join(preview_parts),
         CONTENT="\n".join(sections),
         YEAR=str(date.today().year),
     )
+    return html, attachments
