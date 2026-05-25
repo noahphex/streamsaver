@@ -26,4 +26,8 @@ data/streamsaver*.log
 # IDE
 .vscode/
 .idea/
+
+# VS Code workspace file
+*.code-workspace
+
 assets/service_icons/
