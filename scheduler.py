@@ -30,9 +30,11 @@ import sys
 import time
 
 import schedule
+from dotenv import load_dotenv
 
 # Ensure the project root is on the path when run directly
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+load_dotenv()
 
 from db import init_db, db_session
 from core.trakt_client import TraktClient
