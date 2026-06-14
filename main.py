@@ -3,7 +3,7 @@ main.py
 Streamsaver — Application entry point
 Author: Noah Lee
 
-Initialises the database and launches the Tkinter GUI.
+Initialises the database and launches the web application.
 Run with the venv Python:
     .venv/bin/python main.py
 """
@@ -59,8 +59,13 @@ from db import init_db
 def main() -> None:
     logger.info("Streamsaver starting — log file: %s", _LOG_FILE)
     init_db()
-    from gui.app import run
-    run()
+    from web.app import create_app
+
+    app = create_app()
+    app.run(
+        host=os.environ.get("STREAMSAVER_HOST", "0.0.0.0"),
+        port=int(os.environ.get("STREAMSAVER_PORT", "8092")),
+    )
 
 
 if __name__ == "__main__":

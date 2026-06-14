@@ -59,13 +59,13 @@ You will need:
 - **TMDb read-only API key** — create at https://www.themoviedb.org/settings/api
 - **Gmail App Password** — generate at https://myaccount.google.com/apppasswords
 
-### 4. Launch the GUI
+### 4. Launch the Web UI
 
 ```bash
-./run_streamsaver.sh
+python main.py
 ```
 
-Enter your passphrase when prompted to unlock credentials.
+Open `http://localhost:8092` and enter your passphrase when prompted to unlock credentials.
 
 **First launch:** The app will automatically fetch the streaming provider list from TMDb. Go to **Settings → Refresh Provider List** if you need to refresh it.
 
@@ -123,6 +123,38 @@ The scheduler runs a daily sync + analysis + email pipeline automatically.
 |---|---|
 | **Services tab** | Add/edit/delete streaming services with TMDb provider picker. Set status: Subscribed, Suspended, Unsubscribed, Not Subscribed. Enter monthly/annual cost and billing date. |
 | **Shows tab** | View all synced shows with interest score, show state (color-coded), primary streaming provider, last watched date, and next air date. Filter by state. Manually mark shows as abandoned. |
+
+## Homelab Docker
+
+This copy runs as a responsive Flask web app instead of the retired Tkinter GUI.
+
+URLs:
+
+- Caddy URL: `https://streamsaver.home.arpa`
+- Direct URL: `http://192.168.1.156:8092`
+
+Files:
+
+- Compose file: `/Volumes/Media/homelab/streamsaver/docker-compose.yml`
+- Encrypted credentials: `/Volumes/Media/homelab/streamsaver/config`
+- SQLite data/logs: `/Volumes/Media/homelab/streamsaver/data`
+- Provider logos: `/Volumes/Media/homelab/streamsaver/assets/logos`
+- Backups: `/Volumes/Media/homelab/streamsaver/backups`
+
+Run:
+
+```sh
+cd /Volumes/Media/homelab/streamsaver
+docker compose up -d --build
+```
+
+Verify:
+
+```sh
+docker compose ps
+curl -f http://192.168.1.156:8092/health
+curl -k -f https://streamsaver.home.arpa/health
+```
 | **Settings tab** | Set notification email. Configure country for provider data. Sync Trakt, refresh providers, and run analysis + email on demand. Displays last sync timestamp. |
 | **Email digest** | Single daily email covering all recommendation types — suspend, consider non-renewal, likely worth renewing, and resubscribe. Service logos embedded as CID attachments (no external URLs). Includes a summary metrics row (monthly spend, potential savings, services analyzed) and per-card confidence scores. |
 | **Suspend** | Monthly services with no active or upcoming content flagged before billing date. Shows monthly + annual savings if paused. Top recommendation in each section is highlighted. |

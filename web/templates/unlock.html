@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Unlock - Streamsaver{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>Unlock Streamsaver</h1>
+  <p>Enter the existing Streamsaver passphrase to decrypt credentials for this web session.</p>
+</section>
+{% if not has_credentials %}
+  <div class="flash error">No encrypted credentials found in /app/config. Restore config/credentials.enc and config/.salt.</div>
+{% endif %}
+<form class="panel form-panel" method="post">
+  <label>
+    Passphrase
+    <input type="password" name="passphrase" autocomplete="current-password" required>
+  </label>
+  <button type="submit">Unlock</button>
+</form>
+{% endblock %}

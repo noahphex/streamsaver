@@ -18,6 +18,7 @@ config/.salt
 # Local database and logs (machine-specific)
 data/streamsaver.db
 data/streamsaver*.log
+backups/
 
 # macOS
 .DS_Store

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>Services</h1>
+  <p>Manage subscription status, billing, provider IDs, and bundle mappings.</p>
+</section>
+<section class="panel form-panel">
+  <h2>{{ "Edit Service" if editable else "Add Service" }}</h2>
+  <form method="post" class="stack">
+    {% if editable %}<input type="hidden" name="service_id" value="{{ editable.id }}">{% endif %}
+    <label>Name <input name="name" list="networks" value="{{ editable.name if editable else '' }}" required></label>
+    <datalist id="networks">{% for name in network_names %}<option value="{{ name }}">{% endfor %}</datalist>
+    <div class="form-grid">
+      <label>Status
+        <select name="status">{% for status in statuses %}<option value="{{ status }}" {% if editable and editable.status == status %}selected{% endif %}>{{ status_labels.get(status, status) }}</option>{% endfor %}</select>
+      </label>
+      <label>Billing Cycle
+        <select name="billing_cycle">
+          <option value="monthly" {% if not editable or editable.billing_cycle == "monthly" %}selected{% endif %}>Monthly</option>
+          <option value="annual" {% if editable and editable.billing_cycle == "annual" %}selected{% endif %}>Annual</option>
+        </select>
+      </label>
+      <label>Monthly Cost <input type="number" name="monthly_cost" min="0" step="0.01" value="{{ editable.monthly_cost if editable else '' }}"></label>
+      <label>Annual Cost <input type="number" name="annual_cost" min="0" step="0.01" value="{{ editable.annual_cost if editable else '' }}"></label>
+      <label>Billing Date <input type="date" name="billing_anchor_date" value="{{ editable.billing_anchor_date or editable.next_billing_date if editable else '' }}"></label>
+      <label>TMDb Provider ID <input type="number" name="tmdb_provider_id" value="{{ editable.tmdb_provider_id if editable and editable.tmdb_provider_id else '' }}"></label>
+    </div>
+    <label>Bundle Provider IDs <input name="bundle_provider_ids" value="{% if editable %}{{ bundle_map[editable.id]|map(attribute='tmdb_provider_id')|join(', ') }}{% endif %}" placeholder="337, 508"></label>
+    <label class="check"><input type="checkbox" name="auto_renew" {% if not editable or editable.auto_renew %}checked{% endif %}> Auto renew</label>
+    <div class="button-row"><button type="submit">Save</button>{% if editable %}<a class="button ghost" href="{{ url_for('services') }}">Cancel</a>{% endif %}</div>
+  </form>
+</section>
+<section class="cards">
+  {% for svc in services %}
+    <article class="card status-{{ svc.status }}">
+      <div class="card-head">
+        <h3>{{ svc.name }}</h3>
+        <span>{{ status_labels.get(svc.status, svc.status) }}</span>
+      </div>
+      <p>${{ "%.2f"|format(svc.monthly_cost or 0) }}/mo · ${{ "%.2f"|format(svc.annual_cost or 0) }}/yr</p>
+      <p class="muted">Renews: {{ svc.billing_anchor_date or svc.next_billing_date or "Not set" }}</p>
+      {% if bundle_map[svc.id] %}
+        <p class="muted">Bundles: {{ bundle_map[svc.id]|map(attribute='provider_name')|join(', ') }}</p>
+      {% endif %}
+      <div class="button-row">
+        <a class="button ghost" href="{{ url_for('services', edit=svc.id) }}">Edit</a>
+        <form method="post" action="{{ url_for('delete_service_route', service_id=svc.id) }}" onsubmit="return confirm('Delete {{ svc.name }}?')"><button class="danger">Delete</button></form>
+      </div>
+    </article>
+  {% endfor %}
+</section>
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>Streaming Cost Control</h1>
+  <p>Subscribed spend, watch signals, renewal decisions, and Trakt sync status.</p>
+</section>
+<section class="metrics">
+  <div><span>${{ "%.2f"|format(totals.monthly_total) }}</span><small>Monthly</small></div>
+  <div><span>${{ "%.2f"|format(totals.annual_total) }}</span><small>Annualized</small></div>
+  <div><span>{{ services|selectattr("status", "equalto", "subscribed")|list|length }}</span><small>Subscribed</small></div>
+  <div><span>{{ settings.last_trakt_sync[:10] if settings.last_trakt_sync else "Never" }}</span><small>Last Sync</small></div>
+</section>
+<section class="grid two">
+  <div class="panel">
+    <h2>Actions</h2>
+    <div class="button-row">
+      <form method="post" action="{{ url_for('action_sync') }}"><button>Sync Trakt</button></form>
+      <form method="post" action="{{ url_for('action_refresh_providers') }}"><button>Refresh Providers</button></form>
+      <form method="post" action="{{ url_for('action_analyze') }}"><button>Analyze & Email</button></form>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Recommendations</h2>
+    <ul class="compact-list">
+      {% for key, count in recommendations.items() %}
+        <li><span>{{ key.replace("_", " ").title() }}</span><strong>{{ count }}</strong></li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+<section class="panel">
+  <h2>Show States</h2>
+  <div class="chips">
+    {% for key, count in counts.items() %}
+      <a class="chip" href="{{ url_for('shows', state=key.title()) }}">{{ key.title() }} <strong>{{ count }}</strong></a>
+    {% else %}
+      <span class="muted">No shows synced yet.</span>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
