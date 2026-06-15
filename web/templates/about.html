@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}About - Streamsaver{% endblock %}
+{% block content %}
+<section class="hero">
+  <div class="hero-copy">
+    <h1>About Streamsaver</h1>
+    <p>Streamsaver helps you decide which streaming services are worth keeping based on what you actually watch.</p>
+  </div>
+  <img class="hero-logo" src="{{ url_for('logos', filename='streamsaver_logo_transparent.png') }}" alt="">
+</section>
+
+<section class="grid two about-grid">
+  <article class="panel">
+    <h2>What It Does</h2>
+    <p>
+      Streamsaver compares your watched shows, watchlist, streaming services, and subscription costs in one place.
+      The goal is simple: show which services are useful right now, which ones can wait, and which ones may no
+      longer be worth paying for.
+    </p>
+    <p>
+      It does not try to replace your watchlist app. It uses your viewing history as evidence so you can make
+      cleaner decisions about subscriptions.
+    </p>
+  </article>
+
+  <article class="panel">
+    <h2>How It Works</h2>
+    <ol class="about-steps">
+      <li>It syncs your watched shows and watchlist from Trakt.</li>
+      <li>It looks up where those shows are available using provider data.</li>
+      <li>It compares that against the services you pay for or track.</li>
+      <li>It scores shows based on recent activity, upcoming episodes, and whether you marked them as active, dormant, ignored, or abandoned.</li>
+      <li>It turns those scores into plain recommendations about what to keep, cancel, or review.</li>
+    </ol>
+  </article>
+</section>
+
+<section class="panel about-panel">
+  <h2>The Methodology</h2>
+  <p>
+    Streamsaver treats a streaming subscription as useful when it connects to shows you are actively watching,
+    planning to watch, or waiting on for new episodes. A service becomes less important when its shows are old,
+    dormant, ignored, unavailable, or duplicated by another service you already have.
+  </p>
+  <p>
+    The score is not meant to be perfect math. It is a practical signal. Higher scores mean a show is more likely
+    to matter soon. Lower scores mean it is less likely to justify keeping a paid service by itself.
+  </p>
+  <p>
+    You stay in control. Streamsaver gives you the evidence, but it does not cancel anything for you.
+  </p>
+</section>
+{% endblock %}

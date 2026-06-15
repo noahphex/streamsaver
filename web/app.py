@@ -125,6 +125,10 @@ def create_app():
             recommendations={key: len(value) for key, value in recommendations.items()},
         )
 
+    @app.get("/about")
+    def about():
+        return render_template("about.html")
+
     @app.get("/services")
     def services():
         all_services = get_all_services()
