@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Setup - Streamsaver{% endblock %}
+{% block content %}
+<section class="hero">
+  <div class="hero-copy">
+    <h1>Setup Streamsaver</h1>
+    <p>Create encrypted credentials for Trakt, TMDb, and email reports.</p>
+  </div>
+</section>
+
+{% if has_credentials %}
+  <div class="flash info">Existing credentials were found. Saving this form will replace them.</div>
+{% endif %}
+
+<section class="panel form-panel">
+  <h2>Before You Start</h2>
+  <p class="muted">
+    Create a Trakt API app at
+    <a class="inline-link" href="https://trakt.tv/oauth/applications" target="_blank" rel="noreferrer">trakt.tv/oauth/applications</a>.
+    Use <code>urn:ietf:wg:oauth:2.0:oob</code> as the redirect URI so Trakt gives you a PIN.
+  </p>
+</section>
+
+<form class="panel form-panel" method="post">
+  <h2>Passphrase</h2>
+  <div class="form-grid">
+    <label>Passphrase
+      <input type="password" name="passphrase" autocomplete="new-password" minlength="8" required>
+    </label>
+    <label>Confirm Passphrase
+      <input type="password" name="confirm_passphrase" autocomplete="new-password" minlength="8" required>
+    </label>
+  </div>
+
+  <h2>Trakt</h2>
+  <div class="form-grid">
+    <label>Client ID
+      <input id="trakt-client-id" name="trakt_client_id" value="{{ request.form.trakt_client_id }}" required>
+    </label>
+    <label>Client Secret
+      <input type="password" name="trakt_client_secret" autocomplete="off" required>
+    </label>
+    <label>Trakt Username
+      <input name="trakt_username" value="{{ request.form.trakt_username }}" required>
+    </label>
+    <label>PIN From Trakt
+      <input name="trakt_pin" autocomplete="one-time-code" required>
+    </label>
+  </div>
+  <p class="muted">
+    After entering your Client ID, open this authorization URL in a new tab and approve Streamsaver:
+    <a id="trakt-auth-link" class="inline-link" href="{{ trakt_auth_url or '#' }}" target="_blank" rel="noreferrer">Authorize Trakt</a>.
+    Trakt will show a PIN; paste that PIN into this form.
+  </p>
+
+  <h2>TMDb</h2>
+  <label>Read-Only API Key
+    <input name="tmdb_api_key" value="{{ request.form.tmdb_api_key }}">
+  </label>
+
+  <h2>Email Reports</h2>
+  <div class="form-grid">
+    <label>Gmail Sender
+      <input type="email" name="gmail_sender" value="{{ request.form.gmail_sender }}" required>
+    </label>
+    <label>Gmail App Password
+      <input type="password" name="gmail_app_password" autocomplete="off" required>
+    </label>
+    <label>Report Email
+      <input type="email" name="notify_email" value="{{ request.form.notify_email }}">
+    </label>
+  </div>
+
+  <button type="submit">Save Setup</button>
+</form>
+<script>
+  (() => {
+    const input = document.getElementById("trakt-client-id");
+    const link = document.getElementById("trakt-auth-link");
+    const baseUrl = "https://trakt.tv/oauth/authorize?response_type=code&redirect_uri=urn:ietf:wg:oauth:2.0:oob&client_id=";
+    const updateLink = () => {
+      const clientId = input.value.trim();
+      link.href = clientId ? `${baseUrl}${encodeURIComponent(clientId)}` : "#";
+      link.setAttribute("aria-disabled", clientId ? "false" : "true");
+    };
+    input.addEventListener("input", updateLink);
+    updateLink();
+  })();
+</script>
+{% endblock %}

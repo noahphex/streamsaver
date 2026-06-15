@@ -6,7 +6,11 @@
   <p>Enter the existing Streamsaver passphrase to decrypt credentials for this web session.</p>
 </section>
 {% if not has_credentials %}
-  <div class="flash error">No encrypted credentials found in /app/config. Restore config/credentials.enc and config/.salt.</div>
+  <div class="flash error">
+    No encrypted credentials found in /app/config.
+    <a class="inline-link" href="{{ url_for('setup') }}">Run the setup wizard</a>
+    or restore config/credentials.enc and config/.salt.
+  </div>
 {% endif %}
 <form class="panel form-panel" method="post">
   <label>

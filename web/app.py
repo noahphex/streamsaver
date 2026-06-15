@@ -5,6 +5,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+import requests
 from flask import (
     Flask,
     flash,
@@ -38,7 +39,14 @@ from core.trakt_client import TraktClient
 from db import db_session, init_db
 from email_reports.mailer import send_report
 from email_reports.report_builder import build_report
-from setup_credentials import CRED_FILE, load_credentials
+from setup_credentials import (
+    CRED_FILE,
+    TRAKT_OAUTH_AUTHORIZE,
+    TRAKT_OAUTH_TOKEN,
+    TRAKT_REDIRECT_URI,
+    encrypt_credentials,
+    load_credentials,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +96,39 @@ def create_app():
     @app.get("/logos/<path:filename>")
     def logos(filename):
         return send_from_directory(Path(__file__).resolve().parent.parent / "assets" / "logos", filename)
+
+    @app.route("/setup", methods=["GET", "POST"])
+    def setup():
+        has_credentials = Path(CRED_FILE).exists()
+        if has_credentials and not _credentials(optional=True):
+            flash("Unlock Streamsaver before replacing existing credentials.", "error")
+            return redirect(url_for("unlock"))
+        if request.method == "POST":
+            passphrase = request.form.get("passphrase", "")
+            confirm_passphrase = request.form.get("confirm_passphrase", "")
+            if len(passphrase) < 8:
+                flash("Passphrase must be at least 8 characters.", "error")
+                return redirect(url_for("setup"))
+            if passphrase != confirm_passphrase:
+                flash("Passphrases do not match.", "error")
+                return redirect(url_for("setup"))
+            try:
+                creds = _setup_credentials_from_form(request.form)
+                encrypt_credentials(creds, passphrase)
+                app.config["CREDS"] = creds
+                session["unlocked_at"] = datetime.now().isoformat(timespec="seconds")
+                if creds.get("notify_email"):
+                    _set_setting("notification_email", creds["notify_email"])
+                flash("Credentials saved and Streamsaver unlocked.", "success")
+                return redirect(url_for("settings"))
+            except Exception as exc:
+                logger.exception("Web credential setup failed")
+                flash(f"Setup failed: {exc}", "error")
+        return render_template(
+            "setup.html",
+            has_credentials=has_credentials,
+            trakt_auth_url=_trakt_auth_url(request.form.get("trakt_client_id", "")),
+        )
 
     @app.route("/unlock", methods=["GET", "POST"])
     def unlock():
@@ -345,6 +386,77 @@ def _settings():
         "networks_fetched_at",
     ]
     return {key: _get_setting(key) for key in keys}
+
+
+def _trakt_auth_url(client_id):
+    if not client_id:
+        return ""
+    return (
+        f"{TRAKT_OAUTH_AUTHORIZE}"
+        f"?response_type=code"
+        f"&client_id={client_id.strip()}"
+        f"&redirect_uri={TRAKT_REDIRECT_URI}"
+    )
+
+
+def _setup_credentials_from_form(form):
+    required = {
+        "trakt_client_id": "Trakt Client ID",
+        "trakt_client_secret": "Trakt Client Secret",
+        "trakt_username": "Trakt Username",
+        "trakt_pin": "Trakt PIN",
+        "gmail_sender": "Gmail sender address",
+        "gmail_app_password": "Gmail App Password",
+    }
+    values = {key: form.get(key, "").strip() for key in required}
+    missing = [label for key, label in required.items() if not values[key]]
+    if missing:
+        raise RuntimeError(f"Missing required setup fields: {', '.join(missing)}.")
+
+    token_data = _exchange_trakt_pin(
+        values["trakt_client_id"],
+        values["trakt_client_secret"],
+        values["trakt_pin"],
+    )
+    notify_email = form.get("notify_email", "").strip() or values["gmail_sender"]
+    return {
+        "trakt_client_id": values["trakt_client_id"],
+        "trakt_client_secret": values["trakt_client_secret"],
+        "trakt_access_token": token_data["access_token"],
+        "trakt_refresh_token": token_data.get("refresh_token", ""),
+        "trakt_username": values["trakt_username"],
+        "tmdb_api_key": form.get("tmdb_api_key", "").strip(),
+        "gmail_sender": values["gmail_sender"],
+        "gmail_app_password": values["gmail_app_password"],
+        "notify_email": notify_email,
+    }
+
+
+def _exchange_trakt_pin(client_id, client_secret, pin):
+    try:
+        resp = requests.post(
+            TRAKT_OAUTH_TOKEN,
+            json={
+                "code": pin,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": TRAKT_REDIRECT_URI,
+                "grant_type": "authorization_code",
+            },
+            headers={
+                "User-Agent": "Streamsaver/2.5",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException as exc:
+        raise RuntimeError("Trakt token exchange failed. Check the Client ID, Client Secret, and PIN.") from exc
+    if not data.get("access_token"):
+        raise RuntimeError("Trakt token exchange did not return an access token.")
+    return data
 
 
 def _trakt_client(creds):
