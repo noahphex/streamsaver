@@ -13,9 +13,28 @@
   </select>
   <button>Filter</button>
 </form>
+{% macro sort_link(key, label) -%}
+  {% set active = sort == key %}
+  {% set next_dir = 'asc' if not active or direction == 'desc' else 'desc' %}
+  <a class="sort-link {{ 'active' if active else '' }}" href="{{ url_for('shows', q=q, state=state, sort=key, dir=next_dir) }}">
+    <span>{{ label }}</span>
+    {% if active %}<span class="sort-arrow">{{ '▲' if direction == 'asc' else '▼' }}</span>{% endif %}
+  </a>
+{%- endmacro %}
 <section class="table-wrap">
   <table>
-    <thead><tr><th>Title</th><th>State</th><th>Score</th><th>Service</th><th>Provider</th><th>Last</th><th>Next</th><th></th></tr></thead>
+    <thead>
+      <tr>
+        <th>{{ sort_link('title', 'Title') }}</th>
+        <th>{{ sort_link('state', 'State') }}</th>
+        <th>{{ sort_link('score', 'Score') }}</th>
+        <th>{{ sort_link('service', 'Service') }}</th>
+        <th>{{ sort_link('provider', 'Provider') }}</th>
+        <th>{{ sort_link('last', 'Last') }}</th>
+        <th>{{ sort_link('next', 'Next') }}</th>
+        <th></th>
+      </tr>
+    </thead>
     <tbody>
       {% for show in shows %}
         <tr>

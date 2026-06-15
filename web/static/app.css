@@ -7,6 +7,10 @@
   --muted: #a8adb8;
   --line: #343844;
   --accent: #4fd1c5;
+  --status-subscribed: #50FA7B;
+  --status-unsubscribed: #FF5555;
+  --status-suspended: #F1FA8C;
+  --status-not-subscribed: #8BE9FD;
   --danger: #ff6b6b;
   --success: #68d391;
   --warning: #f6c177;
@@ -160,7 +164,30 @@ input, select {
   color: var(--muted);
   font-size: 13px;
 }
-.status-subscribed { border-color: rgba(104, 211, 145, .45); }
+.status-subscribed { border-color: color-mix(in srgb, var(--status-subscribed), transparent 35%); }
+.status-subscribed .card-head span {
+  background: color-mix(in srgb, var(--status-subscribed), transparent 84%);
+  color: var(--status-subscribed);
+  border: 1px solid color-mix(in srgb, var(--status-subscribed), transparent 45%);
+}
+.status-unsubscribed { border-color: color-mix(in srgb, var(--status-unsubscribed), transparent 35%); }
+.status-unsubscribed .card-head span {
+  background: color-mix(in srgb, var(--status-unsubscribed), transparent 84%);
+  color: var(--status-unsubscribed);
+  border: 1px solid color-mix(in srgb, var(--status-unsubscribed), transparent 45%);
+}
+.status-suspended { border-color: color-mix(in srgb, var(--status-suspended), transparent 35%); }
+.status-suspended .card-head span {
+  background: color-mix(in srgb, var(--status-suspended), transparent 86%);
+  color: var(--status-suspended);
+  border: 1px solid color-mix(in srgb, var(--status-suspended), transparent 45%);
+}
+.status-not_subscribed { border-color: color-mix(in srgb, var(--status-not-subscribed), transparent 35%); }
+.status-not_subscribed .card-head span {
+  background: color-mix(in srgb, var(--status-not-subscribed), transparent 84%);
+  color: var(--status-not-subscribed);
+  border: 1px solid color-mix(in srgb, var(--status-not-subscribed), transparent 45%);
+}
 .compact-list { list-style: none; padding: 0; margin: 0; }
 .compact-list li { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .chips { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -169,6 +196,31 @@ input, select {
 table { width: 100%; border-collapse: collapse; background: var(--panel); border-radius: 8px; overflow: hidden; }
 th, td { text-align: left; padding: 10px; border-bottom: 1px solid var(--line); }
 th { color: var(--muted); font-weight: 600; }
+.sort-link {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  min-height: 32px;
+  color: var(--muted);
+}
+.sort-link.active,
+.sort-link:hover {
+  color: var(--text);
+}
+.sort-arrow {
+  color: var(--accent);
+  font-size: .8rem;
+}
+@media (min-width: 721px) {
+  .table-wrap { overflow: visible; }
+  .table-wrap thead th {
+    position: sticky;
+    top: 69px;
+    z-index: 5;
+    background: #22252d;
+    box-shadow: 0 1px 0 var(--line), 0 8px 18px rgba(0, 0, 0, .22);
+  }
+}
 .flash-stack { display: grid; gap: 8px; margin-bottom: 14px; }
 .flash { padding: 10px 12px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); }
 .flash.success { border-color: var(--success); }

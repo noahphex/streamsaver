@@ -50,6 +50,16 @@ THRESHOLD_OPTIONS = [
     ("12 months (365 days)", "365"),
 ]
 
+SHOW_SORT_COLUMNS = {
+    "title": "LOWER(s.title)",
+    "state": "LOWER(s.show_state)",
+    "score": "s.interest_score",
+    "service": "LOWER(COALESCE(svc.name, ''))",
+    "provider": "LOWER(COALESCE(s.primary_provider, ''))",
+    "last": "COALESCE(s.last_watch_date, '')",
+    "next": "COALESCE(s.next_air_date, '')",
+}
+
 
 def create_app():
     _setup_logging()
@@ -173,8 +183,9 @@ def create_app():
     def shows():
         q = request.args.get("q", "").strip()
         state = request.args.get("state", "All")
-        rows = _shows(q, state)
-        return render_template("shows.html", shows=rows, q=q, state=state)
+        sort, direction = _show_sort(request.args.get("sort", "score"), request.args.get("dir", "desc"))
+        rows = _shows(q, state, sort, direction)
+        return render_template("shows.html", shows=rows, q=q, state=state, sort=sort, direction=direction)
 
     @app.post("/shows/<trakt_id>/state")
     def set_show_state(trakt_id):
@@ -357,7 +368,14 @@ def _show_counts():
     return {row["show_state"] or "unknown": row["count"] for row in rows}
 
 
-def _shows(q, state):
+def _show_sort(sort, direction):
+    sort = sort if sort in SHOW_SORT_COLUMNS else "score"
+    direction = "asc" if direction == "asc" else "desc"
+    return sort, direction
+
+
+def _shows(q, state, sort="score", direction="desc"):
+    sort, direction = _show_sort(sort, direction)
     query = """
         SELECT s.trakt_id, s.title, s.show_state, s.interest_score,
                s.trakt_status, s.primary_provider, s.last_watch_date,
@@ -373,7 +391,7 @@ def _shows(q, state):
     if state and state != "All":
         query += " AND LOWER(s.show_state) = ?"
         params.append(state.lower())
-    query += " ORDER BY s.interest_score DESC, LOWER(s.title)"
+    query += f" ORDER BY {SHOW_SORT_COLUMNS[sort]} {direction.upper()}, LOWER(s.title) ASC"
     with db_session() as conn:
         return [dict(row) for row in conn.execute(query, params).fetchall()]
 
