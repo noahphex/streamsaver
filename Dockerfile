@@ -17,4 +17,6 @@ COPY . .
 
 EXPOSE 8092
 
-CMD ["gunicorn", "--bind", "0.0.0.0:8092", "--workers", "2", "--threads", "4", "--timeout", "120", "wsgi:app"]
+# Streamsaver keeps decrypted credentials in Flask app memory after unlock.
+# A single worker avoids per-process unlock drift while threads keep UI requests responsive.
+CMD ["gunicorn", "--bind", "0.0.0.0:8092", "--workers", "1", "--threads", "8", "--timeout", "120", "wsgi:app"]

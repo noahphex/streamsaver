@@ -77,7 +77,17 @@ class TraktClient:
         params: Optional[dict] = None,
         retry: int = 3,
     ) -> Any:
+        data, _headers = self._get_with_headers(path, params=params, retry=retry)
+        return data
+
+    def _get_with_headers(
+        self,
+        path: str,
+        params: Optional[dict] = None,
+        retry: int = 3,
+    ) -> tuple[Any, dict]:
         url = f"{TRAKT_API_BASE}{path}"
+        refreshed = False
         for attempt in range(retry):
             try:
                 resp = self._session.get(url, params=params, timeout=15)
@@ -94,10 +104,13 @@ class TraktClient:
             )
 
             if resp.status_code == 200:
-                return resp.json()
+                return resp.json(), dict(resp.headers)
             if resp.status_code == 204:
-                return None
+                return None, dict(resp.headers)
             if resp.status_code in (401, 403):
+                if resp.status_code == 401 and not refreshed and self._refresh_access_token():
+                    refreshed = True
+                    continue
                 # Log full response detail to help diagnose auth failures
                 logger.error(
                     "Trakt auth error %s — URL: %s\n"
@@ -131,6 +144,33 @@ class TraktClient:
             resp.raise_for_status()
 
         raise TraktRateLimitError(f"Request to {url} failed after {retry} attempts.")
+
+    def _refresh_access_token(self) -> bool:
+        """Refresh the access token in memory when Trakt returns 401."""
+        if not (self.client_id and self.client_secret and self.refresh_token):
+            return False
+        try:
+            resp = requests.post(
+                f"{TRAKT_API_BASE}/oauth/token",
+                json={
+                    "refresh_token": self.refresh_token,
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret,
+                    "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
+                    "grant_type": "refresh_token",
+                },
+                timeout=15,
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+            self.access_token = payload.get("access_token", self.access_token)
+            self.refresh_token = payload.get("refresh_token", self.refresh_token)
+            self._refresh_headers()
+            logger.info("Refreshed Trakt access token in memory.")
+            return True
+        except requests.RequestException as exc:
+            logger.warning("Trakt token refresh failed: %s", exc)
+            return False
 
     # ── Watch history ──────────────────────────────────────────────────────────
 
@@ -170,6 +210,7 @@ class TraktClient:
         start_at: str,
         username: Optional[str] = None,
         limit: int = 200,
+        page: int = 1,
     ) -> list[dict]:
         """
         Return episode-level watch history for TV shows since start_at.
@@ -185,9 +226,30 @@ class TraktClient:
         """
         user   = username or self.username
         path   = f"/users/{user}/history/shows"
-        params = {"start_at": start_at, "limit": limit, "extended": "full"}
+        params = {"start_at": start_at, "limit": limit, "page": page, "extended": "full"}
         result = self._get(path, params=params)
         return result or []
+
+    def get_all_show_history(
+        self,
+        start_at: str,
+        username: Optional[str] = None,
+        limit: int = 200,
+    ) -> list[dict]:
+        """Paginate through show history since start_at."""
+        user = username or self.username
+        path = f"/users/{user}/history/shows"
+        page = 1
+        rows: list[dict] = []
+        while True:
+            params = {"start_at": start_at, "limit": limit, "page": page, "extended": "full"}
+            batch, headers = self._get_with_headers(path, params=params)
+            batch = batch or []
+            rows.extend(batch)
+            page_count = int(headers.get("X-Pagination-Page-Count", "1") or "1")
+            if page >= page_count or not batch:
+                return rows
+            page += 1
 
 
     def get_watched_shows(self, username: Optional[str] = None) -> list[dict]:

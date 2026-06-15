@@ -28,6 +28,7 @@
     <p class="muted">Provider cache: {{ settings.networks_fetched_at or "never" }}</p>
     <div class="button-row vertical">
       <form method="post" action="{{ url_for('action_sync') }}"><button>Sync Trakt Now</button></form>
+      <form method="post" action="{{ url_for('action_sync') }}"><input type="hidden" name="force_backfill" value="1"><button>Backfill Last Year</button></form>
       <form method="post" action="{{ url_for('action_refresh_providers') }}"><button>Refresh Provider List</button></form>
       <form method="post" action="{{ url_for('action_analyze') }}"><button>Run Analysis & Send Report</button></form>
       <a class="button ghost" href="{{ url_for('backup_export') }}">Export Backup</a>

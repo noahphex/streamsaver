@@ -1,4 +1,6 @@
 import os
+import logging
+import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -9,6 +11,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_from_directory,
     send_file,
     session,
     url_for,
@@ -37,6 +40,8 @@ from email_reports.mailer import send_report
 from email_reports.report_builder import build_report
 from setup_credentials import CRED_FILE, load_credentials
 
+logger = logging.getLogger(__name__)
+
 
 THRESHOLD_OPTIONS = [
     ("1 month (30 days)", "30"),
@@ -47,6 +52,7 @@ THRESHOLD_OPTIONS = [
 
 
 def create_app():
+    _setup_logging()
     init_db()
     app = Flask(__name__, static_folder="static", template_folder="templates")
     app.secret_key = os.environ.get("STREAMSAVER_SECRET_KEY", "streamsaver-local-change-me")
@@ -68,6 +74,10 @@ def create_app():
     @app.get("/health")
     def health():
         return {"ok": True, "unlocked": bool(_credentials(optional=True))}
+
+    @app.get("/logos/<path:filename>")
+    def logos(filename):
+        return send_from_directory(Path(__file__).resolve().parent.parent / "assets" / "logos", filename)
 
     @app.route("/unlock", methods=["GET", "POST"])
     def unlock():
@@ -187,12 +197,16 @@ def create_app():
     def action_sync():
         try:
             creds = _credentials()
-            results = run_full_sync(_trakt_client(creds), _tmdb_client(creds))
+            force_backfill = request.form.get("force_backfill") == "1"
+            results = run_full_sync(_trakt_client(creds), _tmdb_client(creds), force_backfill=force_backfill)
+            logger.info("Manual Trakt sync completed: force_backfill=%s results=%s", force_backfill, results)
+            mode = "Backfill complete" if force_backfill else "Sync complete"
             flash(
-                f"Sync complete: {results['shows']} shows, {results['watchlist']} watchlist, {results['archived']} archived.",
+                f"{mode}: {results['shows']} shows, {results['watchlist']} watchlist, {results['archived']} archived.",
                 "success",
             )
         except Exception as exc:
+            logger.exception("Manual Trakt sync failed")
             flash(f"Sync failed: {exc}", "error")
         return redirect(request.referrer or url_for("dashboard"))
 
@@ -424,3 +438,16 @@ def _int_or_none(value):
         return int(value) if value not in (None, "") else None
     except ValueError:
         return None
+
+
+def _setup_logging() -> None:
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    if not root.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        ))
+        root.addHandler(handler)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)

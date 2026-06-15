@@ -8,7 +8,10 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="{{ url_for('dashboard') }}">Streamsaver</a>
+    <a class="brand" href="{{ url_for('dashboard') }}">
+      <img src="{{ url_for('logos', filename='streamsaver_logo_transparent.png') }}" alt="" aria-hidden="true">
+      <span>Streamsaver</span>
+    </a>
     <nav class="nav">
       <a href="{{ url_for('dashboard') }}">Dashboard</a>
       <a href="{{ url_for('services') }}">Services</a>

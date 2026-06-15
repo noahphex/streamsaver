@@ -13,6 +13,7 @@ services:
       - STREAMSAVER_PASSPHRASE=${STREAMSAVER_PASSPHRASE:-}
     ports:
       - "8092:8092"
+    command: ["gunicorn", "--bind", "0.0.0.0:8092", "--workers", "1", "--threads", "8", "--timeout", "120", "wsgi:app"]
     volumes:
       - ./config:/app/config
       - ./data:/app/data
