@@ -115,41 +115,50 @@ def create_app():
             recommendations={key: len(value) for key, value in recommendations.items()},
         )
 
-    @app.route("/services", methods=["GET", "POST"])
+    @app.get("/services")
     def services():
-        if request.method == "POST":
-            form = request.form
-            service_id = form.get("service_id")
-            payload = _service_payload(form)
-            bundles = _bundle_payload(form.get("bundle_provider_ids", ""))
-            try:
-                if service_id:
-                    update_service(int(service_id), **payload)
-                    set_bundle_providers(int(service_id), bundles)
-                    flash("Service updated.", "success")
-                else:
-                    new_id = add_service(**payload)
-                    set_bundle_providers(new_id, bundles)
-                    flash("Service added.", "success")
-            except Exception as exc:
-                flash(f"Could not save service: {exc}", "error")
-            return redirect(url_for("services"))
-
         all_services = get_all_services()
-        editable = None
-        edit_id = request.args.get("edit")
-        if edit_id:
-            editable = next((svc for svc in all_services if str(svc["id"]) == edit_id), None)
         bundle_map = {svc["id"]: get_bundle_providers(svc["id"]) for svc in all_services}
         return render_template(
             "services.html",
             services=all_services,
-            editable=editable,
             bundle_map=bundle_map,
-            network_names=get_cached_network_names(),
-            statuses=sorted(VALID_STATUSES),
             totals=get_cost_totals(status_filter="subscribed"),
         )
+
+    @app.get("/services/new")
+    def service_new():
+        return _service_form()
+
+    @app.get("/services/<int:service_id>/edit")
+    def service_edit(service_id):
+        editable = next((svc for svc in get_all_services() if svc["id"] == service_id), None)
+        if editable is None:
+            flash("Service not found.", "error")
+            return redirect(url_for("services"))
+        return _service_form(editable)
+
+    @app.post("/services")
+    def service_save():
+        form = request.form
+        service_id = form.get("service_id")
+        payload = _service_payload(form)
+        bundles = _bundle_payload(form.get("bundle_provider_ids", ""))
+        try:
+            if service_id:
+                update_service(int(service_id), **payload)
+                set_bundle_providers(int(service_id), bundles)
+                flash("Service updated.", "success")
+            else:
+                new_id = add_service(**payload)
+                set_bundle_providers(new_id, bundles)
+                flash("Service added.", "success")
+        except Exception as exc:
+            flash(f"Could not save service: {exc}", "error")
+            if service_id:
+                return redirect(url_for("service_edit", service_id=service_id))
+            return redirect(url_for("service_new"))
+        return redirect(url_for("services"))
 
     @app.post("/services/<int:service_id>/delete")
     def delete_service_route(service_id):
@@ -285,6 +294,19 @@ def create_app():
         raise RuntimeError("Streamsaver is locked. Unlock credentials first.")
 
     return app
+
+
+def _service_form(editable=None):
+    bundle_map = {}
+    if editable:
+        bundle_map[editable["id"]] = get_bundle_providers(editable["id"])
+    return render_template(
+        "service_form.html",
+        editable=editable,
+        bundle_map=bundle_map,
+        network_names=get_cached_network_names(),
+        statuses=sorted(VALID_STATUSES),
+    )
 
 
 def _get_setting(key):

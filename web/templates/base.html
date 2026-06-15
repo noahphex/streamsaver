@@ -36,5 +36,34 @@
     {% endwith %}
     {% block content %}{% endblock %}
   </main>
+  <script>
+    (() => {
+      const loadingLabel = (text) => {
+        const normalized = (text || "").trim().toLowerCase();
+        if (normalized.includes("sync") || normalized.includes("backfill")) return "Syncing...";
+        if (normalized.includes("refresh")) return "Refreshing...";
+        if (normalized.includes("analyze") || normalized.includes("email")) return "Running...";
+        if (normalized.includes("restore")) return "Restoring...";
+        if (normalized.includes("delete")) return "Deleting...";
+        if (normalized.includes("save")) return "Saving...";
+        if (normalized.includes("unlock")) return "Unlocking...";
+        if (normalized.includes("lock")) return "Locking...";
+        if (normalized.includes("filter")) return "Filtering...";
+        return "Working...";
+      };
+
+      document.addEventListener("submit", (event) => {
+        if (event.defaultPrevented) return;
+        const form = event.target;
+        const button = event.submitter || form.querySelector("button[type='submit'], button:not([type])");
+        if (!button || button.classList.contains("is-loading")) return;
+        button.dataset.originalText = button.textContent.trim();
+        button.innerHTML = `<span class="button-spinner" aria-hidden="true"></span><span>${loadingLabel(button.dataset.originalText)}</span>`;
+        button.classList.add("is-loading");
+        button.setAttribute("aria-busy", "true");
+        button.disabled = true;
+      });
+    })();
+  </script>
 </body>
 </html>

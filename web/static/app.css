@@ -111,6 +111,28 @@ button, .button {
   font-weight: 700;
   cursor: pointer;
 }
+button.is-loading {
+  cursor: wait;
+  opacity: .88;
+  position: relative;
+}
+.button-spinner {
+  width: 1em;
+  height: 1em;
+  margin-right: .55rem;
+  border: 2px solid rgba(6, 19, 19, .28);
+  border-top-color: #061313;
+  border-radius: 999px;
+  animation: spin .8s linear infinite;
+}
+.link-button .button-spinner,
+button.danger .button-spinner {
+  border-color: rgba(255, 255, 255, .28);
+  border-top-color: currentColor;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 button.small { min-height: 32px; padding: 6px 8px; }
 button.danger, .danger { background: var(--danger); color: #210909; }
 .button.ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); }
