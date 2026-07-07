@@ -87,7 +87,7 @@ def init_db() -> None:
                 trakt_status        TEXT,               -- returning series/ended/canceled
                 show_state          TEXT    NOT NULL DEFAULT 'dormant'
                                             CHECK(show_state IN (
-                                                'active','occasional','dormant',
+                                                'active','occasional','dormant','completed',
                                                 'abandoned','anticipated',
                                                 'ignored','archived'
                                             )),
@@ -101,16 +101,6 @@ def init_db() -> None:
                 abandoned_override  BOOLEAN NOT NULL DEFAULT 0,
                 service_id          INTEGER REFERENCES services(id)
                                             ON DELETE SET NULL
-            );
-
-            -- TV show watchlist (shows user wants to watch, not yet started)
-            CREATE TABLE IF NOT EXISTS watchlist (
-                id             INTEGER PRIMARY KEY AUTOINCREMENT,
-                trakt_id       TEXT    NOT NULL UNIQUE,
-                title          TEXT    NOT NULL,
-                service_id     INTEGER REFERENCES services(id)
-                                       ON DELETE SET NULL,
-                premiere_date  TEXT
             );
 
             -- Cached streaming provider list (from TMDb)
@@ -140,12 +130,15 @@ def init_db() -> None:
             -- Seed default settings (ignored if already present)
             INSERT OR IGNORE INTO settings (key, value) VALUES
                 ('notification_email',        ''),
-                ('abandoned_mode',            'manual'),
-                ('abandoned_threshold_days',  '90'),
                 ('networks_fetched_at',        ''),
                 ('provider_country',           'US'),
                 ('last_trakt_sync',            '');
         """)
+
+        conn.execute(
+            "DELETE FROM settings WHERE key IN ('abandoned_mode', 'abandoned_threshold_days')"
+        )
+        conn.execute("DROP TABLE IF EXISTS watchlist")
 
         # Safe migrations for tables that already exist with older schemas
         _migrate_columns(conn, "services", [

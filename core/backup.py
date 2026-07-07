@@ -30,7 +30,6 @@ automatically on the next provider-list refresh.
 
 import json
 import logging
-import os
 from datetime import datetime, timezone
 
 from db import db_session
@@ -41,6 +40,9 @@ BACKUP_VERSION = 1
 
 # Settings keys that represent runtime/sync state — skip on restore
 _RUNTIME_SETTINGS = {"last_trakt_sync", "networks_fetched_at"}
+
+# Settings retired from the application — do not export or restore them.
+_REMOVED_SETTINGS = {"abandoned_mode", "abandoned_threshold_days"}
 
 # Service columns to include in the backup (icon_path excluded)
 _SERVICE_COLS = [
@@ -69,7 +71,7 @@ def export_backup(path: str) -> int:
         settings = {
             r["key"]: r["value"]
             for r in settings_rows
-            if r["key"] not in _RUNTIME_SETTINGS
+            if r["key"] not in _RUNTIME_SETTINGS | _REMOVED_SETTINGS
         }
 
         # --- services + bundles ---
@@ -162,7 +164,7 @@ def import_backup(path: str) -> tuple[int, int]:
         # Restore settings (skip runtime keys)
         settings_count = 0
         for key, value in settings.items():
-            if key in _RUNTIME_SETTINGS:
+            if key in _RUNTIME_SETTINGS | _REMOVED_SETTINGS:
                 continue
             conn.execute(
                 "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",

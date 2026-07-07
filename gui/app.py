@@ -7,7 +7,6 @@ Manages the top-level window, tab notebook, credential loading,
 and wiring between tabs.
 """
 
-import getpass
 import logging
 import os
 import tkinter as tk

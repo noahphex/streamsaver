@@ -4,7 +4,6 @@ Streamsaver — Reusable themed Tkinter widgets
 Author: Noah Lee
 """
 
-import tkinter as tk
 from tkinter import ttk
 from gui import theme
 
@@ -162,51 +161,8 @@ def configure_ttk_styles() -> None:
     )
 
 
-class StatusBadge(tk.Label):
-    """Colored inline label showing a service status."""
-
-    def __init__(self, parent, status: str, **kwargs):
-        color = theme.STATUS_COLORS.get(status, theme.COMMENT)
-        label = theme.STATUS_LABELS.get(status, status.replace("_", " ").title())
-        super().__init__(
-            parent,
-            text=f"  {label}  ",
-            bg=color,
-            fg=theme.BG,
-            font=theme.FONT_SMALL,
-            relief="flat",
-            padx=4,
-            pady=2,
-            **kwargs,
-        )
-
-
 class SectionHeader(ttk.Label):
     """Bold accent-colored section heading."""
 
     def __init__(self, parent, text: str, **kwargs):
         super().__init__(parent, text=text, style="Heading.TLabel", **kwargs)
-
-
-class ScrollableFrame(ttk.Frame):
-    """A frame with a vertical scrollbar that can contain many child widgets."""
-
-    def __init__(self, parent, **kwargs):
-        super().__init__(parent, **kwargs)
-        canvas    = tk.Canvas(self, bg=theme.BG, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
-        self.inner = ttk.Frame(canvas)
-
-        self.inner.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all")),
-        )
-        canvas.create_window((0, 0), window=self.inner, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-
-        # Mouse wheel scrolling
-        canvas.bind_all("<MouseWheel>",
-                        lambda e: canvas.yview_scroll(-1 * (e.delta // 120), "units"))

@@ -19,7 +19,7 @@ from gui import theme
 from gui.widgets import SectionHeader
 from core.service_manager import (
     add_service, update_service, delete_service,
-    get_all_services, get_cost_totals, VALID_STATUSES,
+    get_all_services, get_cost_totals,
     get_cached_network_names, get_network_provider_id,
     get_bundle_providers, set_bundle_providers,
 )

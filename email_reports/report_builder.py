@@ -9,7 +9,7 @@ No flexbox, no CSS grid, no CSS variables, no external fonts.
 
 Public API:
   build_digest(analysis_results) → (html, attachments) | None
-  build_report(report_type, recs) → (html, attachments)
+  build_digest_subject(analysis_results) → str
 
 attachments: dict[cid_str, MIMEImage] — deduplicated, ready to embed.
 """
@@ -17,7 +17,6 @@ attachments: dict[cid_str, MIMEImage] — deduplicated, ready to embed.
 import os
 from datetime import date
 from email.mime.image import MIMEImage
-from typing import Literal
 
 from email_reports.logo import get_service_logo_cid
 
@@ -447,30 +446,6 @@ def _build_resubscribe_content(recommendations: list[dict]) -> tuple[str, str, A
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
-def build_report(
-    report_type: Literal["suspend", "consider_non_renewal", "renew_soon", "resubscribe"],
-    recommendations: list[dict],
-) -> tuple[str, Attachments]:
-    """Build a single-type HTML email. Returns (html, attachments)."""
-    dispatch = {
-        "suspend":              (_build_suspend_content,              "Streamsaver — Services to Pause"),
-        "consider_non_renewal": (_build_consider_non_renewal_content, "Streamsaver — Annual Renewals to Review"),
-        "renew_soon":           (_build_renew_soon_content,           "Streamsaver — Annual Renewals Approaching"),
-        "resubscribe":          (_build_resubscribe_content,          "Streamsaver — Services to Resubscribe"),
-    }
-    builder, title = dispatch.get(report_type, dispatch["resubscribe"])
-    content, preheader, attachments = builder(recommendations)
-    header_img, header_cid, header_mime = _get_header_logo()
-    if header_cid and header_mime:
-        attachments[header_cid] = header_mime
-    html = _render(
-        _load_template(),
-        TITLE=title, PREHEADER=preheader, CONTENT=content,
-        YEAR=str(date.today().year), HEADER_IMG=header_img,
-    )
-    return html, attachments
-
-
 def _build_summary_metrics(analysis_results: dict) -> str:
     """
     3-column stat row: Monthly spend · Potential savings · Services analyzed.
@@ -520,6 +495,28 @@ def _build_summary_metrics(analysis_results: dict) -> str:
         f'<tr>{cells}</tr>'
         f'</table>'
         f'</td></tr></table>'
+    )
+
+
+def build_digest_subject(analysis_results: dict) -> str:
+    """Build a concise subject line for a multi-section digest."""
+    subject_parts = []
+    if analysis_results.get("suspend"):
+        subject_parts.append(f"Suspend {len(analysis_results['suspend'])}")
+    if analysis_results.get("consider_non_renewal"):
+        subject_parts.append(
+            f"Review {len(analysis_results['consider_non_renewal'])} renewal(s)"
+        )
+    if analysis_results.get("renew_soon"):
+        subject_parts.append(f"Renew {len(analysis_results['renew_soon'])} soon")
+    if analysis_results.get("resubscribe"):
+        subject_parts.append(f"Resubscribe {len(analysis_results['resubscribe'])}")
+    if analysis_results.get("uncertain"):
+        subject_parts.append(f"Verify {len(analysis_results['uncertain'])} billing date(s)")
+    return (
+        "Streamsaver Digest — " + " · ".join(subject_parts)
+        if subject_parts else
+        "Streamsaver Daily Digest"
     )
 
 

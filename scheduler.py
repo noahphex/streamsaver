@@ -6,7 +6,7 @@ Author: Noah Lee
 Runs once a day:
   1. Loads and decrypts credentials (passphrase via CLI argument or env var
      STREAMSAVER_PASSPHRASE — never hardcoded).
-  2. Syncs Trakt watch history and watchlist.
+  2. Syncs Trakt watch history.
   3. Runs the suspend / resubscribe analysis.
   4. Sends email reports for any recommendations.
 
@@ -39,7 +39,7 @@ from core.trakt_client import TraktClient
 from core.tmdb_client  import TMDbClient
 from core.show_tracker import run_full_sync
 from core.analysis     import run_analysis
-from email_reports.report_builder import build_digest
+from email_reports.report_builder import build_digest, build_digest_subject
 from email_reports.mailer          import send_report_with_credentials
 from setup_credentials             import load_credentials
 
@@ -97,9 +97,8 @@ def run_daily_job(creds: dict) -> None:
     try:
         sync_results = run_full_sync(client, tmdb_client)
         logger.info(
-            "Sync complete — shows: %d, watchlist: %d, archived: %d",
+            "Sync complete — shows: %d, archived: %d",
             sync_results["shows"],
-            sync_results["watchlist"],
             sync_results["archived"],
         )
     except Exception as exc:
@@ -138,17 +137,7 @@ def run_daily_job(creds: dict) -> None:
 
     html, attachments = html
 
-    # Build a concise subject from what's in the digest
-    subject_parts = []
-    if results.get("suspend"):
-        subject_parts.append(f"Suspend {len(results['suspend'])}")
-    if results.get("consider_non_renewal"):
-        subject_parts.append(f"Review {len(results['consider_non_renewal'])} renewal(s)")
-    if results.get("renew_soon"):
-        subject_parts.append(f"Renew {len(results['renew_soon'])} soon")
-    if results.get("resubscribe"):
-        subject_parts.append(f"Resubscribe {len(results['resubscribe'])}")
-    subject = "Streamsaver Digest — " + " · ".join(subject_parts) if subject_parts else "Streamsaver Daily Digest"
+    subject = build_digest_subject(results)
 
     try:
         send_report_with_credentials(

@@ -142,7 +142,7 @@ The scheduler runs a daily sync + analysis + email pipeline automatically.
 | 🔵 Occasional | Watching but not binging | 5–14 |
 | ⚫ Dormant | Haven't watched in a while | < 5 |
 | 🟡 Anticipated | Upcoming new season, previously engaged | — |
-| 🔴 Abandoned | Manually marked or auto-detected | — |
+| 🔴 Abandoned | Manually marked by the user | — |
 | 🗄 Archived | Ended 2+ years ago, low score, no future season | — |
 
 ---

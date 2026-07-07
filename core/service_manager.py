@@ -430,23 +430,6 @@ def get_all_services() -> list[dict]:
         return [dict(r) for r in rows]
 
 
-def get_subscribed_services() -> list[dict]:
-    """Return only services with status = 'subscribed'."""
-    with db_session() as conn:
-        rows = conn.execute(
-            "SELECT * FROM services WHERE status = 'subscribed' ORDER BY LOWER(name)"
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-
-# ── Status transitions ─────────────────────────────────────────────────────────
-
-def set_service_status(service_id: int, new_status: str) -> None:
-    """Shortcut to change only the status of a service."""
-    update_service(service_id, status=new_status)
-    logger.info("Service %d status → %s", service_id, new_status)
-
-
 # ── Cost calculations ──────────────────────────────────────────────────────────
 
 def get_cost_totals(status_filter: Optional[str] = None) -> dict:
@@ -503,35 +486,3 @@ def set_bundle_providers(service_id: int, providers: list[dict]) -> None:
                 "INSERT OR IGNORE INTO service_bundles (service_id, tmdb_provider_id, provider_name) VALUES (?, ?, ?)",
                 (service_id, p["tmdb_provider_id"], p.get("provider_name", "")),
             )
-
-
-# ── Trakt network import ───────────────────────────────────────────────────────
-
-def import_networks_from_trakt(client) -> int:
-    """
-    Fetch all networks from Trakt and add any that don't already exist
-    in the services table (with status = 'not_subscribed').
-    Returns count of newly added services.
-    """
-    networks = client.get_networks()
-    added = 0
-    with db_session() as conn:
-        for net in networks:
-            name = net.get("name", "").strip()
-            if not name:
-                continue
-            exists = conn.execute(
-                "SELECT 1 FROM services WHERE LOWER(TRIM(name)) = LOWER(?)", (name,)
-            ).fetchone()
-            if not exists:
-                conn.execute(
-                    """
-                    INSERT INTO services (name, trakt_network_id, status)
-                    VALUES (?, ?, 'not_subscribed')
-                    """,
-                    (name, name),
-                )
-                added += 1
-
-    logger.info("Imported %d new networks from Trakt.", added)
-    return added

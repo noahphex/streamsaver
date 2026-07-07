@@ -5,7 +5,6 @@ Author: Noah Lee
 
 Settings managed here:
   - Notification email address
-  - Abandoned detection mode (auto / manual) and threshold
   - Manual Trakt sync trigger
   - Run analysis now (generates email reports)
 """
@@ -33,14 +32,6 @@ def _set_setting(key: str, value: str) -> None:
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
             (key, value),
         )
-
-
-THRESHOLD_OPTIONS = [
-    ("1 month  (30 days)",   "30"),
-    ("3 months (90 days)",   "90"),
-    ("6 months (180 days)", "180"),
-    ("12 months (365 days)", "365"),
-]
 
 
 class SettingsPage(ttk.Frame):
@@ -102,49 +93,6 @@ class SettingsPage(ttk.Frame):
             font=theme.FONT_SMALL,
         ).grid(row=row + 1, column=1, sticky="w")
         row += 2
-
-        ttk.Separator(wrap, orient="horizontal").grid(
-            row=row, column=0, columnspan=2, sticky="ew", pady=theme.PAD
-        )
-        row += 1
-
-        # ── Abandoned detection ───────────────────────────────────────────
-        SectionHeader(wrap, text="Abandoned Show Detection").grid(
-            row=row, column=0, columnspan=2, sticky="w",
-            pady=(0, theme.PAD_SMALL)
-        )
-        row += 1
-
-        ttk.Label(wrap, text="Detection mode:", style="TLabel").grid(
-            row=row, column=0, sticky="w", padx=(0, theme.PAD), pady=4
-        )
-        self._mode_var = tk.StringVar(value="manual")
-        mode_frame = ttk.Frame(wrap, style="TFrame")
-        mode_frame.grid(row=row, column=1, sticky="w", pady=4)
-
-        ttk.Radiobutton(
-            mode_frame, text="Manual only", variable=self._mode_var,
-            value="manual", command=self._on_mode_change,
-        ).pack(side="left", padx=(0, theme.PAD))
-        ttk.Radiobutton(
-            mode_frame, text="Automatic", variable=self._mode_var,
-            value="auto", command=self._on_mode_change,
-        ).pack(side="left")
-        row += 1
-
-        ttk.Label(wrap, text="Inactivity threshold:", style="TLabel").grid(
-            row=row, column=0, sticky="w", padx=(0, theme.PAD), pady=4
-        )
-        self._threshold_var = tk.StringVar(value="90")
-        self._threshold_cb  = ttk.Combobox(
-            wrap,
-            textvariable=self._threshold_var,
-            values=[label for label, _ in THRESHOLD_OPTIONS],
-            state="readonly",
-            width=24,
-        )
-        self._threshold_cb.grid(row=row, column=1, sticky="w", pady=4)
-        row += 1
 
         ttk.Separator(wrap, orient="horizontal").grid(
             row=row, column=0, columnspan=2, sticky="ew", pady=theme.PAD
@@ -229,23 +177,9 @@ class SettingsPage(ttk.Frame):
             command=self._on_restore_backup,
         ).pack(side="left")
 
-    def _on_mode_change(self) -> None:
-        """Enable/disable threshold combobox based on mode selection."""
-        state = "readonly" if self._mode_var.get() == "auto" else "disabled"
-        self._threshold_cb.configure(state=state)
-
     def _load(self) -> None:
         self._email_var.set(_get_setting("notification_email"))
         self._country_var.set(_get_setting("provider_country") or "US")
-        mode = _get_setting("abandoned_mode") or "manual"
-        self._mode_var.set(mode)
-        self._on_mode_change()
-
-        threshold_days = _get_setting("abandoned_threshold_days") or "90"
-        for label, value in THRESHOLD_OPTIONS:
-            if value == threshold_days:
-                self._threshold_var.set(label)
-                break
 
         last_sync = _get_setting("last_trakt_sync")
         if last_sync:
@@ -261,20 +195,9 @@ class SettingsPage(ttk.Frame):
 
     def _on_save(self) -> None:
         email   = self._email_var.get().strip()
-        mode    = self._mode_var.get()
         country = self._country_var.get().strip().upper() or "US"
 
-        # Resolve threshold label → days value
-        threshold_days = "90"
-        selected_label = self._threshold_var.get()
-        for label, value in THRESHOLD_OPTIONS:
-            if label == selected_label:
-                threshold_days = value
-                break
-
         _set_setting("notification_email",       email)
-        _set_setting("abandoned_mode",           mode)
-        _set_setting("abandoned_threshold_days", threshold_days)
         _set_setting("provider_country",         country)
 
         self._set_status("✅  Settings saved.", color=theme.SUCCESS)
@@ -292,14 +215,12 @@ class SettingsPage(ttk.Frame):
         def _do():
             try:
                 from core.show_tracker  import run_full_sync
-                from core.trakt_client  import TraktAuthError
                 client      = self._get_client()
                 tmdb_client = self._get_tmdb_client() if self._get_tmdb_client else None
                 results     = run_full_sync(client, tmdb_client)
                 msg = (
                     f"✅  Sync complete — "
                     f"{results['shows']} shows, "
-                    f"{results['watchlist']} watchlist, "
                     f"{results['archived']} archived."
                 )
                 self.after(0, lambda: self._set_status(msg, theme.SUCCESS))
@@ -424,18 +345,15 @@ class SettingsPage(ttk.Frame):
         def _do():
             try:
                 from core.analysis import run_analysis
-                from email_reports.report_builder import build_report
-                from email_reports.mailer import send_report
+                from email_reports.report_builder import build_digest, build_digest_subject
+                from email_reports.mailer import send_report_with_credentials
 
                 results      = run_analysis()
                 notify_email = _get_setting("notification_email")
 
                 # Resolve Gmail credentials from the in-memory creds dict
                 creds        = self._get_creds() if self._get_creds else {}
-                from_address = creds.get("gmail_sender", "")
-                app_password = creds.get("gmail_app_password", "")
-
-                if not from_address or not app_password:
+                if not creds.get("gmail_sender") or not creds.get("gmail_app_password"):
                     raise RuntimeError(
                         "Gmail credentials not found in loaded credentials.\n"
                         "Re-run setup_credentials.py to add your Gmail sender and App Password."
@@ -447,28 +365,18 @@ class SettingsPage(ttk.Frame):
                         "Enter a Report email address in Settings and save first."
                     )
 
-                # Send one digest email per recommendation type
+                digest = build_digest(results)
                 sent = 0
-                _REPORT_TYPES = [
-                    ("suspend",              "Consider suspending"),
-                    ("consider_non_renewal", "Annual renewal to review"),
-                    ("renew_soon",           "Annual renewal approaching"),
-                    ("resubscribe",          "Time to resubscribe"),
-                ]
-                for rtype, subject_prefix in _REPORT_TYPES:
-                    recs = results.get(rtype, [])
-                    if recs:
-                        names = ", ".join(r["name"] for r in recs)
-                        html, attachments = build_report(rtype, recs)
-                        send_report(
-                            to_address=notify_email,
-                            subject=f"Streamsaver: {subject_prefix} — {names}",
-                            html_body=html,
-                            attachments=attachments,
-                            from_address=from_address,
-                            app_password=app_password,
-                        )
-                        sent += 1
+                if digest:
+                    html, attachments = digest
+                    send_report_with_credentials(
+                        creds=creds,
+                        to_address=notify_email,
+                        subject=build_digest_subject(results),
+                        html_body=html,
+                        attachments=attachments,
+                    )
+                    sent = 1
 
                 msg = (
                     f"✅  Analysis complete — "
@@ -476,7 +384,7 @@ class SettingsPage(ttk.Frame):
                     f"{len(results.get('consider_non_renewal', []))} non-renewal, "
                     f"{len(results.get('renew_soon', []))} renew-soon, "
                     f"{len(results.get('resubscribe', []))} resubscribe. "
-                    f"{sent} email(s) sent."
+                    f"{sent} digest email(s) sent."
                 )
                 self.after(0, lambda: self._set_status(msg, theme.SUCCESS))
             except Exception as exc:

@@ -265,8 +265,6 @@ def _upsert_show(
                     best = providers[0]
                     primary_provider    = best.get("provider_name")
                     primary_provider_id = best.get("provider_id")
-                    # Match to a user-configured service
-                    service_id = _resolve_service_id(primary_provider_id, primary_provider)
         except Exception as exc:
             logger.debug("TMDb lookup failed for '%s': %s", title, exc)
 
@@ -324,16 +322,6 @@ def _upsert_show(
                     service_id,
                 ),
             )
-
-
-def _resolve_service_id(
-    provider_id: Optional[int], provider_name: Optional[str]
-) -> Optional[int]:
-    """Match a TMDb provider to a user-configured service (opens its own connection)."""
-    if not provider_id and not provider_name:
-        return None
-    with db_session() as conn:
-        return _resolve_service_id_conn(provider_id, provider_name, conn)
 
 
 def _resolve_service_id_conn(
@@ -400,56 +388,6 @@ def _update_last_sync(now: datetime) -> None:
         _set_setting(conn, "last_trakt_sync", now.strftime("%Y-%m-%dT%H:%M:%S.000Z"))
 
 
-# ── Watchlist sync ─────────────────────────────────────────────────────────────
-
-def sync_watchlist(client: TraktClient) -> int:
-    """
-    Pull the user's TV watchlist from Trakt and upsert into `watchlist` table.
-    Returns the number of items processed.
-    """
-    logger.info("Fetching watchlist from Trakt...")
-    items = client.get_watchlist()
-    if not items:
-        return 0
-
-    count = 0
-    for entry in items:
-        show     = entry.get("show", {})
-        trakt_id = str(show.get("ids", {}).get("trakt", ""))
-        title    = show.get("title", "Unknown")
-
-        if not trakt_id:
-            continue
-
-        premiere = _to_date_str(show.get("first_aired"))
-
-        with db_session() as conn:
-            # Try to match watchlist item to a service via the shows table
-            show_row = conn.execute(
-                "SELECT service_id FROM shows WHERE trakt_id = ?", (trakt_id,)
-            ).fetchone()
-            service_id = show_row["service_id"] if show_row else None
-
-            existing = conn.execute(
-                "SELECT id FROM watchlist WHERE trakt_id = ?", (trakt_id,)
-            ).fetchone()
-
-            if existing:
-                conn.execute(
-                    "UPDATE watchlist SET title=?, service_id=?, premiere_date=? WHERE trakt_id=?",
-                    (title, service_id, premiere, trakt_id),
-                )
-            else:
-                conn.execute(
-                    "INSERT INTO watchlist (trakt_id, title, service_id, premiere_date) VALUES (?,?,?,?)",
-                    (trakt_id, title, service_id, premiere),
-                )
-        count += 1
-
-    logger.info("Synced %d watchlist items.", count)
-    return count
-
-
 # ── Archive pass ───────────────────────────────────────────────────────────────
 
 def run_archive_pass() -> int:
@@ -465,7 +403,6 @@ def run_archive_pass() -> int:
 
     Returns the count of shows archived.
     """
-    from datetime import date
     cutoff = (datetime.now(timezone.utc) - timedelta(days=_ARCHIVE_AGE_DAYS)).strftime("%Y-%m-%d")
 
     with db_session() as conn:
@@ -497,14 +434,12 @@ def run_full_sync(
 ) -> dict:
     """
     Entry point called by the scheduler and the GUI sync button.
-    Runs incremental show sync, watchlist sync, and archive pass.
+    Runs incremental show sync and archive pass.
     """
     shows_count     = sync_watched_shows(client, tmdb_client)
-    watchlist_count = sync_watchlist(client)
     archived_count  = run_archive_pass()
 
     return {
         "shows":     shows_count,
-        "watchlist": watchlist_count,
         "archived":  archived_count,
     }

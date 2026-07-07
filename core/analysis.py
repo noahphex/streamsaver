@@ -19,7 +19,7 @@ Billing model:
 """
 
 import logging
-from datetime import date, timedelta
+from datetime import date
 from typing import Optional
 
 from db import db_session
@@ -107,58 +107,61 @@ def _advance_billing_date(anchor: date, cycle: str, today: date) -> tuple[date, 
         return d, False
 
 
-def _service_watch_score(service_id: int, conn) -> dict:
+def _empty_signals() -> dict:
+    return {
+        "active_count":  0,
+        "watch_score":   0,
+        "anticipated":   [],
+        "upcoming_days": None,
+    }
+
+
+def _service_watch_scores(conn) -> dict[int, dict]:
     """
-    Aggregate watch signals for a service.
+    Aggregate watch signals for all services in one query.
 
     Returns:
-        active_count   — Active/Occasional shows
-        watch_score    — sum of interest_scores for Active/Occasional
-        anticipated    — list of anticipated shows with next_air_date
-        upcoming_days  — min days until next anticipated air date (or None)
+        {service_id: {
+            active_count,
+            watch_score,
+            anticipated,
+            upcoming_days,
+        }}
     """
     rows = conn.execute(
         """
-        SELECT show_state, interest_score, title, next_air_date
+        SELECT service_id, show_state, interest_score, title, next_air_date
         FROM   shows
-        WHERE  service_id = ?
+        WHERE  service_id IS NOT NULL
           AND  show_state NOT IN ('ignored', 'archived', 'completed')
         """,
-        (service_id,),
     ).fetchall()
 
-    active_count = 0
-    watch_score  = 0
-    anticipated  = []
-    today        = date.today()
+    by_service: dict[int, dict] = {}
+    today = date.today()
 
     for row in rows:
+        signals = by_service.setdefault(row["service_id"], _empty_signals())
         state = row["show_state"]
         if state in ("active", "occasional"):
-            active_count += 1
-            watch_score  += row["interest_score"]
+            signals["active_count"] += 1
+            signals["watch_score"] += row["interest_score"]
         elif state == "anticipated":
             air = _parse_date(row["next_air_date"])
             days_away = (air - today).days if air else None
-            anticipated.append({
+            signals["anticipated"].append({
                 "title":        row["title"],
                 "next_air_date": row["next_air_date"],
                 "score":        row["interest_score"],
                 "days_away":    days_away,
             })
 
-    upcoming_days = None
-    if anticipated:
-        near = [a["days_away"] for a in anticipated if a["days_away"] is not None]
+    for signals in by_service.values():
+        near = [a["days_away"] for a in signals["anticipated"] if a["days_away"] is not None]
         if near:
-            upcoming_days = min(near)
+            signals["upcoming_days"] = min(near)
 
-    return {
-        "active_count":  active_count,
-        "watch_score":   watch_score,
-        "anticipated":   anticipated,
-        "upcoming_days": upcoming_days,
-    }
+    return by_service
 
 
 def _renew_soon_confidence(signals: dict) -> bool:
@@ -203,6 +206,7 @@ def run_analysis() -> dict:
 
     with db_session() as conn:
         services = conn.execute("SELECT * FROM services").fetchall()
+        service_signals = _service_watch_scores(conn)
 
         for svc in services:
             s            = dict(svc)
@@ -221,7 +225,7 @@ def run_analysis() -> dict:
             next_billing, is_uncertain = _advance_billing_date(anchor, cycle, today)
             days_until_renewal = (next_billing - today).days
 
-            signals = _service_watch_score(s["id"], conn)
+            signals = service_signals.get(s["id"], _empty_signals())
             summary = _build_summary(s, next_billing, signals, cycle, days_until_renewal)
 
             # ── Active subscriptions ───────────────────────────────────────
