@@ -110,6 +110,7 @@ def _set_setting(conn, key: str, value: str) -> None:
 def sync_watched_shows(
     client: TraktClient,
     tmdb_client: Optional[TMDbClient] = None,
+    force_backfill: bool = False,
 ) -> int:
     """
     Incrementally sync watched shows from Trakt.
@@ -129,8 +130,23 @@ def sync_watched_shows(
 
     with db_session() as conn:
         last_sync_str = _get_setting(conn, "last_trakt_sync")
+        show_count = conn.execute("SELECT COUNT(*) AS count FROM shows").fetchone()["count"]
 
-    if last_sync_str:
+    last_sync_dt = _parse_dt(last_sync_str)
+    if force_backfill:
+        start_at = (now - timedelta(days=365)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        logger.info("Forced backfill requested — pulling last 1 year of history (since %s)", start_at)
+    elif show_count == 0:
+        start_at = (now - timedelta(days=365)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        logger.info("No local shows found — pulling last 1 year of history (since %s)", start_at)
+    elif last_sync_dt and last_sync_dt > now:
+        start_at = (now - timedelta(days=365)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        logger.warning(
+            "last_trakt_sync %s is in the future; using 1-year backfill since %s",
+            last_sync_str,
+            start_at,
+        )
+    elif last_sync_str:
         start_at = last_sync_str
         logger.info("Incremental sync since %s", start_at)
     else:
@@ -138,7 +154,8 @@ def sync_watched_shows(
         logger.info("First sync — pulling last 1 year of history (since %s)", start_at)
 
     logger.info("Fetching episode history from Trakt...")
-    history = client.get_show_history(start_at=start_at)
+    history = client.get_all_show_history(start_at=start_at)
+    logger.info("Fetched %d Trakt show history event(s).", len(history))
     if not history:
         logger.info("No new watch history since last sync.")
         _update_last_sync(now)
@@ -494,12 +511,13 @@ def run_archive_pass() -> int:
 def run_full_sync(
     client: TraktClient,
     tmdb_client: Optional[TMDbClient] = None,
+    force_backfill: bool = False,
 ) -> dict:
     """
     Entry point called by the scheduler and the GUI sync button.
     Runs incremental show sync, watchlist sync, and archive pass.
     """
-    shows_count     = sync_watched_shows(client, tmdb_client)
+    shows_count     = sync_watched_shows(client, tmdb_client, force_backfill=force_backfill)
     watchlist_count = sync_watchlist(client)
     archived_count  = run_archive_pass()
 

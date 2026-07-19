@@ -1,0 +1,52 @@
+---
+services:
+  streamsaver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: streamsaver:v2.5
+    container_name: streamsaver
+    environment:
+      - TZ=America/Chicago
+      - STREAMSAVER_PORT=8092
+      - STREAMSAVER_SECRET_KEY=${STREAMSAVER_SECRET_KEY:-change-me-local-streamsaver}
+      - STREAMSAVER_PASSPHRASE=${STREAMSAVER_PASSPHRASE:-}
+    ports:
+      - "8092:8092"
+    command: ["gunicorn", "--bind", "0.0.0.0:8092", "--workers", "1", "--threads", "8", "--timeout", "120", "wsgi:app"]
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./assets/logos:/app/assets/logos
+      - ./backups:/app/backups
+    restart: unless-stopped
+    labels:
+      - diun.enable=false
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8092/health"]
+      interval: 120s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+      start_interval: 30s
+
+  streamsaver-scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: streamsaver:v2.5
+    container_name: streamsaver-scheduler
+    environment:
+      - TZ=America/Chicago
+      - STREAMSAVER_PASSPHRASE=${STREAMSAVER_PASSPHRASE:-}
+    command: ["python", "scheduler.py", "--run-at", "${STREAMSAVER_SCHEDULER_RUN_AT:-02:00}"]
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./assets/logos:/app/assets/logos
+      - ./backups:/app/backups
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    labels:
+      - diun.enable=false

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <div class="hero-copy">
+    <h1>Services</h1>
+    <p>Your streaming subscriptions, billing state, and bundle mappings.</p>
+  </div>
+  <a class="button" href="{{ url_for('service_new') }}">Add Service</a>
+</section>
+
+<section class="metrics">
+  <div><span>${{ "%.2f"|format(totals.monthly_total) }}</span><small>Monthly subscribed spend</small></div>
+  <div><span>${{ "%.2f"|format(totals.annual_total) }}</span><small>Annualized spend</small></div>
+  <div><span>{{ services|selectattr("status", "equalto", "subscribed")|list|length }}</span><small>Subscribed</small></div>
+  <div><span>{{ services|length }}</span><small>Total services</small></div>
+</section>
+
+<section class="cards services-list">
+  {% for svc in services %}
+    <article class="card status-{{ svc.status }}">
+      <div class="card-head">
+        <h3>{{ svc.name }}</h3>
+        <span>{{ status_labels.get(svc.status, svc.status) }}</span>
+      </div>
+      <p>${{ "%.2f"|format(svc.monthly_cost or 0) }}/mo · ${{ "%.2f"|format(svc.annual_cost or 0) }}/yr</p>
+      <p class="muted">Renews: {{ svc.billing_anchor_date or svc.next_billing_date or "Not set" }}</p>
+      {% if bundle_map[svc.id] %}
+        <p class="muted">Bundles: {{ bundle_map[svc.id]|map(attribute='provider_name')|join(', ') }}</p>
+      {% endif %}
+      <div class="button-row">
+        <a class="button ghost" href="{{ url_for('service_edit', service_id=svc.id) }}">Edit</a>
+        <form method="post" action="{{ url_for('delete_service_route', service_id=svc.id) }}" onsubmit="return confirm('Delete {{ svc.name }}?')"><button class="danger">Delete</button></form>
+      </div>
+    </article>
+  {% else %}
+    <article class="panel empty-state">
+      <h2>No services yet</h2>
+      <p class="muted">Add the services you subscribe to so Streamsaver can match Trakt activity to your monthly spend.</p>
+      <a class="button" href="{{ url_for('service_new') }}">Add Service</a>
+    </article>
+  {% endfor %}
+</section>
+{% endblock %}

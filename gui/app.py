@@ -39,6 +39,7 @@ class StreamsaverApp(tk.Tk):
         self._client      = None
         self._tmdb_client = None
         self._creds       = {}   # decrypted credentials dict, set after unlock
+        self._passphrase  = None
 
         configure_ttk_styles()
         self._build_ui()
@@ -156,6 +157,7 @@ class StreamsaverApp(tk.Tk):
 
         try:
             creds = load_credentials(passphrase)
+            self._passphrase = passphrase
             self._init_client(creds)
         except Exception as exc:
             messagebox.showerror(
@@ -179,6 +181,7 @@ class StreamsaverApp(tk.Tk):
             access_token  = creds["trakt_access_token"],
             refresh_token = creds.get("trakt_refresh_token", ""),
             username      = creds.get("trakt_username", ""),
+            token_refresh_callback = self._persist_trakt_tokens,
         )
 
         tmdb_key = creds.get("tmdb_api_key", "")
@@ -223,6 +226,19 @@ class StreamsaverApp(tk.Tk):
             ))
         except Exception as exc:
             logger.warning("Failed to fetch providers: %s", exc)
+
+    def _persist_trakt_tokens(self, tokens: dict) -> None:
+        """Persist refreshed Trakt OAuth tokens to the encrypted credentials file."""
+        from setup_credentials import encrypt_credentials
+
+        self._creds["trakt_access_token"] = tokens["access_token"]
+        if tokens.get("refresh_token"):
+            self._creds["trakt_refresh_token"] = tokens["refresh_token"]
+        if not self._passphrase:
+            logger.warning("Trakt token refreshed but no passphrase is available; token was not persisted.")
+            return
+        encrypt_credentials(self._creds, self._passphrase, quiet=True)
+        logger.info("Persisted refreshed Trakt tokens.")
 
     # ── Event handlers ─────────────────────────────────────────────────────────
 

@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>Shows</h1>
+  <p>Tracked shows from Trakt with state, service, provider, and watch signals.</p>
+</section>
+<form class="toolbar" method="get">
+  <input name="q" value="{{ q }}" placeholder="Search shows">
+  <select name="state">
+    {% for item in ["All", "Active", "Occasional", "Dormant", "Completed", "Abandoned", "Anticipated", "Ignored", "Archived"] %}
+      <option value="{{ item }}" {% if state == item %}selected{% endif %}>{{ item }}</option>
+    {% endfor %}
+  </select>
+  <button>Filter</button>
+</form>
+{% macro sort_link(key, label) -%}
+  {% set active = sort == key %}
+  {% set next_dir = 'asc' if not active or direction == 'desc' else 'desc' %}
+  <a class="sort-link {{ 'active' if active else '' }}" href="{{ url_for('shows', q=q, state=state, sort=key, dir=next_dir) }}">
+    <span>{{ label }}</span>
+    {% if active %}<span class="sort-arrow">{{ '▲' if direction == 'asc' else '▼' }}</span>{% endif %}
+  </a>
+{%- endmacro %}
+<section class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>{{ sort_link('title', 'Title') }}</th>
+        <th>{{ sort_link('state', 'State') }}</th>
+        <th>{{ sort_link('score', 'Score') }}</th>
+        <th>{{ sort_link('service', 'Service') }}</th>
+        <th>{{ sort_link('provider', 'Provider') }}</th>
+        <th>{{ sort_link('last', 'Last') }}</th>
+        <th>{{ sort_link('next', 'Next') }}</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for show in shows %}
+        <tr>
+          <td data-label="Title">{{ show.title }}</td>
+          <td data-label="State"><span class="state {{ show.show_state }}">{{ show.show_state }}</span></td>
+          <td data-label="Score">{{ show.interest_score }}</td>
+          <td data-label="Service">{{ show.service_name or "—" }}</td>
+          <td data-label="Provider">{{ show.primary_provider or "—" }}</td>
+          <td data-label="Last">{{ show.last_watch_date or "—" }}</td>
+          <td data-label="Next">{{ show.next_air_date or "—" }}</td>
+          <td>
+            <form method="post" action="{{ url_for('set_show_state', trakt_id=show.trakt_id) }}">
+              <input type="hidden" name="state" value="{{ 'dormant' if show.show_state == 'abandoned' else 'abandoned' }}">
+              <button class="small">{{ "Unmark" if show.show_state == "abandoned" else "Abandon" }}</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8">No shows found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

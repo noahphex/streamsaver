@@ -18,6 +18,7 @@ config/.salt
 # Local database and logs (machine-specific)
 data/streamsaver.db
 data/streamsaver*.log
+backups/
 
 # macOS
 .DS_Store
@@ -26,8 +27,4 @@ data/streamsaver*.log
 # IDE
 .vscode/
 .idea/
-
-# VS Code workspace file
-*.code-workspace
-
 assets/service_icons/

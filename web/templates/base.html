@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Streamsaver{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('dashboard') }}">
+      <img src="{{ url_for('logos', filename='streamsaver_logo_transparent.png') }}" alt="" aria-hidden="true">
+      <span>Streamsaver</span>
+    </a>
+    <nav class="nav">
+      <a href="{{ url_for('dashboard') }}">Dashboard</a>
+      <a href="{{ url_for('services') }}">Services</a>
+      <a href="{{ url_for('shows') }}">Shows</a>
+      <a href="{{ url_for('settings') }}">Settings</a>
+      <a href="{{ url_for('about') }}">About</a>
+    </nav>
+    {% if is_unlocked %}
+      <form method="post" action="{{ url_for('lock') }}"><button class="link-button">Lock</button></form>
+    {% else %}
+      <a class="pill" href="{{ url_for('unlock') }}">Unlock</a>
+    {% endif %}
+  </header>
+  <main class="page">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <section class="flash-stack">
+          {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </section>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+  <script>
+    (() => {
+      const loadingLabel = (text) => {
+        const normalized = (text || "").trim().toLowerCase();
+        if (normalized.includes("sync") || normalized.includes("backfill")) return "Syncing...";
+        if (normalized.includes("refresh")) return "Refreshing...";
+        if (normalized.includes("analyze") || normalized.includes("email")) return "Running...";
+        if (normalized.includes("restore")) return "Restoring...";
+        if (normalized.includes("delete")) return "Deleting...";
+        if (normalized.includes("save")) return "Saving...";
+        if (normalized.includes("unlock")) return "Unlocking...";
+        if (normalized.includes("lock")) return "Locking...";
+        if (normalized.includes("filter")) return "Filtering...";
+        return "Working...";
+      };
+
+      document.addEventListener("submit", (event) => {
+        if (event.defaultPrevented) return;
+        const form = event.target;
+        const button = event.submitter || form.querySelector("button[type='submit'], button:not([type])");
+        if (!button || button.classList.contains("is-loading")) return;
+        button.dataset.originalText = button.textContent.trim();
+        button.innerHTML = `<span class="button-spinner" aria-hidden="true"></span><span>${loadingLabel(button.dataset.originalText)}</span>`;
+        button.classList.add("is-loading");
+        button.setAttribute("aria-busy", "true");
+        button.disabled = true;
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit Service" if editable else "Add Service" }} - Streamsaver{% endblock %}
+{% block content %}
+<section class="hero compact">
+  <div class="hero-copy">
+    <h1>{{ "Edit Service" if editable else "Add Service" }}</h1>
+    <p>{{ "Update subscription details and provider matching." if editable else "Add a streaming service to track cost and watch activity." }}</p>
+  </div>
+  <a class="button ghost" href="{{ url_for('services') }}">All Services</a>
+</section>
+
+<section class="panel form-panel">
+  <form method="post" action="{{ url_for('service_save') }}" class="stack">
+    {% if editable %}<input type="hidden" name="service_id" value="{{ editable.id }}">{% endif %}
+    <label>Name <input name="name" list="networks" value="{{ editable.name if editable else '' }}" required></label>
+    <datalist id="networks">{% for name in network_names %}<option value="{{ name }}">{% endfor %}</datalist>
+    <div class="form-grid">
+      <label>Status
+        <select name="status">{% for status in statuses %}<option value="{{ status }}" {% if editable and editable.status == status %}selected{% endif %}>{{ status_labels.get(status, status) }}</option>{% endfor %}</select>
+      </label>
+      <label>Billing Cycle
+        <select name="billing_cycle">
+          <option value="monthly" {% if not editable or editable.billing_cycle == "monthly" %}selected{% endif %}>Monthly</option>
+          <option value="annual" {% if editable and editable.billing_cycle == "annual" %}selected{% endif %}>Annual</option>
+        </select>
+      </label>
+      <label>Monthly Cost <input type="number" name="monthly_cost" min="0" step="0.01" value="{{ editable.monthly_cost if editable else '' }}"></label>
+      <label>Annual Cost <input type="number" name="annual_cost" min="0" step="0.01" value="{{ editable.annual_cost if editable else '' }}"></label>
+      <label>Billing Date <input type="date" name="billing_anchor_date" value="{{ editable.billing_anchor_date or editable.next_billing_date if editable else '' }}"></label>
+      <label>TMDb Provider ID <input type="number" name="tmdb_provider_id" value="{{ editable.tmdb_provider_id if editable and editable.tmdb_provider_id else '' }}"></label>
+    </div>
+    <label>Bundle Provider IDs <input name="bundle_provider_ids" value="{% if editable %}{{ bundle_map[editable.id]|map(attribute='tmdb_provider_id')|join(', ') }}{% endif %}" placeholder="337, 508"></label>
+    <label class="check"><input type="checkbox" name="auto_renew" {% if not editable or editable.auto_renew %}checked{% endif %}> Auto renew</label>
+    <div class="button-row">
+      <button type="submit">Save Service</button>
+      <a class="button ghost" href="{{ url_for('services') }}">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

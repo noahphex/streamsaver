@@ -42,6 +42,13 @@ THRESHOLD_OPTIONS = [
     ("12 months (365 days)", "365"),
 ]
 
+STATUS_ALERT_FREQUENCY_OPTIONS = [
+    ("Daily", "daily"),
+    ("Weekly", "weekly"),
+    ("Monthly", "monthly"),
+    ("Never", "never"),
+]
+
 
 class SettingsPage(ttk.Frame):
     """Tab: app settings, sync controls, email management."""
@@ -146,6 +153,20 @@ class SettingsPage(ttk.Frame):
         self._threshold_cb.grid(row=row, column=1, sticky="w", pady=4)
         row += 1
 
+        ttk.Label(wrap, text="Status alert frequency:", style="TLabel").grid(
+            row=row, column=0, sticky="w", padx=(0, theme.PAD), pady=4
+        )
+        self._status_frequency_var = tk.StringVar(value="Weekly")
+        self._status_frequency_cb = ttk.Combobox(
+            wrap,
+            textvariable=self._status_frequency_var,
+            values=[label for label, _ in STATUS_ALERT_FREQUENCY_OPTIONS],
+            state="readonly",
+            width=24,
+        )
+        self._status_frequency_cb.grid(row=row, column=1, sticky="w", pady=4)
+        row += 1
+
         ttk.Separator(wrap, orient="horizontal").grid(
             row=row, column=0, columnspan=2, sticky="ew", pady=theme.PAD
         )
@@ -247,6 +268,12 @@ class SettingsPage(ttk.Frame):
                 self._threshold_var.set(label)
                 break
 
+        frequency = _get_setting("status_alert_frequency") or "weekly"
+        for label, value in STATUS_ALERT_FREQUENCY_OPTIONS:
+            if value == frequency:
+                self._status_frequency_var.set(label)
+                break
+
         last_sync = _get_setting("last_trakt_sync")
         if last_sync:
             self._last_sync_lbl.config(text=f"Last Trakt sync: {last_sync[:19].replace('T', ' ')} UTC")
@@ -271,10 +298,17 @@ class SettingsPage(ttk.Frame):
             if label == selected_label:
                 threshold_days = value
                 break
+        status_frequency = "weekly"
+        selected_frequency_label = self._status_frequency_var.get()
+        for label, value in STATUS_ALERT_FREQUENCY_OPTIONS:
+            if label == selected_frequency_label:
+                status_frequency = value
+                break
 
         _set_setting("notification_email",       email)
         _set_setting("abandoned_mode",           mode)
         _set_setting("abandoned_threshold_days", threshold_days)
+        _set_setting("status_alert_frequency",   status_frequency)
         _set_setting("provider_country",         country)
 
         self._set_status("✅  Settings saved.", color=theme.SUCCESS)
@@ -424,10 +458,16 @@ class SettingsPage(ttk.Frame):
         def _do():
             try:
                 from core.analysis import run_analysis
+                from core.newsletter import (
+                    filter_status_alerts_for_frequency,
+                    has_status_alerts,
+                    mark_status_alerts_sent,
+                )
                 from email_reports.report_builder import build_report
                 from email_reports.mailer import send_report
 
                 results      = run_analysis()
+                email_results, included_status_alerts = filter_status_alerts_for_frequency(results)
                 notify_email = _get_setting("notification_email")
 
                 # Resolve Gmail credentials from the in-memory creds dict
@@ -456,7 +496,7 @@ class SettingsPage(ttk.Frame):
                     ("resubscribe",          "Time to resubscribe"),
                 ]
                 for rtype, subject_prefix in _REPORT_TYPES:
-                    recs = results.get(rtype, [])
+                    recs = email_results.get(rtype, [])
                     if recs:
                         names = ", ".join(r["name"] for r in recs)
                         html, attachments = build_report(rtype, recs)
@@ -469,6 +509,8 @@ class SettingsPage(ttk.Frame):
                             app_password=app_password,
                         )
                         sent += 1
+                if sent and included_status_alerts and has_status_alerts(email_results):
+                    mark_status_alerts_sent()
 
                 msg = (
                     f"✅  Analysis complete — "

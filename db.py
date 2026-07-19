@@ -142,6 +142,9 @@ def init_db() -> None:
                 ('notification_email',        ''),
                 ('abandoned_mode',            'manual'),
                 ('abandoned_threshold_days',  '90'),
+                ('status_alert_frequency',    'weekly'),
+                ('last_status_alert_sent',     ''),
+                ('discord_webhook_url',        ''),
                 ('networks_fetched_at',        ''),
                 ('provider_country',           'US'),
                 ('last_trakt_sync',            '');

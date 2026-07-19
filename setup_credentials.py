@@ -58,7 +58,7 @@ def _load_or_create_salt() -> bytes:
     return salt
 
 
-def encrypt_credentials(data: dict, passphrase: str) -> None:
+def encrypt_credentials(data: dict, passphrase: str, quiet: bool = False) -> None:
     """Encrypt and save credentials to disk."""
     salt   = _load_or_create_salt()
     key    = _derive_key(passphrase, salt)
@@ -66,7 +66,8 @@ def encrypt_credentials(data: dict, passphrase: str) -> None:
     token  = fernet.encrypt(json.dumps(data).encode())
     with open(CRED_FILE, "wb") as f:
         f.write(token)
-    print(f"\n✅  Credentials saved to: {CRED_FILE}")
+    if not quiet:
+        print(f"\n✅  Credentials saved to: {CRED_FILE}")
 
 
 def load_credentials(passphrase: str) -> dict:

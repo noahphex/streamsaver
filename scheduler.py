@@ -30,20 +30,24 @@ import sys
 import time
 
 import schedule
-from dotenv import load_dotenv
 
 # Ensure the project root is on the path when run directly
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-load_dotenv()
 
 from db import init_db, db_session
-from core.trakt_client import TraktClient
+from core.notifications import send_discord_notification
+from core.newsletter import (
+    filter_status_alerts_for_frequency,
+    has_status_alerts,
+    mark_status_alerts_sent,
+)
+from core.trakt_client import TraktAuthError, TraktClient
 from core.tmdb_client  import TMDbClient
 from core.show_tracker import run_full_sync
 from core.analysis     import run_analysis
 from email_reports.report_builder import build_digest
 from email_reports.mailer          import send_report_with_credentials
-from setup_credentials             import load_credentials
+from setup_credentials             import encrypt_credentials, load_credentials
 
 logging.basicConfig(
     level=logging.INFO,
@@ -73,13 +77,37 @@ def _get_setting(key: str) -> str:
     return row["value"] if row else ""
 
 
-def run_daily_job(creds: dict) -> None:
+def _notify_discord(title: str, message: str, *, level: str = "error") -> None:
+    webhook_url = _get_setting("discord_webhook_url")
+    if not webhook_url:
+        logger.info("No Discord webhook configured; skipping Discord notification.")
+        return
+    send_discord_notification(
+        webhook_url,
+        title,
+        message,
+        level=level,
+        footer="Streamsaver scheduler",
+    )
+
+
+def run_daily_job(creds: dict, passphrase: str | None = None) -> bool:
     """
     Execute the full daily pipeline:
       sync → analyse → email recommendations.
     """
     logger.info("=" * 60)
     logger.info("Daily job started.")
+
+    def _persist_trakt_tokens(tokens: dict) -> None:
+        creds["trakt_access_token"] = tokens["access_token"]
+        if tokens.get("refresh_token"):
+            creds["trakt_refresh_token"] = tokens["refresh_token"]
+        if not passphrase:
+            logger.warning("Trakt token refreshed but no passphrase is available; token was not persisted.")
+            return
+        encrypt_credentials(creds, passphrase, quiet=True)
+        logger.info("Persisted refreshed Trakt tokens.")
 
     # ── 1. Trakt sync ──────────────────────────────────────────────────────
     client = TraktClient(
@@ -88,6 +116,7 @@ def run_daily_job(creds: dict) -> None:
         access_token  = creds["trakt_access_token"],
         refresh_token = creds.get("trakt_refresh_token", ""),
         username      = creds.get("trakt_username", ""),
+        token_refresh_callback = _persist_trakt_tokens,
     )
 
     tmdb_key = creds.get("tmdb_api_key", "")
@@ -106,7 +135,20 @@ def run_daily_job(creds: dict) -> None:
         )
     except Exception as exc:
         logger.error("Trakt sync failed: %s", exc)
-        return
+        if isinstance(exc, TraktAuthError):
+            _notify_discord(
+                "Streamsaver Trakt authorization failed",
+                "The scheduled Trakt sync failed because Trakt rejected the saved access/refresh token. "
+                "Open Streamsaver Settings -> Update Credentials, re-authorize Trakt, then run Sync again.\n\n"
+                f"Error: {exc}",
+            )
+        else:
+            _notify_discord(
+                "Streamsaver scheduled sync failed",
+                f"The scheduled Trakt sync failed before analysis could run.\n\nError: {exc}",
+            )
+        logger.info("=" * 60)
+        return False
 
     # ── 2. Analysis ────────────────────────────────────────────────────────
     try:
@@ -123,33 +165,41 @@ def run_daily_job(creds: dict) -> None:
         )
     except Exception as exc:
         logger.error("Analysis failed: %s", exc)
-        return
+        _notify_discord(
+            "Streamsaver analysis failed",
+            f"The scheduled Trakt sync completed, but analysis failed.\n\nError: {exc}",
+        )
+        logger.info("=" * 60)
+        return False
 
     # ── 3. Email digest ────────────────────────────────────────────────────
     notify_email = _get_setting("notification_email") or creds.get("notify_email", "")
     if not notify_email:
         logger.warning("No notification email configured — skipping email reports.")
-        return
+        logger.info("Daily job complete.")
+        logger.info("=" * 60)
+        return True
 
-    html = build_digest(results)
+    email_results, included_status_alerts = filter_status_alerts_for_frequency(results)
+    html = build_digest(email_results)
     if not html:
         logger.info("No actionable recommendations today — no email sent.")
         logger.info("Daily job complete.")
         logger.info("=" * 60)
-        return
+        return True
 
     html, attachments = html
 
     # Build a concise subject from what's in the digest
     subject_parts = []
-    if results.get("suspend"):
-        subject_parts.append(f"Suspend {len(results['suspend'])}")
-    if results.get("consider_non_renewal"):
-        subject_parts.append(f"Review {len(results['consider_non_renewal'])} renewal(s)")
-    if results.get("renew_soon"):
-        subject_parts.append(f"Renew {len(results['renew_soon'])} soon")
-    if results.get("resubscribe"):
-        subject_parts.append(f"Resubscribe {len(results['resubscribe'])}")
+    if email_results.get("suspend"):
+        subject_parts.append(f"Suspend {len(email_results['suspend'])}")
+    if email_results.get("consider_non_renewal"):
+        subject_parts.append(f"Review {len(email_results['consider_non_renewal'])} renewal(s)")
+    if email_results.get("renew_soon"):
+        subject_parts.append(f"Renew {len(email_results['renew_soon'])} soon")
+    if email_results.get("resubscribe"):
+        subject_parts.append(f"Resubscribe {len(email_results['resubscribe'])}")
     subject = "Streamsaver Digest — " + " · ".join(subject_parts) if subject_parts else "Streamsaver Daily Digest"
 
     try:
@@ -161,11 +211,20 @@ def run_daily_job(creds: dict) -> None:
             attachments=attachments,
         )
         logger.info("Sent daily digest to %s", notify_email)
+        if included_status_alerts and has_status_alerts(email_results):
+            mark_status_alerts_sent()
     except Exception as exc:
         logger.error("Failed to send digest: %s", exc)
+        _notify_discord(
+            "Streamsaver email report failed",
+            f"The scheduled sync and analysis completed, but sending the email digest failed.\n\nError: {exc}",
+        )
+        logger.info("=" * 60)
+        return False
 
     logger.info("Daily job complete.")
     logger.info("=" * 60)
+    return True
 
 
 def main() -> None:
@@ -193,16 +252,24 @@ def main() -> None:
         creds = load_credentials(passphrase)
     except Exception as exc:
         logger.error("Could not load credentials: %s", exc)
+        try:
+            _notify_discord(
+                "Streamsaver scheduler could not load credentials",
+                f"The scheduler could not decrypt Streamsaver credentials and did not run.\n\nError: {exc}",
+            )
+        except Exception:
+            logger.debug("Could not send Discord credential-load failure notification.", exc_info=True)
         sys.exit(1)
 
     logger.info("Credentials loaded. Scheduler starting.")
 
     if args.run_once:
-        run_daily_job(creds)
+        ok = run_daily_job(creds, passphrase)
+        sys.exit(0 if ok else 1)
         return
 
     # Schedule daily job and block
-    schedule.every().day.at(args.run_at).do(run_daily_job, creds=creds)
+    schedule.every().day.at(args.run_at).do(run_daily_job, creds=creds, passphrase=passphrase)
     logger.info("Scheduled daily job at %s. Waiting…", args.run_at)
 
     while True:

@@ -1,190 +1,232 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/logos/streamsaver_header_transparent.png">
   <source media="(prefers-color-scheme: light)" srcset="assets/logos/streamsaver_header.jpg">
-  <img alt="Streamsaver — Streaming Cost Intelligence" src="assets/logos/streamsaver_header.jpg" width="480">
+  <img alt="Streamsaver - Streaming Cost Intelligence" src="assets/logos/streamsaver_header.jpg" width="480">
 </picture>
 
 # Streamsaver
 
-**Stack:** Python 3 · Tkinter · SQLite · Gmail SMTP · Trakt API · TMDb API  
-**Status:** v1.0 — stable
+**Stack:** Python 3.11, Flask, Gunicorn, SQLite, Docker, Trakt API, TMDb API, Gmail SMTP  
+**Current app:** responsive web UI on port `8092` plus a daily scheduler container
 
-Smart streaming cost management — tracks your Trakt.tv watch history, scores shows by recent activity, maps them to streaming services via TMDb, and sends you daily email recommendations on when to suspend, resubscribe, or skip an annual renewal.
+Streamsaver helps decide which streaming services are worth keeping. It imports your Trakt watched history and watchlist, looks up where shows are available through TMDb provider data, compares that against the services you track, and sends email recommendations about what to keep, suspend, renew, or revisit.
 
----
+## How It Works
 
-## What it does
+1. Sync your watched shows and watchlist from Trakt.
+2. Use TMDb provider data to identify where shows are available.
+3. Compare that show activity against your configured streaming services and costs.
+4. Score shows based on recent watching, upcoming episodes, dormant/ignored/abandoned state, and watchlist interest.
+5. Generate practical recommendations for subscriptions and optional email reports.
 
-- **Interest scoring** — Weights your watch history (+10 watched last 7 days, +5 last 30 days, binge bonus, dormancy penalty) to classify each show as Active, Occasional, Dormant, Anticipated, or Archived
-- **Show → Service matching** — Automatically maps each show to its streaming provider via TMDb's flatrate provider data
-- **Suspend recommendations** — Flags subscribed services with no active shows and no upcoming premieres before the next billing date
-- **Annual billing analysis** — Detects low-engagement services approaching an annual renewal and recommends skipping; flags active services worth renewing
-- **Resubscribe alerts** — Detects anticipated shows with high interest scores returning on services you've suspended
-- **Incremental sync** — Only pulls watch history since the last sync (first sync: last 1 year); caps at 200 shows
-- **Email reports** — Dracula-themed HTML digest emails sent via Gmail SMTP with CID-embedded service logos (compatible with Gmail, Apple Mail, and Outlook)
+The score is a decision aid, not an automatic cancellation system. Streamsaver shows the evidence; you still decide what to change.
 
----
+## Current Features
 
-## Setup
+| Page | Purpose |
+|---|---|
+| Dashboard | Summary metrics, sync shortcuts, and recommendation counts. |
+| Services | Add, edit, and delete streaming services. Track subscribed, suspended, unsubscribed, and not subscribed services. |
+| Shows | Review synced shows, filter by state, sort by column, and mark shows as dormant, ignored, or abandoned. |
+| Settings | Configure report email, provider country, abandoned-show behavior, sync/backfill Trakt, refresh providers, send reports, update credentials, and backup/restore. |
+| About | Plain-English explanation of Streamsaver's purpose and methodology. |
 
-### 1. Prerequisites
+## Docker Install
 
-- Python 3.11+ with Tkinter  
-  *macOS Homebrew:* Tkinter must match your Python version. Run the following to install the right one automatically:
-  ```bash
-  brew install python-tk@$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-  ```
+From this repository:
 
-### 2. Install dependencies
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+```sh
+cd /Volumes/Media/homelab/streamsaver
+docker compose up -d --build
 ```
 
-> **Shortcut:** `run_streamsaver.sh` will create the venv and install dependencies automatically on first run if they're missing.
+The container exposes the web UI on port `8092`.
 
-### 3. Configure credentials
+Local URLs used in this homelab:
 
-Run the setup wizard once to securely encrypt your API keys and Gmail App Password:
+- Caddy URL: `https://streamsaver.home.arpa`
+- Direct URL: `http://192.168.1.156:8092`
+- Localhost from the Docker host: `http://127.0.0.1:8092`
 
-```bash
+Verify:
+
+```sh
+docker compose ps
+curl -f http://127.0.0.1:8092/health
+curl -k -f https://streamsaver.home.arpa/health
+```
+
+`docker compose ps` should show both `streamsaver` and `streamsaver-scheduler`.
+The scheduler runs once per day at `STREAMSAVER_SCHEDULER_RUN_AT` from `.env`
+and uses `STREAMSAVER_PASSPHRASE` to decrypt credentials without an interactive prompt.
+
+### Docker Volumes
+
+The compose file mounts local folders into the container:
+
+| Host path | Container path | Purpose |
+|---|---|---|
+| `./config` | `/app/config` | Encrypted credentials and salt. |
+| `./data` | `/app/data` | SQLite database and logs. |
+| `./assets/logos` | `/app/assets/logos` | Cached provider logos. |
+| `./backups` | `/app/backups` | Backup exports and imports. |
+
+The Docker command intentionally runs Gunicorn with one worker and multiple threads. Streamsaver keeps decrypted credentials in Flask memory after unlock, so one worker avoids unlock state drifting between processes.
+
+## First-Run Setup
+
+Open the web UI and go to `/setup`, or click **Run the setup wizard** from the unlock page if no credentials exist.
+
+You will need:
+
+- Trakt API app credentials from `https://trakt.tv/oauth/applications`
+- Trakt redirect URI set to `urn:ietf:wg:oauth:2.0:oob`
+- TMDb read-only API key from `https://www.themoviedb.org/settings/api`
+- Gmail sender address and Gmail App Password from `https://myaccount.google.com/apppasswords`
+
+The web setup wizard:
+
+1. Creates a local encryption passphrase.
+2. Builds the Trakt authorization URL from your Client ID.
+3. Exchanges the Trakt PIN for access and refresh tokens.
+4. Encrypts all credentials into `config/credentials.enc`.
+5. Stores the encryption salt in `config/.salt`.
+6. Unlocks the current web session after saving.
+
+To update existing credentials from the web UI, unlock Streamsaver first, then go to **Settings -> Update Credentials**.
+
+### CLI Setup Alternative
+
+The original terminal wizard still works:
+
+```sh
 ./run_streamsaver.sh --setup
 ```
 
-You will need:
-- **Trakt API credentials** — create an app at https://trakt.tv/oauth/applications  
-  The wizard will open a browser for PIN-based OAuth — no manual token copying needed
-- **TMDb read-only API key** — create at https://www.themoviedb.org/settings/api
-- **Gmail App Password** — generate at https://myaccount.google.com/apppasswords
+For Docker-first installs, the web setup wizard is usually simpler because it writes to the mounted `./config` folder used by the container.
 
-### 4. Launch the GUI
+## Daily Use
 
-```bash
-./run_streamsaver.sh
-```
+1. Unlock Streamsaver with the passphrase.
+2. Go to **Settings -> Sync Trakt Now**.
+3. Use **Backfill Last Year** if you need to repopulate watched data after a reset or sync issue.
+4. Use **Refresh Provider List** after changing provider country or when TMDb provider data looks stale.
+5. Add or update subscriptions on **Services**.
+6. Review sortable show data on **Shows**.
+7. Run **Analysis & Send Report** to email current recommendations.
 
-Enter your passphrase when prompted to unlock credentials.
+If `STREAMSAVER_PASSPHRASE` is set in `.env` or the compose environment, the app can unlock automatically on startup.
 
-**First launch:** The app will automatically fetch the streaming provider list from TMDb. Go to **Settings → Refresh Provider List** if you need to refresh it.
+## Email Reports
 
-### 5. Add your services
+Streamsaver can send Gmail SMTP reports for:
 
-Go to the **Services** tab, click **Add Service**, and pick from the TMDb provider dropdown. Enter your monthly/annual cost and next billing date.
+- Services to consider suspending.
+- Annual renewals to review.
+- Annual renewals likely worth keeping.
+- Suspended services that may be worth resubscribing to.
 
-Service logos are downloaded automatically from TMDb and cached locally in `assets/logos/`. Logos are refreshed automatically every 30 days. No external image fetches happen during email rendering.
+Email logos are embedded as CID attachments using locally cached provider logos, so the email does not need to fetch external images when rendered.
 
-### 6. Sync and analyse
+## Discord Alerts
 
-In **Settings**, click **🔄 Sync Trakt Now** to pull your watch history. Then click **📧 Run Analysis & Send Report** to get suspend/resubscribe recommendations.
+Streamsaver can send operational alerts to a Discord channel when the scheduled job fails.
 
-### Backup restore behavior
+Configure this from **Settings -> Discord Webhook URL**, then use **Test Discord Alert**.
+The saved webhook is used for:
 
-If you restore from **Settings → Restore Backup**, Streamsaver now automatically backfills `icon_path` values for restored services right after import. This repopulates local logo files and ensures email logos render without needing a separate manual **Refresh Provider List** step.
+- Scheduler credential/decryption failures.
+- Scheduled Trakt sync failures, including expired or invalid Trakt authorization.
+- Scheduled analysis failures.
+- Scheduled email digest delivery failures.
 
----
+If Trakt authorization fails, open **Settings -> Update Credentials**, click **Authorize Trakt**, paste the Trakt PIN, and save **Trakt Authorization**.
 
 ## Scheduler
 
-The scheduler runs a daily sync + analysis + email pipeline automatically.
+Docker Compose starts `streamsaver-scheduler` automatically. It runs the daily sync/report pipeline at `STREAMSAVER_SCHEDULER_RUN_AT` from `.env`, defaulting to `02:00`.
 
-```bash
-# Run once immediately (via launch script)
+You can still run the scheduler manually for testing:
+
+```sh
 ./run_streamsaver.sh --scheduler
-
-# Or run directly for more options
-.venv/bin/python scheduler.py --run-once   # run once
-.venv/bin/python scheduler.py              # continuous (2:00 AM daily)
-.venv/bin/python scheduler.py --run-at 08:00  # custom time
+.venv/bin/python scheduler.py --run-once
+.venv/bin/python scheduler.py
+.venv/bin/python scheduler.py --run-at 08:00
 ```
 
-**Passphrase options (in priority order):**
-1. `.env` file in the project root — `run_streamsaver.sh` sources this automatically:
-   ```bash
-   # .env  (never committed — listed in .gitignore)
+Passphrase sources, in order:
+
+1. `.env` file in the project root:
+   ```sh
    STREAMSAVER_PASSPHRASE=your_passphrase
    ```
-2. Environment variable already set in your shell: `STREAMSAVER_PASSPHRASE=your_passphrase`
-3. CLI argument (scheduler only): `--passphrase your_passphrase`
-4. Interactive prompt
+2. Existing environment variable.
+3. Scheduler CLI argument: `--passphrase your_passphrase`.
+4. Interactive prompt.
 
-### Cron (macOS/Linux)
+Example cron:
 
 ```cron
 0 2 * * * STREAMSAVER_PASSPHRASE=yourpass /path/to/streamsaver/.venv/bin/python /path/to/streamsaver/scheduler.py --run-once
 ```
 
----
+## Backup And Restore
 
-## Features
+Use **Settings -> Export Backup** to download a JSON backup. Use **Settings -> Restore Backup** to import one.
 
-| Feature | Description |
-|---|---|
-| **Services tab** | Add/edit/delete streaming services with TMDb provider picker. Set status: Subscribed, Suspended, Unsubscribed, Not Subscribed. Enter monthly/annual cost and billing date. |
-| **Shows tab** | View all synced shows with interest score, show state (color-coded), primary streaming provider, last watched date, and next air date. Filter by state. Manually mark shows as abandoned. |
-| **Settings tab** | Set notification email. Configure country for provider data. Sync Trakt, refresh providers, and run analysis + email on demand. Displays last sync timestamp. |
-| **Email digest** | Single daily email covering all recommendation types — suspend, consider non-renewal, likely worth renewing, and resubscribe. Service logos embedded as CID attachments (no external URLs). Includes a summary metrics row (monthly spend, potential savings, services analyzed) and per-card confidence scores. |
-| **Suspend** | Monthly services with no active or upcoming content flagged before billing date. Shows monthly + annual savings if paused. Top recommendation in each section is highlighted. |
-| **Consider Non-Renewal** | Annual services nearing renewal with low engagement. Highlights that access continues through the paid period. |
-| **Likely Worth Renewing** | Annual services nearing renewal with active engagement — confirms the renewal is justified. |
-| **Resubscribe** | Previously suspended services with returning high-interest content — lists upcoming show titles and air dates. |
-| **Recommendation confidence** | Each card shows a `Confidence: High/Medium/Low` signal derived from watch score and active show count. |
-| **Logo TTL refresh** | Service logos are cached locally and automatically refreshed from TMDb every 30 days. |
+Restore replaces service and setting data from the backup. Provider logos can be refreshed afterward with **Refresh Provider List** if needed.
 
----
+## Local Development
 
-## Show States
-
-| State | Meaning | Score |
-|---|---|---|
-| 🟢 Active | Currently watching | 15+ |
-| 🔵 Occasional | Watching but not binging | 5–14 |
-| ⚫ Dormant | Haven't watched in a while | < 5 |
-| 🟡 Anticipated | Upcoming new season, previously engaged | — |
-| 🔴 Abandoned | Manually marked or auto-detected | — |
-| 🗄 Archived | Ended 2+ years ago, low score, no future season | — |
-
----
-
-## Project structure
-
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python main.py
 ```
+
+Open `http://localhost:8092`.
+
+The legacy Tkinter GUI code is still present under `gui/`, but the maintained app path is the Flask web UI in `web/` served through `wsgi.py` and Docker.
+
+## Project Structure
+
+```text
 streamsaver/
-├── main.py                        # GUI entry point
-├── scheduler.py                   # Daily scheduled runner
-├── setup_credentials.py           # Credential setup wizard (PIN OAuth)
-├── db.py                          # SQLite init, schema, migrations
-├── requirements.txt
-├── assets/
-│   └── logos/                     # Cached TMDb provider logos (PNG/JPEG, gitignored)
-├── config/                        # credentials.enc + .salt (auto-created, gitignored)
-├── data/                          # streamsaver.db + logs (auto-created, gitignored)
+├── Dockerfile
+├── docker-compose.yml
+├── wsgi.py                         # Gunicorn entry point
+├── main.py                         # Local Flask dev entry point
+├── scheduler.py                    # Scheduled sync/report runner
+├── setup_credentials.py            # CLI credential setup and encryption helpers
+├── db.py                           # SQLite schema and migrations
+├── web/
+│   ├── app.py                      # Flask routes and web actions
+│   ├── static/app.css              # Responsive web styling
+│   └── templates/                  # Web UI templates
 ├── core/
-│   ├── trakt_client.py            # Trakt REST API wrapper
-│   ├── tmdb_client.py             # TMDb API wrapper (providers + show lookup)
-│   ├── show_tracker.py            # Incremental sync, interest scoring, archive pass
-│   ├── service_manager.py         # Service CRUD, provider cache, logo downloader
-│   └── analysis.py                # Suspend / resubscribe recommendation engine
-├── gui/
-│   ├── app.py                     # Main window + credential unlock
-│   ├── theme.py                   # Dracula colour palette
-│   ├── widgets.py                 # Shared themed widgets + ttk styles
-│   ├── services_page.py           # Services tab
-│   ├── shows_page.py              # Shows tab (state badges, scores)
-│   └── settings_page.py           # Settings tab (sync, analysis, email)
-└── email_reports/
-    ├── logo.py                    # Centralized logo helper (CID attachment renderer)
-    ├── report_builder.py          # HTML report + digest builder
-    ├── mailer.py                  # Gmail SMTP sender (multipart/related)
-    └── templates/base.html        # Dracula email shell template
+│   ├── trakt_client.py             # Trakt REST API wrapper
+│   ├── tmdb_client.py              # TMDb API wrapper
+│   ├── show_tracker.py             # Sync, scoring, and show-state logic
+│   ├── service_manager.py          # Service CRUD, providers, and logo cache
+│   ├── backup.py                   # JSON backup import/export
+│   └── analysis.py                 # Recommendation engine
+├── email_reports/
+│   ├── logo.py                     # CID logo attachments
+│   ├── report_builder.py           # HTML email rendering
+│   └── mailer.py                   # Gmail SMTP sender
+├── assets/logos/                   # Cached TMDb logos
+├── config/                         # credentials.enc and .salt
+├── data/                           # SQLite database and logs
+└── backups/                        # Backup files
 ```
 
----
+## Security Notes
 
-## Security notes
-
-- Credentials are encrypted with Fernet + PBKDF2 and stored in `config/credentials.enc`
-- The encryption salt is in `config/.salt`
-- **Both files are gitignored** — never committed to the repository
-- The passphrase is never stored; it is entered at startup each time
+- Credentials are encrypted with Fernet and PBKDF2.
+- Encrypted credentials are stored in `config/credentials.enc`.
+- The encryption salt is stored in `config/.salt`.
+- `config/`, `data/`, and generated logo/cache files are gitignored.
+- The passphrase cannot be recovered if lost.
+- Unlocking stores decrypted credentials only in the running Flask process memory.

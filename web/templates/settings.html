@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>Settings</h1>
+  <p>Notification settings, provider region, sync controls, and portable backups.</p>
+</section>
+<section class="grid two">
+  <form class="panel form-panel" method="post">
+    <h2>Configuration</h2>
+    <label>Report Email <input type="email" name="notification_email" value="{{ settings.notification_email }}"></label>
+    <label>Provider Country <input name="provider_country" maxlength="2" value="{{ settings.provider_country or 'US' }}"></label>
+    <label>Abandoned Mode
+      <select name="abandoned_mode">
+        <option value="manual" {% if settings.abandoned_mode == "manual" %}selected{% endif %}>Manual</option>
+        <option value="auto" {% if settings.abandoned_mode == "auto" %}selected{% endif %}>Automatic</option>
+      </select>
+    </label>
+    <label>Inactivity Threshold
+      <select name="abandoned_threshold_days">
+        {% for label, value in thresholds %}<option value="{{ value }}" {% if settings.abandoned_threshold_days == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Status Alert Frequency
+      <select name="status_alert_frequency">
+        <option value="daily" {% if settings.status_alert_frequency == "daily" %}selected{% endif %}>Daily</option>
+        <option value="weekly" {% if settings.status_alert_frequency in ("", "weekly") %}selected{% endif %}>Weekly</option>
+        <option value="monthly" {% if settings.status_alert_frequency == "monthly" %}selected{% endif %}>Monthly</option>
+        <option value="never" {% if settings.status_alert_frequency == "never" %}selected{% endif %}>Never</option>
+      </select>
+    </label>
+    <p class="muted">Last status alert: {{ settings.last_status_alert_sent or "never" }}</p>
+    <label>Discord Webhook URL
+      <input type="password" name="discord_webhook_url" autocomplete="off" placeholder="{% if settings.discord_webhook_configured %}Leave blank to keep current webhook{% else %}Paste Discord webhook URL{% endif %}">
+    </label>
+    <label class="check">
+      <input type="checkbox" name="clear_discord_webhook" value="1">
+      Remove saved Discord webhook
+    </label>
+    <p class="muted">Discord alerts: {{ "configured" if settings.discord_webhook_configured else "not configured" }}</p>
+    <button>Save Settings</button>
+  </form>
+  <section class="panel">
+    <h2>Actions</h2>
+    <p class="muted">Last sync: {{ settings.last_trakt_sync or "never" }}</p>
+    <p class="muted">Provider cache: {{ settings.networks_fetched_at or "never" }}</p>
+    <div class="button-row vertical">
+      <form method="post" action="{{ url_for('action_sync') }}"><button>Sync Trakt Now</button></form>
+      <form method="post" action="{{ url_for('action_sync') }}"><input type="hidden" name="force_backfill" value="1"><button>Backfill Last Year</button></form>
+      <form method="post" action="{{ url_for('action_refresh_providers') }}"><button>Refresh Provider List</button></form>
+      <form method="post" action="{{ url_for('action_analyze') }}"><button>Run Analysis & Send Report</button></form>
+      <form method="post" action="{{ url_for('action_test_discord') }}"><button>Test Discord Alert</button></form>
+      <a class="button ghost" href="{{ url_for('credentials') }}">Update Credentials</a>
+      <a class="button ghost" href="{{ url_for('backup_export') }}">Export Backup</a>
+    </div>
+  </section>
+</section>
+<section class="panel form-panel">
+  <h2>Restore Backup</h2>
+  <form method="post" action="{{ url_for('backup_restore') }}" enctype="multipart/form-data" onsubmit="return confirm('Restore will replace services and settings. Continue?')">
+    <input type="file" name="backup" accept="application/json,.json" required>
+    <button class="danger">Restore Backup</button>
+  </form>
+</section>
+{% endblock %}
