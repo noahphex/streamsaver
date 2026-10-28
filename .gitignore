@@ -29,3 +29,4 @@ backups/
 .idea/
 assets/service_icons/
 config/*.bak-*
+config/*.tmp

@@ -47,7 +47,7 @@ from core.show_tracker import run_full_sync
 from core.analysis     import run_analysis
 from email_reports.report_builder import build_digest
 from email_reports.mailer          import send_report_with_credentials
-from setup_credentials             import encrypt_credentials, load_credentials
+from setup_credentials             import load_credentials, load_trakt_tokens, save_trakt_tokens
 
 logging.basicConfig(
     level=logging.INFO,
@@ -106,7 +106,7 @@ def run_daily_job(creds: dict, passphrase: str | None = None) -> bool:
         if not passphrase:
             logger.warning("Trakt token refreshed but no passphrase is available; token was not persisted.")
             return
-        encrypt_credentials(creds, passphrase, quiet=True)
+        save_trakt_tokens(passphrase, tokens["access_token"], tokens.get("refresh_token", ""))
         logger.info("Persisted refreshed Trakt tokens.")
 
     # ── 1. Trakt sync ──────────────────────────────────────────────────────
@@ -117,6 +117,7 @@ def run_daily_job(creds: dict, passphrase: str | None = None) -> bool:
         refresh_token = creds.get("trakt_refresh_token", ""),
         username      = creds.get("trakt_username", ""),
         token_refresh_callback = _persist_trakt_tokens,
+        token_loader  = (lambda: load_trakt_tokens(passphrase)) if passphrase else None,
     )
 
     tmdb_key = creds.get("tmdb_api_key", "")

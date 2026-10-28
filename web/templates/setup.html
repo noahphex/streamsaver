@@ -43,14 +43,15 @@
     <label>Trakt Username
       <input name="trakt_username" value="{{ request.form.trakt_username }}" required>
     </label>
-    <label>PIN From Trakt
-      <input name="trakt_pin" autocomplete="one-time-code" required>
+    <label>PIN From Trakt (optional)
+      <input name="trakt_pin" autocomplete="one-time-code" placeholder="Leave blank to sign in with a device code next">
     </label>
   </div>
   <p class="muted">
     After entering your Client ID, open this authorization URL in a new tab and approve Streamsaver:
     <a id="trakt-auth-link" class="inline-link" href="{{ trakt_auth_url or '#' }}" target="_blank" rel="noreferrer">Authorize Trakt</a>.
-    Trakt will show a PIN; paste that PIN into this form.
+    Trakt will show a PIN; paste that PIN into this form. If that page hangs, leave the PIN blank:
+    after saving you'll get a short code to enter at trakt.tv/activate instead.
   </p>
 
   <h2>TMDb</h2>

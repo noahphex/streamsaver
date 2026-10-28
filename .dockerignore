@@ -10,3 +10,4 @@ data/streamsaver.db
 data/streamsaver*.log
 backups
 config/*.bak-*
+config/*.tmp

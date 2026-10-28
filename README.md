@@ -88,7 +88,8 @@ The web setup wizard:
 
 1. Creates a local encryption passphrase.
 2. Builds the Trakt authorization URL from your Client ID.
-3. Exchanges the Trakt PIN for access and refresh tokens.
+3. Exchanges the Trakt PIN for access and refresh tokens, or, if the PIN is left blank,
+   sends you to **Settings -> Update Credentials** to sign in with a device code.
 4. Encrypts all credentials into `config/credentials.enc`.
 5. Stores the encryption salt in `config/.salt`.
 6. Unlocks the current web session after saving.
@@ -140,7 +141,7 @@ The saved webhook is used for:
 - Scheduled analysis failures.
 - Scheduled email digest delivery failures.
 
-If Trakt authorization fails, open **Settings -> Update Credentials**, click **Authorize Trakt**, paste the Trakt PIN, and save **Trakt Authorization**.
+If Trakt authorization fails, open **Settings -> Update Credentials**, click **Get Trakt Code**, enter the code at trakt.tv/activate, then click **Finish Trakt Sign-In**. The nightly job picks up the new tokens on its next run. The PIN form below it is a fallback for changing the Client ID or Secret.
 
 ## Scheduler
 
