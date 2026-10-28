@@ -1,24 +1,36 @@
 :root {
   color-scheme: dark;
-  --bg: #101114;
-  --panel: #191b21;
-  --panel-2: #22252d;
-  --text: #f3f4f6;
-  --muted: #a8adb8;
-  --line: #343844;
-  --accent: #4fd1c5;
-  --status-subscribed: #50FA7B;
-  --status-unsubscribed: #FF5555;
-  --status-suspended: #F1FA8C;
-  --status-not-subscribed: #8BE9FD;
-  --danger: #ff6b6b;
-  --success: #68d391;
-  --warning: #f6c177;
+  /* Dracula (draculatheme.com): page sits one step darker than panels */
+  --bg: #1e1f29;
+  --panel: #282a36;
+  --panel-2: #343746;
+  --field: #21222c;
+  --line: #44475a;
+  --text: #f8f8f2;
+  --muted: #bcc0d6;
+  --accent: #bd93f9;
+  --on-accent: #1e1f29;
+  --pink: #ff79c6;
+  --cyan: #8be9fd;
+  --green: #50fa7b;
+  --orange: #ffb86c;
+  --red: #ff5555;
+  --yellow: #f1fa8c;
+  --status-subscribed: var(--green);
+  --status-unsubscribed: var(--red);
+  --status-suspended: var(--yellow);
+  --status-not-subscribed: var(--cyan);
+  --danger: var(--red);
+  --success: var(--green);
 }
+::selection { background: color-mix(in srgb, var(--accent), transparent 55%); color: var(--text); }
+:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
+html { scrollbar-color: var(--line) var(--bg); }
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-variant-numeric: tabular-nums;
   background: var(--bg);
   color: var(--text);
   font-size: 16px;
@@ -38,7 +50,7 @@ a { color: inherit; text-decoration: none; }
   align-items: center;
   gap: 16px;
   padding: 12px 18px;
-  background: rgba(25, 27, 33, 0.96);
+  background: color-mix(in srgb, var(--panel), transparent 4%);
   border-bottom: 1px solid var(--line);
 }
 .brand {
@@ -74,7 +86,10 @@ a { color: inherit; text-decoration: none; }
   gap: 18px;
   margin: 10px 0 18px;
 }
-.hero h1 { margin: 0 0 4px; font-size: clamp(28px, 5vw, 44px); }
+.hero h1 { margin: 0 0 4px; font-size: clamp(26px, 4vw, 32px); line-height: 1.15; }
+.hero p { margin: 0; }
+.page > section + section, .page > form + section, .page > section + form { margin-top: 16px; }
+.panel h2 { margin: 0 0 12px; font-size: 18px; }
 .hero p, .muted { color: var(--muted); }
 .hero-copy { min-width: 0; }
 .hero-logo {
@@ -126,7 +141,7 @@ button, .button {
   border: 0;
   border-radius: 8px;
   background: var(--accent);
-  color: #061313;
+  color: var(--on-accent);
   font: inherit;
   font-weight: 700;
   cursor: pointer;
@@ -140,8 +155,8 @@ button.is-loading {
   width: 1em;
   height: 1em;
   margin-right: .55rem;
-  border: 2px solid rgba(6, 19, 19, .28);
-  border-top-color: #061313;
+  border: 2px solid color-mix(in srgb, var(--on-accent), transparent 72%);
+  border-top-color: var(--on-accent);
   border-radius: 999px;
   animation: spin .8s linear infinite;
 }
@@ -154,15 +169,19 @@ button.danger .button-spinner {
   to { transform: rotate(360deg); }
 }
 button.small { min-height: 32px; padding: 6px 8px; }
-button.danger, .danger { background: var(--danger); color: #210909; }
-.button.ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); }
+button.danger, .danger { background: var(--danger); color: var(--on-accent); }
+.button.ghost, button.ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); }
+button.ghost.small { color: var(--muted); background: transparent; }
+button.ghost.small:hover { color: var(--text); background: var(--panel-2); }
+button.ghost.danger-text { color: color-mix(in srgb, var(--red), #fff 25%); }
+button:hover, .button:hover { filter: brightness(1.08); }
 .form-panel label { display: grid; gap: 6px; margin-bottom: 12px; color: var(--muted); }
 input, select {
   width: 100%;
   min-height: 44px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #0d0e12;
+  background: var(--field);
   color: var(--text);
   padding: 8px 10px;
   font: inherit;
@@ -239,7 +258,7 @@ th { color: var(--muted); font-weight: 600; }
     position: sticky;
     top: 69px;
     z-index: 5;
-    background: #22252d;
+    background: var(--panel-2);
     box-shadow: 0 1px 0 var(--line), 0 8px 18px rgba(0, 0, 0, .22);
   }
 }
@@ -311,3 +330,77 @@ th { color: var(--muted); font-weight: 600; }
   color: var(--accent);
   margin: 0.5rem 0 1rem;
 }
+
+input::placeholder { color: color-mix(in srgb, var(--muted), transparent 25%); }
+input[type="file"] { padding: 6px; }
+input[type="file"]::file-selector-button {
+  margin-right: 10px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--panel-2); color: var(--text); font: inherit; cursor: pointer;
+}
+
+/* Status text on its own tint needs a lighter red to clear 4.5:1 */
+.status-unsubscribed .card-head span { color: color-mix(in srgb, var(--red), #fff 22%); }
+
+/* Show states */
+.state.active      { color: var(--green);  background: color-mix(in srgb, var(--green), transparent 86%); }
+.state.occasional  { color: var(--cyan);   background: color-mix(in srgb, var(--cyan), transparent 86%); }
+.state.anticipated { color: var(--yellow); background: color-mix(in srgb, var(--yellow), transparent 88%); }
+.state.abandoned   { color: var(--pink);   background: color-mix(in srgb, var(--pink), transparent 86%); }
+.state.completed, .state.dormant, .state.archived, .state.ignored { color: var(--muted); }
+.chip.state { display: inline-flex; gap: 6px; align-items: center; }
+td.title { font-weight: 600; }
+
+/* To-do list (dashboard) and advice pills (services) */
+.todo { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.todo li {
+  display: grid; grid-template-columns: 9.5rem minmax(0, 1fr) auto; gap: 4px 14px; align-items: baseline;
+  padding: 12px 14px; background: var(--panel-2); border-radius: 8px;
+}
+.todo .name { font-weight: 700; }
+.todo .why { grid-column: 2; color: var(--muted); font-size: 14px; }
+.todo .when { color: var(--muted); font-size: 14px; white-space: nowrap; }
+.tone { border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 700; justify-self: start; }
+.tone-pause       { color: var(--yellow); background: color-mix(in srgb, var(--yellow), transparent 86%); }
+.tone-review      { color: var(--orange); background: color-mix(in srgb, var(--orange), transparent 86%); }
+.tone-renew       { color: var(--green);  background: color-mix(in srgb, var(--green), transparent 86%); }
+.tone-resubscribe { color: var(--cyan);   background: color-mix(in srgb, var(--cyan), transparent 86%); }
+.tone-untracked   { color: var(--accent); background: color-mix(in srgb, var(--accent), transparent 84%); }
+.tone-keep        { color: var(--muted);  background: var(--panel-2); }
+.all-clear p { margin: 0 0 8px; }
+.kept { margin: 0; padding-left: 1.1rem; color: var(--muted); }
+.kept li { margin: 2px 0; }
+details summary { cursor: pointer; color: var(--muted); }
+.card .meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.card-head h2 { margin: 0; font-size: 18px; }
+.card p { margin: 8px 0; }
+.panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+.panel-head h2 { margin: 0; }
+.settings-group + .settings-group { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.settings-group h3 { margin: 0 0 8px; font-size: 15px; color: var(--muted); font-weight: 600; }
+.chip.ok      { color: var(--green); background: color-mix(in srgb, var(--green), transparent 86%); }
+.chip.missing { color: var(--red);   background: color-mix(in srgb, var(--red), transparent 86%); }
+@media (max-width: 720px) {
+  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .todo li { grid-template-columns: 1fr; }
+  .todo .why { grid-column: 1; }
+  td.title { font-size: 17px; }
+}
+
+.nav a[aria-current="page"] { color: var(--text); background: var(--panel-2); box-shadow: inset 0 -2px 0 var(--accent); }
+td:empty::after { content: ""; }
+@media (max-width: 720px) { td:empty { display: none; } }
+
+/* Unsubscribed is a normal state, not an error: keep the pill, drop the alarm border */
+.card.status-unsubscribed { border-color: var(--line); }
+@media (min-width: 721px) {
+  /* overflow:hidden on the table made it the sticky container and pushed the header down */
+  .table-wrap table { overflow: visible; }
+}
+@media (max-width: 720px) {
+  .topbar > form { order: 2; margin-left: auto; }
+  .nav { order: 3; flex-basis: 100%; }
+  td.title { display: block; padding-top: 6px; }
+  td.title::before { content: none; }
+}
+
+td[data-label="Last"], td[data-label="Next"], td[data-label="Score"] { white-space: nowrap; }

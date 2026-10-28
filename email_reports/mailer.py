@@ -86,6 +86,18 @@ def send_report(
         raise RuntimeError(f"Failed to send email: {exc}") from exc
 
 
+def check_login(from_address: str, app_password: str) -> None:
+    """Log in to Gmail SMTP without sending anything; raises RuntimeError on failure."""
+    try:
+        with smtplib.SMTP_SSL(GMAIL_SMTP_HOST, GMAIL_SMTP_PORT, context=ssl.create_default_context(), timeout=20) as server:
+            server.login(from_address, app_password)
+    except smtplib.SMTPAuthenticationError as exc:
+        raise RuntimeError("Gmail rejected the sender/app password.") from exc
+    except (smtplib.SMTPException, OSError) as exc:
+        # Gmail closes the connection instead of answering 535 for a revoked app password.
+        raise RuntimeError(f"Gmail login failed ({exc}). If you changed your Google password, create a new app password.") from exc
+
+
 def _extract_cid_refs(html: str) -> list[str]:
     """Return all CID values referenced in src="cid:..." within the HTML."""
     import re

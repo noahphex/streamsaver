@@ -12,17 +12,13 @@
       <img src="{{ url_for('logos', filename='streamsaver_logo_transparent.png') }}" alt="" aria-hidden="true">
       <span>Streamsaver</span>
     </a>
-    <nav class="nav">
-      <a href="{{ url_for('dashboard') }}">Dashboard</a>
-      <a href="{{ url_for('services') }}">Services</a>
-      <a href="{{ url_for('shows') }}">Shows</a>
-      <a href="{{ url_for('settings') }}">Settings</a>
-      <a href="{{ url_for('about') }}">About</a>
-    </nav>
-    {% if is_unlocked %}
-      <form method="post" action="{{ url_for('lock') }}"><button class="link-button">Lock</button></form>
-    {% else %}
-      <a class="pill" href="{{ url_for('unlock') }}">Unlock</a>
+    {% if signed_in %}
+      <nav class="nav" aria-label="Main">
+        {% for endpoint, label in [("dashboard", "Dashboard"), ("services", "Services"), ("shows", "Shows"), ("settings", "Settings"), ("credentials", "Credentials"), ("about", "About")] %}
+          <a href="{{ url_for(endpoint) }}" {% if request.endpoint == endpoint %}aria-current="page"{% endif %}>{{ label }}</a>
+        {% endfor %}
+      </nav>
+      <form method="post" action="{{ url_for('lock') }}"><button class="link-button">Sign out</button></form>
     {% endif %}
   </header>
   <main class="page">
@@ -47,8 +43,10 @@
         if (normalized.includes("restore")) return "Restoring...";
         if (normalized.includes("delete")) return "Deleting...";
         if (normalized.includes("save")) return "Saving...";
-        if (normalized.includes("unlock")) return "Unlocking...";
-        if (normalized.includes("lock")) return "Locking...";
+        if (normalized.includes("sign in")) return "Signing in...";
+        if (normalized.includes("sign out")) return "Signing out...";
+        if (normalized.includes("test")) return "Testing...";
+        if (normalized.includes("code")) return "Getting code...";
         if (normalized.includes("filter")) return "Filtering...";
         return "Working...";
       };

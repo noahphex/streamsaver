@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}{{ "Edit Service" if editable else "Add Service" }} - Streamsaver{% endblock %}
+{% block title %}{{ "Edit service" if editable else "Add service" }} - Streamsaver{% endblock %}
 {% block content %}
 <section class="hero compact">
   <div class="hero-copy">
-    <h1>{{ "Edit Service" if editable else "Add Service" }}</h1>
+    <h1>{{ "Edit service" if editable else "Add service" }}</h1>
     <p>{{ "Update subscription details and provider matching." if editable else "Add a streaming service to track cost and watch activity." }}</p>
   </div>
-  <a class="button ghost" href="{{ url_for('services') }}">All Services</a>
+  <a class="button ghost" href="{{ url_for('services') }}">All services</a>
 </section>
 
 <section class="panel form-panel">
@@ -32,9 +32,18 @@
     <label>Bundle Provider IDs <input name="bundle_provider_ids" value="{% if editable %}{{ bundle_map[editable.id]|map(attribute='tmdb_provider_id')|join(', ') }}{% endif %}" placeholder="337, 508"></label>
     <label class="check"><input type="checkbox" name="auto_renew" {% if not editable or editable.auto_renew %}checked{% endif %}> Auto renew</label>
     <div class="button-row">
-      <button type="submit">Save Service</button>
+      <button type="submit">Save service</button>
       <a class="button ghost" href="{{ url_for('services') }}">Cancel</a>
     </div>
   </form>
 </section>
+{% if editable %}
+<section class="panel">
+  <h2>Delete service</h2>
+  <p class="muted">Removes {{ editable.name }} and its bundles. Shows linked to it become unlinked; nothing on the streaming service changes.</p>
+  <form method="post" action="{{ url_for('delete_service_route', service_id=editable.id) }}" onsubmit="return confirm('Delete {{ editable.name }}? This cannot be undone.')">
+    <button class="ghost danger-text">Delete {{ editable.name }}</button>
+  </form>
+</section>
+{% endif %}
 {% endblock %}

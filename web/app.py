@@ -46,7 +46,7 @@ from core.show_tracker import backfill_service_ids, run_full_sync
 from core.tmdb_client import TMDbClient
 from core.trakt_client import TraktClient, poll_device_token, request_device_code
 from db import db_session, init_db
-from email_reports.mailer import send_report
+from email_reports.mailer import check_login, send_report
 from email_reports.report_builder import build_all_clear, build_report
 from setup_credentials import (
     CRED_FILE,
@@ -92,6 +92,7 @@ def create_app():
     def inject_globals():
         return {
             "is_unlocked": bool(_credentials(optional=True)),
+            "signed_in": bool(session.get("signed_in")),
             "status_labels": {
                 "subscribed": "Subscribed",
                 "suspended": "Suspended",
@@ -99,6 +100,10 @@ def create_app():
                 "not_subscribed": "Not Subscribed",
             },
         }
+
+    app.add_template_filter(_nice_date, "nice_date")
+    app.add_template_filter(_local_time, "local_time")
+    app.add_template_filter(_money, "money")
 
     @app.before_request
     def require_sign_in():
@@ -176,7 +181,7 @@ def create_app():
                 app.config["CREDS"] = load_credentials(passphrase)
                 app.config["CRED_PASSPHRASE"] = passphrase
                 _sign_in()
-                flash("Streamsaver unlocked.", "success")
+                flash("Signed in.", "success")
                 return redirect(url_for("dashboard"))
             except Exception as exc:
                 flash(f"Could not unlock credentials: {exc}", "error")
@@ -196,14 +201,15 @@ def create_app():
         totals = get_cost_totals(status_filter="subscribed")
         counts = _show_counts()
         settings = _settings()
-        recommendations = run_analysis()
+        results = run_analysis()
         return render_template(
             "dashboard.html",
             services=services,
             totals=totals,
             counts=counts,
             settings=settings,
-            recommendations={key: len(value) for key, value in recommendations.items()},
+            todo=_todo_items(results),
+            kept=results.get("keep", []),
         )
 
     @app.get("/about")
@@ -214,11 +220,18 @@ def create_app():
     def services():
         all_services = get_all_services()
         bundle_map = {svc["id"]: get_bundle_providers(svc["id"]) for svc in all_services}
+        results = run_analysis()
+        advice = {item["name"]: item for item in _todo_items(results)}
+        # Next bill per service, from analysis (the stored anchor may be months in the past).
+        next_bill = {rec["name"]: rec.get("billing_date") for recs in results.values() for rec in recs
+                     if isinstance(rec, dict) and "billing_date" in rec}
         return render_template(
             "services.html",
-            services=all_services,
+            services=sorted(all_services, key=lambda s: _service_sort_key(s, next_bill)),
+            next_bill=next_bill,
             bundle_map=bundle_map,
             totals=get_cost_totals(status_filter="subscribed"),
+            advice=advice,
         )
 
     @app.get("/services/new")
@@ -320,6 +333,28 @@ def create_app():
             trakt_device=_pending_trakt_device(),
         )
 
+    @app.post("/credentials/test/<provider>")
+    def test_credentials(provider):
+        creds = _credentials()
+        try:
+            if provider == "trakt":
+                user = _trakt_client(creds, _persist_trakt_tokens, _load_saved_trakt_tokens)._get("/users/settings")
+                message = f"Trakt works: signed in as @{(user or {}).get('user', {}).get('username', '?')}."
+            elif provider == "tmdb":
+                if not creds.get("tmdb_api_key") or _tmdb_client(creds)._get("/configuration") is None:
+                    raise RuntimeError("TMDb did not accept the key.")
+                message = "TMDb works."
+            elif provider == "email":
+                check_login(creds.get("gmail_sender", ""), creds.get("gmail_app_password", ""))
+                message = f"Gmail works: signed in as {creds.get('gmail_sender')} (nothing was sent)."
+            else:
+                abort(404)
+            flash(message, "success")
+        except Exception as exc:
+            logger.warning("Credential test for %s failed: %s", provider, exc)
+            flash(f"{provider.upper() if provider == 'tmdb' else provider.title()} test failed: {exc}", "error")
+        return redirect(url_for("credentials"))
+
     @app.post("/credentials/trakt/device/start")
     def start_trakt_device_login():
         try:
@@ -383,23 +418,18 @@ def create_app():
                 missing.append("Client Secret")
             if not username:
                 missing.append("Trakt Username")
-            if not pin:
-                missing.append("PIN from Trakt")
             if missing:
                 raise RuntimeError(f"Missing Trakt fields: {', '.join(missing)}.")
 
-            token_data = _exchange_trakt_pin(client_id, client_secret, pin)
-            creds.update(
-                {
-                    "trakt_client_id": client_id,
-                    "trakt_client_secret": client_secret,
-                    "trakt_access_token": token_data["access_token"],
-                    "trakt_refresh_token": token_data.get("refresh_token", ""),
-                    "trakt_username": username,
-                }
-            )
+            creds.update({"trakt_client_id": client_id, "trakt_client_secret": client_secret,
+                          "trakt_username": username})
+            if pin:
+                token_data = _exchange_trakt_pin(client_id, client_secret, pin)
+                creds["trakt_access_token"] = token_data["access_token"]
+                creds["trakt_refresh_token"] = token_data.get("refresh_token", "")
             _save_credentials(creds)
-            flash("Trakt authorization updated.", "success")
+            flash("Trakt authorization updated." if pin else
+                  "Trakt app details saved. Sign in with a device code if Trakt access stops working.", "success")
         except Exception as exc:
             logger.exception("Trakt credential update failed")
             flash(f"Trakt update failed: {exc}", "error")
@@ -437,8 +467,9 @@ def create_app():
             creds["gmail_sender"] = sender
             if app_password:
                 creds["gmail_app_password"] = app_password
-            creds["notify_email"] = notify_email or sender
-            _set_setting("notification_email", creds["notify_email"])
+            if "notify_email" in request.form:  # the field now lives on Settings only
+                creds["notify_email"] = notify_email or sender
+                _set_setting("notification_email", creds["notify_email"])
             _save_credentials(creds)
             flash("Email report credentials updated.", "success")
         except Exception as exc:
@@ -742,6 +773,69 @@ def _tmdb_client(creds):
     if not key:
         return None
     return TMDbClient(api_key=key, country=_get_setting("provider_country") or "US")
+
+
+# Recommendation keys → what the person should do, in the order they matter.
+_TODO_ACTIONS = [
+    ("suspend", "Pause", "pause"),
+    ("consider_non_renewal", "Review renewal", "review"),
+    ("renew_soon", "Renews soon", "renew"),
+    ("resubscribe", "Resubscribe", "resubscribe"),
+    ("uncertain", "Check billing date", "review"),
+    ("untracked", "Add service", "untracked"),
+]
+
+
+def _todo_items(results):
+    """Flatten analysis results into to-do rows: action, tone, service, why, and when."""
+    items = []
+    for key, label, tone in _TODO_ACTIONS:
+        for rec in results.get(key, []):
+            shows = rec.get("shows") or []
+            if key == "untracked":
+                why = "Watching " + ", ".join(shows)
+            elif shows:
+                why = ", ".join(f"{s['title']} ({_nice_date(s.get('next_air_date'))})" for s in shows)
+            else:
+                why = rec.get("reason", "")
+            items.append({"key": key, "label": label, "tone": tone, "name": rec["name"],
+                          "why": why, "when": rec.get("billing_date") if key != "untracked" else ""})
+    return items
+
+
+def _service_sort_key(svc, next_bill):
+    # Subscribed first, then by next billing date, then name.
+    order = {"subscribed": 0, "suspended": 1, "unsubscribed": 2, "not_subscribed": 3}
+    return (order.get(svc.get("status"), 9), next_bill.get(svc.get("name")) or "9999", svc.get("name", "").lower())
+
+
+def _nice_date(value):
+    """'2026-10-27' → 'Oct 27' (adds the year when it isn't this year); blank stays blank."""
+    if not value:
+        return ""
+    try:
+        d = datetime.fromisoformat(str(value)[:10]).date()
+    except ValueError:
+        return str(value)
+    return f"{d:%b} {d.day}" + ("" if d.year == datetime.now().year else f", {d.year}")
+
+
+def _local_time(value):
+    """Trakt/UTC ISO timestamp → local 12-hour time, e.g. 'Oct 28, 12:20 PM'."""
+    if not value:
+        return "never"
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return str(value)
+    if dt.tzinfo is None:
+        return _nice_date(value)  # date-only values (e.g. provider cache) have no time
+    dt = dt.astimezone()
+    return f"{_nice_date(dt.date().isoformat())}, {dt:%I:%M %p}".replace(", 0", ", ")
+
+
+def _money(value):
+    return f"${float(value or 0):,.2f}"
 
 
 def _show_counts():

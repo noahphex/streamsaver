@@ -2,8 +2,10 @@
 {% block title %}Unlock - Streamsaver{% endblock %}
 {% block content %}
 <section class="hero">
-  <h1>Sign in to Streamsaver</h1>
-  <p>Enter your Streamsaver passphrase. This browser stays signed in for 30 days.</p>
+  <div class="hero-copy">
+    <h1>Sign in to Streamsaver</h1>
+    <p>Enter your Streamsaver passphrase. This browser stays signed in for 30 days.</p>
+  </div>
 </section>
 {% if not has_credentials %}
   <div class="flash error">

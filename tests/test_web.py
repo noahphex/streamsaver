@@ -99,5 +99,37 @@ class WebTests(unittest.TestCase):
         self.assertEqual(saved["gmail_app_password"], "keep-me")
 
 
+    def test_saving_trakt_details_without_pin_keeps_tokens(self):
+        self._sign_in()
+        self.client.post("/credentials/trakt", data={"trakt_client_id": "cid2", "trakt_username": "noah"})
+        saved = sc.load_credentials(PASSPHRASE)
+        self.assertEqual((saved["trakt_client_id"], saved["trakt_access_token"]), ("cid2", "old"))
+
+    def test_email_form_without_report_field_keeps_report_address(self):
+        self._sign_in()
+        webapp._set_setting("notification_email", "reports@example.com")
+        self.client.post("/credentials/email", data={"gmail_sender": "sender@gmail.com"})
+        self.assertEqual(webapp._get_setting("notification_email"), "reports@example.com")
+
+    def test_gmail_test_failure_is_reported_not_raised(self):
+        self._sign_in()
+        with mock.patch.object(webapp, "check_login", side_effect=RuntimeError("Gmail login failed (closed).")):
+            r = self.client.post("/credentials/test/email", follow_redirects=True)
+        self.assertIn(b"Email test failed: Gmail login failed", r.data)
+
+    def test_todo_items_and_dates(self):
+        items = webapp._todo_items({
+            "resubscribe": [{"name": "Paramount+", "billing_date": "",
+                             "shows": [{"title": "Cupertino", "next_air_date": "2026-10-30"}]}],
+            "untracked": [{"name": "Crunchyroll", "shows": ["Frieren"]}],
+            "keep": [{"name": "Hulu", "reason": "x"}],
+        })
+        self.assertEqual([(i["label"], i["name"]) for i in items],
+                         [("Resubscribe", "Paramount+"), ("Add service", "Crunchyroll")])
+        self.assertIn("Cupertino (Oct 30", items[0]["why"])
+        self.assertEqual(webapp._money(1303.91), "$1,303.91")
+        self.assertEqual(webapp._local_time(""), "never")
+
+
 if __name__ == "__main__":
     unittest.main()
