@@ -48,13 +48,13 @@ def test_bill_window_cycles_subscription_and_dedupe(database):
                "resubscribe": [rec(11, 2, status="unsubscribed")]}
     before = deepcopy(results)
     found = events(results)
-    assert [e["service_id"] for e in found] == [1, 10, 8, 9, 7, 2]
+    assert [e["service_id"] for e in found] == [1, 10, 8, 9, 7, 1, 10, 8, 9, 2]
     assert next(e for e in found if e["service_id"] == 7)["amount"] == 99.99
     assert found[0]["amount"] == 12.34
     assert results == before
-    assert timeline_summary(build_timeline(results, TODAY)) == {"bills": 6, "amount": 161.69, "returns": 0}
+    assert timeline_summary(build_timeline(results, TODAY)) == {"bills": 10, "amount": 211.05, "returns": 0}
     no_id = rec(id=None)
-    assert len(events({"keep": [no_id], "snoozed": [no_id]})) == 1
+    assert len(events({"keep": [no_id], "snoozed": [no_id]})) == 2
 
 
 def test_verdict_matches_analysis_and_todo_is_not_on_snoozed(database):
@@ -74,7 +74,8 @@ def test_verdict_matches_analysis_and_todo_is_not_on_snoozed(database):
     assert [r["id"] for r in results["keep"]] == [1]
     assert [r["id"] for r in results["suspend"]] == [2]
     bills = [e for e in events(results) if e["type"] == "bill"]
-    assert bills[0]["verdict"] == {"kind": "returns", "shows": ["Before", "On bill"],
+    assert bills[0]["verdict"] == {"kind": "returns", "shows": [{"title": "Before", "date": "2026-11-04"},
+                                                               {"title": "On bill", "date": "2026-11-09"}],
                                     "text": "2 shows return before this bill"}
     assert bills[1]["verdict"] == {"kind": "nothing_new", "text": "Nothing new before this bill"}
     assert bills[1]["todo"] == {"label": "Pause suggested"}
@@ -112,7 +113,8 @@ def test_returns_exclusions_stale_dates_and_mapped_service(database):
 
 def test_week_labels_day_order_and_preview(database):
     show("Same day", 0)
-    timeline = build_timeline({"keep": [rec(offset=0), rec(2, 7), rec(3, 15), rec(4, 60)]}, TODAY)
+    timeline = build_timeline({"keep": [rec(offset=0, billing_cycle="annual"), rec(2, 7, billing_cycle="annual"),
+                                                 rec(3, 15, billing_cycle="annual"), rec(4, 60, billing_cycle="annual")]}, TODAY)
     assert [w["label"] for w in timeline] == ["This week", "Next week", "Week of Nov 16", "Week of Dec 28"]
     assert [e["type"] for e in timeline[0]["events"]] == ["bill", "return"]
     with mock.patch("core.timeline.date") as clock:
@@ -134,7 +136,7 @@ def test_timeline_only_reads_database(database):
 
     with mock.patch.object(db, "get_connection", side_effect=read_only_connection):
         found = events({"suspend": [rec()]})
-    assert [e["type"] for e in found] == ["return", "bill"]
+    assert [e["type"] for e in found] == ["return", "bill", "bill"]
     assert found[1]["verdict"]["text"] == "1 show returns before this bill"
 
 
@@ -147,5 +149,93 @@ def test_preview_includes_day_14_and_week_boundary_from_sunday(database):
         clock.fromisoformat.side_effect = date.fromisoformat
         assert [e["title"] for e in preview(timeline)] == ["Day fourteen"]
     sunday = date(2026, 11, 1)
-    grouped = build_timeline({"keep": [rec(offset=-1), rec(2, 0), rec(3, 7)]}, sunday)
+    grouped = build_timeline({"keep": [rec(offset=-1, billing_cycle="annual"), rec(2, 0, billing_cycle="annual"),
+                                     rec(3, 7, billing_cycle="annual")]}, sunday)
     assert [w["label"] for w in grouped] == ["This week", "Next week", "Week of Nov 9", "Week of Nov 16"]
+
+
+def test_monthly_occurrences_intervals_totals_and_first_todo(database):
+    show("First", 7)
+    show("Second", 20)
+    show("Active return", 25, state="active")
+    results = {"suspend": [rec()]}
+    bills = [e for e in events(results) if e["type"] == "bill"]
+    assert [e["date"] for e in bills] == ["2026-11-09", "2026-12-09"]
+    assert bills[1]["verdict"]["shows"] == [
+        {"title": "Second", "date": "2026-11-22"},
+        {"title": "Active return", "date": "2026-11-27"}]
+    assert "todo" in bills[0] and "todo" not in bills[1]
+    assert timeline_summary(build_timeline(results, TODAY))["amount"] == 24.68
+
+
+@pytest.mark.parametrize("year,feb", [(2027, 28), (2028, 29)])
+def test_month_end_preserves_anchor(database, year, feb):
+    start = date(year, 1, 31)
+    timeline = build_timeline({"keep": [rec(billing_date=str(start))]}, start, 60)
+    assert [e["date"] for w in timeline for e in w["events"]] == [
+        str(start), str(date(year, 2, feb)), str(date(year, 3, 31))]
+
+
+def test_preview_keeps_bill_and_reports_full_window(database):
+    for i in range(8):
+        show(f"Return {i}", i)
+    timeline = build_timeline({"keep": [rec(offset=12)]}, TODAY)
+    with mock.patch("core.timeline.date") as clock:
+        clock.today.return_value = TODAY
+        clock.fromisoformat.side_effect = date.fromisoformat
+        selected = preview(timeline)
+        assert len(selected) == 5
+        assert len([e for e in selected if e["type"] == "bill"]) == 1
+        full = preview(timeline, limit=None)
+    assert timeline_summary([{"events": full}]) == {"bills": 1, "amount": 12.34, "returns": 8}
+
+
+def test_return_contexts(database):
+    with db.db_session() as conn:
+        conn.executemany("INSERT INTO services (id, name, status, billing_cycle) VALUES (?, ?, ?, ?)", [
+            (1, "Monthly", "subscribed", "monthly"),
+            (2, "Annual", "subscribed", "annual"),
+            (3, "Paused", "unsubscribed", "monthly"),
+            (4, "Other", "not_subscribed", "monthly")])
+    show("Before", 2)
+    show("After", 15)
+    show("Annual", 3, service_id=2)
+    show("Paused", 4, service_id=3)
+    show("Other", 4, service_id=4)
+    found = events({"keep": [rec()], "resubscribe": [rec(3)]}, days=20)
+    returns = {e["title"]: e for e in found if e["type"] == "return"}
+    assert returns["Before"]["context"] == "counts toward the Nov 9 bill"
+    assert returns["After"]["context"] == "after your last bill in this window"
+    assert returns["Annual"]["context"] == "annual · prepaid"
+    assert returns["Paused"]["context"] == "not subscribed"
+    assert returns["Paused"]["resubscribe_todo"] is True
+    assert returns["Other"]["service_status"] == "not_subscribed"
+
+
+def test_later_bill_empty_interval_and_annual_single_occurrence(database):
+    show("On first bill", 7)
+    bills = [e for e in events({"suspend": [rec()]}) if e["type"] == "bill"]
+    assert bills[1]["verdict"] == {"kind": "nothing_new", "text": "Nothing new since the last bill"}
+    assert len(events({"keep": [rec(billing_cycle="annual", annual_cost=100)]})) == 2  # one return, one bill
+
+
+def test_preview_keeps_all_bills_even_over_limit(database):
+    timeline = build_timeline({"keep": [rec(i, i) for i in range(1, 8)]}, TODAY)
+    with mock.patch("core.timeline.date") as clock:
+        clock.today.return_value = TODAY
+        clock.fromisoformat.side_effect = date.fromisoformat
+        assert len(preview(timeline)) == 7
+
+
+def test_next_bill_already_clamped_uses_stored_anchor(database):
+    with db.db_session() as conn:
+        conn.execute("INSERT INTO services (id, name, billing_anchor_date) VALUES (1, 'Month end', '2027-01-31')")
+    timeline = build_timeline({"keep": [rec(billing_date="2027-02-28")]}, date(2027, 2, 1), 90)
+    assert [e["date"] for w in timeline for e in w["events"]] == [
+        "2027-02-28", "2027-03-31", "2027-04-30"]
+
+
+def test_later_verdict_excludes_stale_watched_return(database):
+    show("Already watched", 20, last_watch_date="2026-11-23")
+    bills = [e for e in events({"keep": [rec()]}) if e["type"] == "bill"]
+    assert bills[1]["verdict"]["kind"] == "nothing_new"

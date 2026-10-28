@@ -709,9 +709,10 @@ class WebTests(unittest.TestCase):
                  for i, title in enumerate(["Love is Blind", "Bake Off", "Third show"])])
         page = self.client.get("/shows").data.decode()
         self.assertIn('aria-current="page">Coming up', page)
-        self.assertIn("1 bills · $40.03 · 3 shows returning", page)
+        self.assertIn("2 bills · $80.06 · 3 shows returning", page)
         self.assertIn("3 shows return before this bill", page)
-        self.assertIn("+1", page)
+        self.assertIn("Third show", page)
+        self.assertNotIn("<details><summary>+", page)
         self.assertNotIn('class="table-wrap"', page)
         self.assertIn("Love is Blind", page)
         dashboard = self.client.get("/").data.decode()
@@ -756,6 +757,63 @@ class WebTests(unittest.TestCase):
         page = self.client.get("/shows?view=all&sort=score").data.decode()
         self.assertLess(page.index('class="title">Alpha'), page.index('class="title">Zulu'))
         self.assertIn('value="state" selected', page)
+
+    def test_preview_bill_anchor_full_counts_and_footer(self):
+        from datetime import timedelta
+        from core.service_manager import add_service
+        self._sign_in()
+        today = date.today()
+        sid = add_service("Preview", status="subscribed", monthly_cost=19.99,
+                          billing_anchor_date=str(today + timedelta(days=12)))
+        with db.db_session() as conn:
+            conn.executemany(
+                "INSERT INTO shows (trakt_id, title, show_state, service_id, next_air_date) VALUES (?, ?, 'anticipated', ?, ?)",
+                [(str(i), f"Return {i}", sid, str(today + timedelta(days=i))) for i in range(8)])
+        page = self.client.get("/").data.decode()
+        self.assertIn("Next 14 days · 1 bill $19.99 · 8 returns", page)
+        self.assertIn("+4 more returns", page)
+        self.assertIn('class="bill-amount">$19.99', page)
+        self.assertEqual(page.count('class="timeline-row timeline-return"'), 4)
+        self.assertLess(page.index('id="todo"'), page.index('class="panel timeline-preview"'))
+        shows_page = self.client.get("/shows").data.decode()
+        self.assertIn("<summary>+2 more</summary>", shows_page)
+        self.assertIn("Return 7", shows_page)
+
+    def test_state_sort_orders_by_meaning(self):
+        states = ["active", "anticipated", "occasional", "abandoned", "completed", "dormant", "ignored", "archived"]
+        with db.db_session() as conn:
+            conn.executemany("INSERT INTO shows (trakt_id, title, show_state) VALUES (?, ?, ?)",
+                             [(state, state, state) for state in reversed(states)])
+        rows, _ = webapp._shows("", "All")
+        self.assertEqual([row["show_state"] for row in rows], states)
+        rows, _ = webapp._shows("", "All", direction="asc")
+        self.assertEqual([row["show_state"] for row in rows], list(reversed(states)))
+
+    def test_connection_controls_have_distinct_names(self):
+        self._sign_in()
+        self.client.application.config["CREDS"]["tmdb_api_key"] = "synthetic-key"
+        page = self.client.get("/credentials").data.decode()
+        for provider in ("Trakt", "TMDb", "Gmail"):
+            self.assertIn(f'aria-label="Test {provider}"', page)
+            self.assertIn(f'aria-label="Edit {provider}"', page)
+        self.assertEqual(page.count('>Change</a>'), 3)
+
+    def test_return_resubscribe_links_and_inline_channel_name(self):
+        from datetime import timedelta
+        self._sign_in()
+        with db.db_session() as conn:
+            conn.executemany("INSERT INTO services (id, name, status) VALUES (?, ?, ?)", [
+                (1, "Paramount+ Amazon Channel", "unsubscribed"),
+                (2, "Other", "not_subscribed")])
+            conn.executemany(
+                "INSERT INTO shows (trakt_id, title, service_id, next_air_date) VALUES (?, ?, ?, ?)",
+                [(str(i), f"Return {i}", i, str(date.today() + timedelta(days=1))) for i in (1, 2)])
+        with mock.patch.object(webapp, "run_analysis", return_value={"resubscribe": [{"id": 1}]}):
+            page = self.client.get("/shows").data.decode()
+        self.assertIn('href="/#todo">Resubscribe?</a>', page)
+        self.assertIn('href="/services/2/edit">Resubscribe?</a>', page)
+        self.assertIn("on Paramount+ (Amazon Channel)", page)
+        self.assertEqual(page.count('class="inline-link tone-resubscribe"'), 2)
 
 
 if __name__ == "__main__":

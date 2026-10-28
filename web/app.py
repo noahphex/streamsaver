@@ -84,7 +84,9 @@ _CREDENTIAL_REQUIRED_KEYS = {
 
 SHOW_SORT_COLUMNS = {
     "title": "LOWER(s.title)",
-    "state": "LOWER(s.show_state)",
+    "state": "CASE LOWER(s.show_state) WHEN 'active' THEN 8 WHEN 'anticipated' THEN 7 "
+             "WHEN 'occasional' THEN 6 WHEN 'abandoned' THEN 5 WHEN 'completed' THEN 4 "
+             "WHEN 'dormant' THEN 3 WHEN 'ignored' THEN 2 WHEN 'archived' THEN 1 ELSE 0 END",
     "service": "LOWER(COALESCE(svc.name, ''))",
     "provider": "LOWER(COALESCE(s.primary_provider, ''))",
     "last": "COALESCE(s.last_watch_date, '')",
@@ -251,6 +253,9 @@ def create_app():
         counts = _show_counts()
         settings = _settings()
         results = run_analysis()
+        timeline = build_timeline(results)
+        upcoming = preview(timeline)
+        upcoming_summary = timeline_summary([{"events": preview(timeline, limit=None)}])
         return render_template(
             "dashboard.html",
             services=services,
@@ -262,7 +267,9 @@ def create_app():
                            "consider_non_renewal": "as having renewal turned off"},
             todo=_todo_items(results, services),
             spend=next_30_days_spend(results),
-            upcoming=preview(build_timeline(results))[:5],
+            upcoming=upcoming,
+            upcoming_summary=upcoming_summary,
+            hidden_returns=upcoming_summary["returns"] - sum(e["type"] == "return" for e in upcoming),
             savings=potential_monthly_savings(results),
             todo_summary=_todo_summary(results),
             issues=_connection_issues(),

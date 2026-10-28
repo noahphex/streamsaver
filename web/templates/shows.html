@@ -15,6 +15,7 @@
 </nav>
 {% if view != 'all' %}
 <p class="muted">{{ summary.bills }} bills · {{ summary.amount|money }} · {{ summary.returns }} shows returning in the next 60 days</p>
+<p class="muted">A bill is worth paying when something you watch comes back before it.</p>
 {% for week in timeline %}
 <section class="timeline-week">
   <h2>{{ week.label }}</h2>
@@ -94,7 +95,7 @@
           <td data-label="Title" class="title">{{ show.title }}</td>
           <td data-label="State"><span class="state {{ show.show_state }}">{{ show.show_state }}</span></td>
           <td data-label="Service">{{ show.service_name or "—" }}{% if show.next_air_date %}<span class="mobile-next"> · {{ show.next_air_date|nice_date }}</span>{% endif %}</td>
-          <td data-label="Provider">{{ show.primary_provider if show.primary_provider and show.primary_provider != show.service_name else "" }}</td>
+          <td data-label="Provider"><span class="provider-name" title="{{ show.primary_provider or '' }}">{{ show.primary_provider if show.primary_provider and show.primary_provider != show.service_name else "" }}</span></td>
           <td data-label="Last">{{ show.last_watch_date|nice_date }}</td>
           <td data-label="Next">{{ show.next_air_date|nice_date or "—" }}</td>
           <td>

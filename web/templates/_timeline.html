@@ -1,21 +1,33 @@
-{% from "_service_mark.html" import service_mark, service_title with context %}
+{% from "_service_mark.html" import service_mark with context %}
+{% macro timeline_service(name) -%}
+  {% set display = name|service_name %}{{ display.base }}{% if display.channel %} (Amazon Channel){% endif %}
+{%- endmacro %}
+{% macro titles(shows) -%}
+  {% for show in shows %}{{ show.title }} {{ show.date|nice_date }}{% if not loop.last %} · {% endif %}{% endfor %}
+{%- endmacro %}
+{% macro inline_date(event) -%}
+  <time class="timeline-date timeline-date-inline" datetime="{{ event.date }}">{{ event.date|nice_date }} · </time>
+{%- endmacro %}
 {% macro event_row(event) -%}
-<li class="timeline-row timeline-{{ event.type }}">
-  <time class="timeline-date" datetime="{{ event.date }}">{{ event.date|timeline_date }}</time>
-  {{ service_mark(event.service_name, event.icon_path) }}
+<li class="timeline-row timeline-{{ event.type }}{% if event.type == 'bill' %} bill-{{ event.verdict.kind }}{% endif %}">
+  <time class="timeline-date timeline-date-desktop" datetime="{{ event.date }}">{{ event.date|timeline_date }}</time>
+  {{ service_mark(event.service_name, event.icon_path, 32 if event.type == 'bill' else 24) }}
   <div class="timeline-copy">
     {% if event.type == 'bill' %}
-      <div><strong>{{ service_title(event.service_name) }}</strong> bills <strong>{{ event.amount|money }}</strong></div>
+      <div class="bill-heading">
+        <span>{{ inline_date(event) }}<a class="card-link" href="{{ url_for('service_edit', service_id=event.service_id) if event.service_id else url_for('service_new', name=event.service_name) }}"><strong>{{ timeline_service(event.service_name) }}</strong></a> bills</span>
+        <strong class="bill-amount">{{ event.amount|money }}</strong>
+      </div>
       <div class="timeline-verdict verdict-{{ event.verdict.kind }}">
         {% if event.verdict.kind != 'prepaid' %}<span class="verdict-dot" aria-hidden="true"></span>{% endif %}
-        {{ event.verdict.text }}{% if event.verdict.kind == 'returns' %}: {{ event.verdict.shows[:2]|join(', ') }}{% if event.verdict.shows|length > 2 %} +{{ event.verdict.shows|length - 2 }}{% endif %}{% endif %}
+        {{ event.verdict.text }}{% if event.verdict.kind == 'returns' %}: {{ titles(event.verdict.shows[:6]) }}{% if event.verdict.shows|length > 6 %}<details><summary>+{{ event.verdict.shows|length - 6 }} more</summary>{{ titles(event.verdict.shows[6:]) }}</details>{% endif %}{% endif %}
         {% if event.verdict.kind == 'nothing_new' and event.todo is defined %}
           <a class="inline-link timeline-todo" href="{{ url_for('dashboard') }}#todo">{{ event.todo.label }} →</a>
         {% endif %}
       </div>
     {% else %}
-      <div><strong>{{ event.title }}</strong> returns</div>
-      <div class="muted">on {{ service_title(event.service_name) }}</div>
+      <span>{{ inline_date(event) }}<strong>{{ event.title }}</strong> returns <span class="muted return-context">on {{ timeline_service(event.service_name) }}{% if event.context %} · {{ event.context }}{% endif %}</span></span>
+      {% if event.service_status in ('unsubscribed', 'not_subscribed') %}<a class="inline-link tone-resubscribe" href="{{ url_for('dashboard') + '#todo' if event.resubscribe_todo else url_for('service_edit', service_id=event.service_id) }}">Resubscribe?</a>{% endif %}
     {% endif %}
   </div>
 </li>

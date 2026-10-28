@@ -30,15 +30,6 @@
   <p>{{ spend.total|money }} due in the next 30 days · {{ spend.count }} bill{{ '' if spend.count == 1 else 's' }} <span class="muted">· {{ totals.annual_total|money }}/yr</span></p>
   {% if savings > 0 %}<p class="spend-savings">Could save {{ savings|money }}/mo</p>{% endif %}
 </section>
-{% if upcoming %}
-<section class="panel timeline-preview">
-  <h2>Next 14 days</h2>
-  <ul class="timeline-list">
-    {% for event in upcoming %}{{ event_row(event) }}{% endfor %}
-  </ul>
-  <a class="button quiet" href="{{ url_for('shows') }}">See all coming up →</a>
-</section>
-{% endif %}
 <section class="panel todo-panel" id="todo">
   <h2>To do</h2>
   <div class="todo-summary">
@@ -103,6 +94,17 @@
     </details>
   {% endif %}
 </section>
+
+{% if upcoming %}
+<section class="panel timeline-preview">
+  <h2>Next 14 days · {{ upcoming_summary.bills }} bill{{ '' if upcoming_summary.bills == 1 else 's' }} {{ upcoming_summary.amount|money }} · {{ upcoming_summary.returns }} return{{ '' if upcoming_summary.returns == 1 else 's' }}</h2>
+  <ul class="timeline-list">
+    {% for event in upcoming %}{{ event_row(event) }}{% endfor %}
+  </ul>
+  {% if hidden_returns %}<p class="muted">+{{ hidden_returns }} more returns</p>{% endif %}
+  <a class="button quiet" href="{{ url_for('shows') }}">See all coming up →</a>
+</section>
+{% endif %}
 
 <section class="grid two">
   <div class="panel">
