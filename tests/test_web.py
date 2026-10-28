@@ -158,6 +158,95 @@ class WebTests(unittest.TestCase):
         self.assertEqual((items[0]["service_id"], items[0]["cost"]), (7, "$13.99/mo"))
         self.assertTrue(items[0]["why"].startswith("Cupertino returns Oct 30"))
 
+    def test_todo_summary_counts_and_monthly_savings(self):
+        self.assertEqual(webapp._todo_summary({}), "0 changes")
+        self.assertEqual(webapp._todo_summary({"resubscribe": [{"monthly_cost": 20}]}), "1 change")
+        results = {
+            "suspend": [{"monthly_cost": 12.50}, {"monthly_cost": None}],
+            "consider_non_renewal": [{"billing_cycle": "annual", "annual_cost": 120, "monthly_cost": 999}],
+            "renew_soon": [{"billing_cycle": "annual", "annual_cost": 240}],
+            "resubscribe": [{"monthly_cost": 30}],
+            "keep": [{"monthly_cost": 50}],
+        }
+        self.assertEqual(webapp._todo_summary(results), "5 changes · could save $22.50/mo")
+        self.assertEqual(webapp._todo_summary({"suspend": [{"monthly_cost": 0}]}), "1 change")
+
+    def test_connection_issues_use_stored_state(self):
+        self._sign_in()
+        app = self.client.application
+        webapp._record_credential_test("trakt", False, webapp._CREDENTIAL_ERRORS["auth"])
+        webapp._record_credential_test("email", True, "Gmail works.")
+        with app.test_request_context():
+            issues = webapp._connection_issues()
+        self.assertEqual(issues, [
+            {"provider": "trakt", "name": "Trakt", "message": webapp._CREDENTIAL_ERRORS["auth"],
+             "impact": "Show sync is paused until this works.", "href": "/credentials#trakt"},
+            {"provider": "tmdb", "name": "TMDb", "message": webapp._CREDENTIAL_ERRORS["missing"],
+             "impact": "New shows can't be matched to services.", "href": "/credentials#tmdb"},
+        ])
+        webapp._record_credential_test("tmdb", False, webapp._CREDENTIAL_ERRORS["network"])
+        with app.test_request_context():
+            self.assertEqual(webapp._connection_issues()[1]["message"], webapp._CREDENTIAL_ERRORS["network"])
+        webapp._record_credential_test("tmdb", True, "TMDb works.")
+        app.config["CREDS"]["tmdb_api_key"] = "test-key"
+        webapp._record_credential_test("trakt", True, "Trakt works.")
+        with app.test_request_context():
+            self.assertEqual(webapp._connection_issues(), [])
+        app.config["CREDS"]["gmail_app_password"] = ""
+        with app.test_request_context():
+            self.assertEqual(webapp._connection_issues(), [
+                {"provider": "email", "name": "Gmail", "message": webapp._CREDENTIAL_ERRORS["missing"],
+                 "impact": "Reports can't be emailed.", "href": "/credentials#gmail"},
+            ])
+
+    def test_connection_issues_require_every_required_key(self):
+        app = self.client.application
+        configured = {key: "test-value" for keys in webapp._CREDENTIAL_REQUIRED_KEYS.values() for key in keys}
+        with app.test_request_context():
+            app.config["CREDS"] = configured
+            self.assertEqual(webapp._connection_issues(), [])
+            for provider, keys in webapp._CREDENTIAL_REQUIRED_KEYS.items():
+                for key in keys:
+                    with self.subTest(provider=provider, key=key):
+                        app.config["CREDS"] = {**configured, key: ""}
+                        issues = webapp._connection_issues()
+                        self.assertEqual([issue["provider"] for issue in issues], [provider])
+                        self.assertEqual(issues[0]["message"], webapp._CREDENTIAL_ERRORS["missing"])
+
+    def test_dashboard_banner_summary_and_all_clear(self):
+        self._sign_in()
+        results = {"suspend": [{"id": 7, "name": "Hulu", "monthly_cost": 15,
+                                "reason": "No recent viewing.", "billing_date": "2026-10-30"}]}
+        webapp._record_credential_test("email", False, webapp._CREDENTIAL_ERRORS["network"])
+        with mock.patch.object(webapp, "run_analysis", return_value=results), \
+                mock.patch.object(webapp, "_trakt_client") as trakt, \
+                mock.patch.object(webapp, "_tmdb_client") as tmdb, \
+                mock.patch.object(webapp, "check_login") as gmail:
+            page = self.client.get("/").data.decode()
+        for client in (trakt, tmdb, gmail):
+            client.assert_not_called()
+        self.assertIn('<h1>To do</h1>', page)
+        self.assertNotIn("Streaming Cost Control", page)
+        self.assertIn("1 change · could save $15.00/mo", page)
+        self.assertIn("Synced never", page)
+        self.assertIn('role="status" aria-label="Connections need attention"', page)
+        self.assertLess(page.index("Connections need attention"), page.index("<h1>To do</h1>"))
+        self.assertIn('href="/credentials#tmdb"', page)
+        self.assertIn('href="/credentials#gmail"', page)
+        self.assertIn("Fix Gmail →", page)
+        self.assertIn("Could not connect. Check your network and try again.", page)
+        self.assertIn('href="/services/7/edit"', page)
+        self.assertIn("No recent viewing.", page)
+        self.assertNotIn("<small>To do</small>", page)
+        self.client.application.config["CREDS"]["tmdb_api_key"] = "test-key"
+        webapp._record_credential_test("email", True, "Gmail works.")
+        with mock.patch.object(webapp, "run_analysis", return_value={"keep": [{"name": "Hulu", "reason": "Active viewing."}]}):
+            page = self.client.get("/").data.decode()
+        self.assertNotIn("Connections need attention", page)
+        self.assertIn("0 changes", page)
+        self.assertIn("Nothing to change.</strong> 1 service worth keeping right now.", page)
+        self.assertIn("Why each service is kept", page)
+
 
     def test_service_advice_and_kept_reason_copy(self):
         self._sign_in()
@@ -186,6 +275,8 @@ class WebTests(unittest.TestCase):
         page = self.client.post("/lock", follow_redirects=True).data
         self.assertIn(b'Signed out.', page)
         self.assertIn(b'role="status"', page)
+        self.assertIn(b'class="flash-stack" tabindex="-1"', page)
+        self.assertNotIn(b'aria-live', page)
         page = self.client.post("/unlock", data={"passphrase": "wrong"}).data
         self.assertIn(b'role="alert"', page)
         self.assertIn(b'Authentication rejected.', page)

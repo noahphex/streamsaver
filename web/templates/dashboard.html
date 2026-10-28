@@ -1,16 +1,18 @@
 {% extends "base.html" %}
 {% block title %}Dashboard - Streamsaver{% endblock %}
 {% block content %}
-<section class="hero">
-  <div class="hero-copy">
-    <h1>Streaming Cost Control</h1>
-    <p>What to change, what you spend, and what you're watching.</p>
-  </div>
+{% if issues %}
+<section class="panel connection-issues" role="status" aria-label="Connections need attention">
+  {% for issue in issues %}
+    <p><strong>{{ issue.name }}</strong>: {{ issue.message }} {{ issue.impact }} <a class="inline-link" href="{{ issue.href }}">Fix {{ issue.name }} →</a></p>
+  {% endfor %}
 </section>
+{% endif %}
 
-<section class="panel">
-  <div class="panel-head">
-    <h2>To do</h2>
+<section class="panel todo-panel">
+  <h1>To do</h1>
+  <div class="todo-summary">
+    <span>{{ todo_summary }}</span>
     <span class="muted">Synced {{ settings.last_trakt_sync|local_time }}</span>
   </div>
   {% if todo %}
@@ -42,11 +44,10 @@
   {% endif %}
 </section>
 
-<section class="metrics">
+<section class="metrics metrics-compact">
   <div><span>{{ totals.monthly_total|money }}</span><small>Monthly</small></div>
   <div><span>{{ totals.annual_total|money }}</span><small>Annualized</small></div>
   <div><span>{{ services|selectattr("status", "equalto", "subscribed")|list|length }}</span><small>Subscribed</small></div>
-  <div><span>{{ todo|length }}</span><small>To do</small></div>
 </section>
 
 <section class="grid two">
