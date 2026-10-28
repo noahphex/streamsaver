@@ -126,9 +126,36 @@ class WebTests(unittest.TestCase):
         })
         self.assertEqual([(i["label"], i["name"]) for i in items],
                          [("Resubscribe", "Paramount+"), ("Add service", "Crunchyroll")])
-        self.assertIn("Cupertino (Oct 30", items[0]["why"])
+        self.assertIn("Cupertino returns Oct 30", items[0]["why"])
         self.assertEqual(webapp._money(1303.91), "$1,303.91")
         self.assertEqual(webapp._local_time(""), "never")
+
+
+    def test_unmark_restores_the_state_before_abandon(self):
+        self._sign_in()
+        with db.db_session() as conn:
+            conn.execute("INSERT INTO shows (trakt_id, title, show_state, interest_score) VALUES ('t1', 'Silo', 'anticipated', 23)")
+        self.client.post("/shows/t1/state", data={"state": "abandoned"})
+        self.client.post("/shows/t1/state", data={"state": "abandoned"})  # double-click keeps the original
+        self.client.post("/shows/t1/state", data={"state": "restore"})
+        with db.db_session() as conn:
+            row = conn.execute("SELECT show_state, abandoned_override FROM shows WHERE trakt_id = 't1'").fetchone()
+        self.assertEqual((row["show_state"], row["abandoned_override"]), ("anticipated", 0))
+
+    def test_credential_test_result_is_remembered(self):
+        self._sign_in()
+        with mock.patch.object(webapp, "check_login", return_value=None):
+            self.client.post("/credentials/test/email")
+        page = self.client.get("/credentials").data
+        self.assertIn(b"Works", page)
+        self.assertTrue(webapp._last_credential_test("email")["ok"])
+
+    def test_todo_item_links_and_cost(self):
+        items = webapp._todo_items({"resubscribe": [{"id": 7, "name": "Paramount+", "billing_cycle": "monthly",
+                                                       "monthly_cost": 13.99, "billing_date": "",
+                                                       "shows": [{"title": "Cupertino", "next_air_date": "2026-10-30"}]}]})
+        self.assertEqual((items[0]["service_id"], items[0]["cost"]), (7, "$13.99/mo"))
+        self.assertTrue(items[0]["why"].startswith("Cupertino returns Oct 30"))
 
 
 if __name__ == "__main__":

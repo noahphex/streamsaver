@@ -40,7 +40,8 @@ logger = logging.getLogger(__name__)
 BACKUP_VERSION = 1
 
 # Settings keys that represent runtime/sync state — skip on restore
-_RUNTIME_SETTINGS = {"last_trakt_sync", "networks_fetched_at", "last_status_alert_sent"}
+_RUNTIME_SETTINGS = {"last_trakt_sync", "networks_fetched_at", "last_status_alert_sent",
+                     "credential_test_trakt", "credential_test_tmdb", "credential_test_email"}
 
 # Service columns to include in the backup (icon_path excluded)
 _SERVICE_COLS = [

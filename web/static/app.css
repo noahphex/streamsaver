@@ -404,3 +404,50 @@ td:empty::after { content: ""; }
 }
 
 td[data-label="Last"], td[data-label="Next"], td[data-label="Score"] { white-space: nowrap; }
+
+/* To-do rows are links to the service */
+.todo li { padding: 0; }
+.todo-link {
+  display: grid; grid-template-columns: 9.5rem minmax(0, 1fr) auto; gap: 4px 14px; align-items: baseline;
+  padding: 12px 14px; border-radius: 8px; color: inherit;
+}
+.todo-link:hover { background: color-mix(in srgb, var(--accent), transparent 90%); }
+.todo-link:hover .name { text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 720px) { .todo-link { grid-template-columns: 1fr; } .todo-link .why { grid-column: 1; } }
+.todo li { display: block; background: var(--panel-2); }
+@media (max-width: 720px) {
+  /* All six destinations visible: wrap instead of a hidden sideways scroll */
+  .nav { flex-wrap: wrap; overflow: visible; gap: 6px; }
+  .nav a { padding: 8px 10px; }
+}
+
+/* Credentials: one row per provider */
+.connections { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
+.connections li {
+  display: grid; grid-template-columns: 6rem minmax(0, 1fr) auto; align-items: center; gap: 10px;
+  padding: 8px 12px; background: var(--panel-2); border-radius: 8px;
+}
+.connections .name { font-weight: 700; }
+.connections .chip { justify-self: start; }
+.connections .actions { display: flex; gap: 6px; }
+.button.small-link { min-height: 32px; padding: 6px 10px; font-weight: 600; color: var(--muted); background: transparent; }
+.button.small-link:hover { color: var(--text); background: var(--panel); }
+details.more { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+details.more[open] summary { margin-bottom: 10px; }
+@media (max-width: 720px) {
+  .connections li { grid-template-columns: 1fr auto; }
+  .connections .chip { grid-column: 1 / -1; grid-row: 2; }
+}
+
+/* Service form: only the cost for the chosen cycle */
+form[data-cycle="monthly"] .cost-annual, form[data-cycle="annual"] .cost-monthly { display: none; }
+.form-panel label small { font-size: 13px; }
+.bundles { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 0; }
+
+.toolbar { grid-template-columns: 1fr 200px; }
+.state { text-transform: capitalize; }
+.form-panel.narrow { max-width: 440px; }
+/* Unsubscribed is a normal state: calm pill instead of alarm red */
+.status-unsubscribed .card-head span { color: var(--muted); background: var(--panel-2); border-color: var(--line); }
+.tone-keep { border: 1px solid var(--line); }
+@media (max-width: 720px) { .toolbar { grid-template-columns: 1fr; } }
