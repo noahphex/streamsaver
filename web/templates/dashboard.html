@@ -26,6 +26,19 @@
             <span class="when">{% if item.cost %}{{ item.cost }}{% endif %}{% if item.cost and item.when %} · {% endif %}{% if item.when %}bills {{ item.when|nice_date }}{% endif %}</span>
             {% if item.why %}<span class="why">{{ item.why }}</span>{% endif %}
           </a>
+          <div class="todo-actions">
+            {% if item.has_done %}
+              <form method="post" action="{{ url_for('todo_done', service_id=item.service_id, action=item.key) }}">
+                <button class="small" aria-label="{{ item.done_label }}: {{ item.name }}">{{ item.done_label }}</button>
+              </form>
+            {% endif %}
+            <form method="post" action="{{ url_for('todo_snooze') }}">
+              <input type="hidden" name="name" value="{{ item.name }}">
+              <input type="hidden" name="action" value="{{ item.key }}">
+              {% set snooze_label = 'Ignore' if item.key == 'untracked' else 'Not now' %}
+              <button class="small ghost" aria-label="{{ snooze_label }}: {{ item.name }}">{{ snooze_label }}</button>
+            </form>
+          </div>
         </li>
       {% endfor %}
     </ul>
@@ -39,6 +52,23 @@
       <summary>Why each service is kept</summary>
       <ul class="kept">
         {% for rec in kept %}<li><strong>{{ rec.name }}</strong>: {{ rec.reason|recommendation_reason }}</li>{% endfor %}
+      </ul>
+    </details>
+  {% endif %}
+  {% if snoozed %}
+    <details>
+      <summary>Snoozed ({{ snoozed|length }})</summary>
+      <ul class="snoozed">
+        {% for rec in snoozed %}
+          <li>
+            <span><strong>{{ rec.name }}</strong>: {{ rec.label }} · until {{ rec.until|nice_date }}</span>
+            <form method="post" action="{{ url_for('todo_unsnooze') }}">
+              <input type="hidden" name="name" value="{{ rec.name }}">
+              <input type="hidden" name="action" value="{{ rec.action }}">
+              <button class="small ghost" aria-label="Undo: {{ rec.name }}">Undo</button>
+            </form>
+          </li>
+        {% endfor %}
       </ul>
     </details>
   {% endif %}

@@ -78,6 +78,13 @@ def init_db() -> None:
                 next_billing_date   TEXT    -- legacy; prefer billing_anchor_date
             );
 
+            CREATE TABLE IF NOT EXISTS todo_snoozes (
+                service_name TEXT NOT NULL,
+                action TEXT NOT NULL,
+                until TEXT NOT NULL,
+                PRIMARY KEY(service_name, action)
+            );
+
             -- TV shows — compact activity profiles (one row per show)
             CREATE TABLE IF NOT EXISTS shows (
                 id                  INTEGER PRIMARY KEY AUTOINCREMENT,
