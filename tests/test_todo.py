@@ -50,7 +50,8 @@ def test_done_columns(database, action):
     service_id = service_manager.add_service("Max", status="suspended" if action == "resubscribe" else "subscribed", monthly_cost=10,
                                              billing_anchor_date="2020-01-01")
     rec = {"name": "Max", "billing_date": (today + timedelta(days=9)).isoformat()}
-    todo.mark_done(service_id, action, rec, today)
+    service, prev = todo.mark_done(service_id, action, rec, today)
+    assert prev == {key: service[key] for key in ("status", "billing_anchor_date", "auto_renew")}
     svc = service_manager.get_service(service_id)
     if action == "suspend":
         assert svc["status"] == "suspended"
@@ -63,6 +64,23 @@ def test_done_columns(database, action):
             row = conn.execute("SELECT * FROM todo_snoozes").fetchone()
         assert (row["service_name"], row["action"], row["until"]) == (
             "Max", action, rec["billing_date"])
+    todo.undo_done(service_id, action, prev)
+    restored = service_manager.get_service(service_id)
+    assert {key: restored[key] for key in prev} == prev
+    with db.db_session() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM todo_snoozes").fetchone()[0] == 0
+
+
+def test_undo_restores_null_anchor_and_preserves_other_edits(database):
+    service_id = service_manager.add_service("Max", status="suspended", auto_renew=0)
+    with db.db_session() as conn:
+        conn.execute("UPDATE services SET billing_anchor_date = NULL WHERE id = ?", (service_id,))
+    service, prev = todo.mark_done(service_id, "resubscribe")
+    service_manager.update_service(service_id, name="Renamed", monthly_cost=25)
+    todo.undo_done(service_id, "resubscribe", prev)
+    restored = service_manager.get_service(service_id)
+    assert (restored["status"], restored["billing_anchor_date"], restored["auto_renew"]) == ("suspended", None, 0)
+    assert (restored["name"], restored["monthly_cost"]) == ("Renamed", 25)
 
 
 def test_analysis_newsletter_and_reports_exclude_snoozed(database):

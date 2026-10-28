@@ -9,6 +9,7 @@ import os
 import sys
 import tempfile
 import unittest
+from datetime import date
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -44,8 +45,15 @@ class WebTests(unittest.TestCase):
             p.stop()
         self._tmp.cleanup()
 
+    def _post(self, url, **kwargs):
+        with self.client.session_transaction() as session:
+            token = session.setdefault("csrf_token", "test-csrf-token")
+        data = kwargs.setdefault("data", {})
+        data["csrf_token"] = token
+        return self.client.post(url, **kwargs)
+
     def _sign_in(self):
-        r = self.client.post("/unlock", data={"passphrase": PASSPHRASE})
+        r = self._post("/unlock", data={"passphrase": PASSPHRASE})
         self.assertEqual(r.status_code, 302)
 
     def test_todo_routes_validate_and_complete_actions(self):
@@ -55,10 +63,11 @@ class WebTests(unittest.TestCase):
         self._sign_in()
         service_id = add_service("Max", status="subscribed", monthly_cost=10,
                                  billing_anchor_date=date.today().isoformat())
-        self.assertEqual(self.client.post(f"/todo/{service_id}/done/bad").status_code, 400)
-        self.assertEqual(self.client.post("/todo/99999/done/suspend").status_code, 404)
+        self.assertEqual(self._post(f"/todo/{service_id}/done/bad").status_code, 400)
+        self.assertEqual(self._post("/todo/99999/done/suspend").status_code, 302)
         for action in ("suspend", "resubscribe", "consider_non_renewal"):
-            response = self.client.post(f"/todo/{service_id}/done/{action}")
+            with mock.patch.object(webapp, "run_analysis", return_value={action: [{"id": service_id, "name": "Max"}]}):
+                response = self._post(f"/todo/{service_id}/done/{action}")
             self.assertEqual((response.status_code, response.headers["Location"]), (302, "/"))
         svc = get_service(service_id)
         self.assertEqual((svc["status"], svc["billing_anchor_date"], svc["auto_renew"]),
@@ -66,9 +75,144 @@ class WebTests(unittest.TestCase):
         for data in ({"name": "Max", "action": "bad"},
                      {"name": "Missing", "action": "suspend"},
                      {"name": "Max", "action": "untracked"}, {}):
-            self.assertEqual(self.client.post("/todo/snooze", data=data).status_code, 400)
-        self.assertEqual(self.client.post("/todo/unsnooze", data={"name": "Max", "action": "bad"}).status_code, 400)
+            self.assertEqual(self._post("/todo/snooze", data=data).status_code, 400)
+        self.assertEqual(self._post("/todo/unsnooze", data={"name": "Max", "action": "bad"}).status_code, 400)
         self.assertEqual(self.client.get(f"/todo/{service_id}/done/suspend").status_code, 405)
+
+    def test_csrf_public_forms_and_rotation(self):
+        self.assertEqual(self.client.post("/unlock").status_code, 400)
+        self.client.get("/unlock")
+        with self.client.session_transaction() as session:
+            token = session["csrf_token"]
+        for path in ("/unlock", "/setup"):
+            for data in ({}, {"csrf_token": "wrong"}, {"csrf_token": "☃"}):
+                response = self.client.post(path, data=data)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(b"Your session expired. Reload the page and try again.", response.data)
+        response = self.client.post("/unlock", data={"passphrase": PASSPHRASE, "csrf_token": token})
+        self.assertEqual(response.status_code, 302)
+        with self.client.session_transaction() as session:
+            self.assertNotEqual(session["csrf_token"], token)
+        self.assertEqual(self.client.post("/lock", data={"csrf_token": token}).status_code, 400)
+
+    def test_first_run_setup_requires_csrf(self):
+        with mock.patch.object(webapp, "CRED_FILE", os.path.join(self._tmp.name, "new.enc")):
+            self.assertEqual(self.client.get("/setup").status_code, 200)
+            self.assertEqual(self.client.post("/setup").status_code, 400)
+            with self.client.session_transaction() as session:
+                token = session["csrf_token"]
+            response = self.client.post("/setup", data={"csrf_token": token, "passphrase": "short"})
+            self.assertEqual(response.status_code, 302)
+            with self.client.session_transaction() as session:
+                self.assertIn(("error", "Passphrase must be at least 8 characters."), session["_flashes"])
+
+    def test_csrf_protects_all_mutating_methods_and_accepts_header(self):
+        self._sign_in()
+        for method in ("POST", "PUT", "PATCH", "DELETE"):
+            for headers in ({}, {"X-CSRF-Token": "wrong"}):
+                self.assertEqual(self.client.open("/settings", method=method, headers=headers).status_code, 400)
+        with self.client.session_transaction() as session:
+            token = session["csrf_token"]
+        response = self.client.post("/settings", data={"notification_email": "me@example.com"},
+                                    headers={"X-CSRF-Token": token})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(webapp._get_setting("notification_email"), "me@example.com")
+
+    def test_done_rejects_stale_suggestions_without_changes(self):
+        from core.service_manager import add_service, get_service
+        self._sign_in()
+        service_id = add_service("Max", status="subscribed")
+        before = get_service(service_id)
+        with mock.patch.object(webapp, "run_analysis", return_value={"suspend": []}):
+            response = self._post(f"/todo/{service_id}/done/suspend")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(get_service(service_id), before)
+        with self.client.session_transaction() as session:
+            self.assertNotIn("todo_undo", session)
+            self.assertIn(("error", "That suggestion is no longer on your to-do list."), session["_flashes"])
+
+    def test_done_notice_persists_and_undo_restores(self):
+        from core.service_manager import add_service, get_service
+        self._sign_in()
+        service_id = add_service("Max", status="subscribed", monthly_cost=10,
+                                 billing_anchor_date=date.today().isoformat())
+        before = get_service(service_id)
+        self._post(f"/todo/{service_id}/done/suspend")
+        for _ in range(2):
+            page = self.client.get("/").data.decode()
+            self.assertIn("Marked Max as paused.", page)
+            self.assertIn('aria-label="Undo: Max"', page)
+            self.assertNotIn("Change it on the Services page.", page)
+        page = self._post("/todo/undo", data={"service_id": service_id}, follow_redirects=True).data.decode()
+        self.assertEqual(get_service(service_id), before)
+        self.assertIn("Undid Max.", page)
+        self.assertNotIn("Marked Max as paused.", page)
+        page = self._post("/todo/undo", data={"service_id": service_id}, follow_redirects=True).data.decode()
+        self.assertIn("Nothing to undo.", page)
+
+    def test_renewal_undo_removes_snooze_after_service_rename(self):
+        from datetime import timedelta
+        from core.service_manager import add_service, get_service, update_service
+        self._sign_in()
+        service_id = add_service("Annual", status="subscribed", annual_cost=100,
+                                 billing_cycle="annual",
+                                 billing_anchor_date=(date.today() + timedelta(days=9)).isoformat())
+        before = get_service(service_id)
+        self._post(f"/todo/{service_id}/done/consider_non_renewal")
+        page = self.client.get("/").data.decode()
+        self.assertTrue("Marked Annual as having renewal turned off." in page)
+        update_service(service_id, name="Renamed")
+        self.assertEqual(self._post("/todo/undo", data={"service_id": service_id}).status_code, 302)
+        restored = get_service(service_id)
+        for key in ("status", "billing_anchor_date", "auto_renew"):
+            self.assertEqual(restored[key], before[key])
+        self.assertEqual(restored["name"], "Renamed")
+        with db.db_session() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM todo_snoozes").fetchone()[0], 0)
+
+    def test_undo_only_matches_latest_service_and_expires(self):
+        from core.service_manager import add_service, get_service
+        self._sign_in()
+        first = add_service("Max", status="subscribed", monthly_cost=10,
+                            billing_anchor_date=date.today().isoformat())
+        second = add_service("Hulu", status="subscribed", monthly_cost=10,
+                             billing_anchor_date=date.today().isoformat())
+        self._post(f"/todo/{first}/done/suspend")
+        self._post(f"/todo/{second}/done/suspend")
+        for data in ({}, {"service_id": first}):
+            page = self._post("/todo/undo", data=data, follow_redirects=True).data.decode()
+            self.assertIn("Nothing to undo.", page)
+        with self.client.session_transaction() as session:
+            self.assertEqual(session["todo_undo"]["service_id"], second)
+            created = session["todo_undo"]["timestamp"]
+        with mock.patch.object(webapp.time, "time", return_value=created + 599):
+            self.assertTrue("Marked Hulu as paused." in self.client.get("/").data.decode())
+        with mock.patch.object(webapp.time, "time", return_value=created + 600):
+            self.assertFalse("Marked Hulu as paused." in self.client.get("/").data.decode())
+            page = self._post("/todo/undo", data={"service_id": second}, follow_redirects=True).data.decode()
+        self.assertIn("Nothing to undo.", page)
+        self.assertNotIn("Marked Hulu as paused.", page)
+        self.assertEqual(get_service(second)["status"], "suspended")
+        with self.client.session_transaction() as session:
+            self.assertNotIn("todo_undo", session)
+
+    def test_invalid_undo_records_are_cleared(self):
+        import time
+        self._sign_in()
+        valid = {"service_id": 1, "name": "Max", "action": "suspend",
+                 "prev": {"status": "subscribed", "billing_anchor_date": None, "auto_renew": 1},
+                 "timestamp": time.time()}
+        records = [{}, "bad", {**valid, "action": "bad"}, {**valid, "prev": {}},
+                   {key: value for key, value in valid.items() if key != "timestamp"}]
+        for record in records:
+            with self.subTest(record=record):
+                with self.client.session_transaction() as session:
+                    session["todo_undo"] = record
+                response = self._post("/todo/undo", data={"service_id": 1})
+                self.assertEqual(response.status_code, 302)
+                with self.client.session_transaction() as session:
+                    self.assertNotIn("todo_undo", session)
+                    self.assertIn(("info", "Nothing to undo."), session["_flashes"])
 
     def test_todo_snooze_and_unsnooze_dashboard(self):
         from datetime import date
@@ -82,13 +226,13 @@ class WebTests(unittest.TestCase):
         self.assertIn('aria-label="Not now: Max"', page)
         self.assertIn("1 change · could save $10.00/mo", page)
         data = {"name": "Max", "action": "suspend"}
-        page = self.client.post("/todo/snooze", data=data, follow_redirects=True).data.decode()
+        page = self._post("/todo/snooze", data=data, follow_redirects=True).data.decode()
         self.assertNotIn('class="todo-link"', page)
         self.assertIn("Snoozed (1)", page)
         self.assertIn("Snoozed Max until", page)
         self.assertIn('aria-label="Undo: Max"', page)
         self.assertIn("0 changes", page)
-        page = self.client.post("/todo/unsnooze", data=data, follow_redirects=True).data.decode()
+        page = self._post("/todo/unsnooze", data=data, follow_redirects=True).data.decode()
         self.assertIn('aria-label="Paused it: Max"', page)
         self.assertNotIn("Snoozed (1)", page)
 
@@ -100,7 +244,7 @@ class WebTests(unittest.TestCase):
         billing = (date.today() + timedelta(days=9)).isoformat()
         service_id = add_service("Max", status="subscribed", monthly_cost=10,
                                  billing_anchor_date=billing)
-        response = self.client.post("/todo/snooze", data={"name": "Max", "action": "suspend",
+        response = self._post("/todo/snooze", data={"name": "Max", "action": "suspend",
                                                         "until": "2099-01-01"})
         self.assertEqual(response.status_code, 302)
         with db.db_session() as conn:
@@ -116,7 +260,7 @@ class WebTests(unittest.TestCase):
         page = self.client.get("/").data.decode()
         self.assertIn('aria-label="Ignore: Untracked"', page)
         self.assertNotIn('/done/', page)
-        page = self.client.post("/todo/snooze", data={"name": "Untracked", "action": "untracked"},
+        page = self._post("/todo/snooze", data={"name": "Untracked", "action": "untracked"},
                                 follow_redirects=True).data.decode()
         self.assertNotIn('class="todo-link"', page)
         self.assertIn("Snoozed (1)", page)
@@ -125,31 +269,31 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.client.get("/health").status_code, 200)
         r = self.client.get("/settings")
         self.assertEqual((r.status_code, r.headers["Location"]), (302, "/unlock"))
-        self.assertEqual(self.client.post("/settings", data={"notification_email": "x@evil.test"}).status_code, 403)
+        self.assertEqual(self._post("/settings", data={"notification_email": "x@evil.test"}).status_code, 403)
 
-        self.client.post("/unlock", data={"passphrase": "wrong-passphrase"})
+        self._post("/unlock", data={"passphrase": "wrong-passphrase"})
         self.assertEqual(self.client.get("/settings").status_code, 302)  # wrong passphrase: still out
 
         self._sign_in()
         self.assertEqual(self.client.get("/settings").status_code, 200)
-        self.client.post("/lock")
+        self._post("/lock")
         self.assertEqual(self.client.get("/settings").status_code, 302)
 
     def test_cross_site_post_is_rejected_even_when_signed_in(self):
         self._sign_in()
-        r = self.client.post("/settings", data={"notification_email": "x@evil.test"},
+        r = self._post("/settings", data={"notification_email": "x@evil.test"},
                              headers={"Origin": "https://evil.example"})
         self.assertEqual(r.status_code, 403)
-        r = self.client.post("/settings", data={"notification_email": "me@example.com"},
+        r = self._post("/settings", data={"notification_email": "me@example.com"},
                              headers={"Origin": "http://localhost"})
         self.assertEqual(r.status_code, 302)
         self.assertEqual(webapp._get_setting("notification_email"), "me@example.com")
 
     def test_only_discord_webhooks_are_accepted(self):
         self._sign_in()
-        self.client.post("/settings", data={"discord_webhook_url": "http://192.168.1.1/admin"})
+        self._post("/settings", data={"discord_webhook_url": "http://192.168.1.1/admin"})
         self.assertEqual(webapp._get_setting("discord_webhook_url"), "")
-        self.client.post("/settings", data={"discord_webhook_url": "https://discord.com/api/webhooks/1/abc"})
+        self._post("/settings", data={"discord_webhook_url": "https://discord.com/api/webhooks/1/abc"})
         self.assertEqual(webapp._get_setting("discord_webhook_url"), "https://discord.com/api/webhooks/1/abc")
 
     def test_device_login_saves_new_tokens_and_keeps_other_credentials(self):
@@ -157,16 +301,16 @@ class WebTests(unittest.TestCase):
         code = {"device_code": "dev", "user_code": "ABCD1234",
                 "verification_url": "https://trakt.tv/activate", "expires_in": 600}
         with mock.patch.object(webapp, "request_device_code", return_value=code):
-            self.client.post("/credentials/trakt/device/start")
+            self._post("/credentials/trakt/device/start")
         self.assertIn(b"ABCD1234", self.client.get("/credentials").data)
 
         with mock.patch.object(webapp, "poll_device_token", return_value=None):
-            r = self.client.post("/credentials/trakt/device/finish", follow_redirects=True)
+            r = self._post("/credentials/trakt/device/finish", follow_redirects=True)
         self.assertIn(b"Not approved yet", r.data)
 
         with mock.patch.object(webapp, "poll_device_token",
                                return_value={"access_token": "new", "refresh_token": "new-r"}):
-            self.client.post("/credentials/trakt/device/finish")
+            self._post("/credentials/trakt/device/finish")
         saved = sc.load_credentials(PASSPHRASE)
         self.assertEqual((saved["trakt_access_token"], saved["trakt_refresh_token"]), ("new", "new-r"))
         self.assertEqual(saved["gmail_app_password"], "keep-me")
@@ -174,20 +318,20 @@ class WebTests(unittest.TestCase):
 
     def test_saving_trakt_details_without_pin_keeps_tokens(self):
         self._sign_in()
-        self.client.post("/credentials/trakt", data={"trakt_client_id": "cid2", "trakt_username": "noah"})
+        self._post("/credentials/trakt", data={"trakt_client_id": "cid2", "trakt_username": "noah"})
         saved = sc.load_credentials(PASSPHRASE)
         self.assertEqual((saved["trakt_client_id"], saved["trakt_access_token"]), ("cid2", "old"))
 
     def test_email_form_without_report_field_keeps_report_address(self):
         self._sign_in()
         webapp._set_setting("notification_email", "reports@example.com")
-        self.client.post("/credentials/email", data={"gmail_sender": "sender@gmail.com"})
+        self._post("/credentials/email", data={"gmail_sender": "sender@gmail.com"})
         self.assertEqual(webapp._get_setting("notification_email"), "reports@example.com")
 
     def test_gmail_test_failure_is_reported_not_raised(self):
         self._sign_in()
         with mock.patch.object(webapp, "check_login", side_effect=RuntimeError("Gmail login failed (closed).")):
-            r = self.client.post("/credentials/test/email", follow_redirects=True)
+            r = self._post("/credentials/test/email", follow_redirects=True)
         self.assertIn(b"Connection test failed. Try again.", r.data)
         self.assertNotIn(b"closed", r.data)
 
@@ -209,9 +353,9 @@ class WebTests(unittest.TestCase):
         self._sign_in()
         with db.db_session() as conn:
             conn.execute("INSERT INTO shows (trakt_id, title, show_state, interest_score) VALUES ('t1', 'Silo', 'anticipated', 23)")
-        self.client.post("/shows/t1/state", data={"state": "abandoned"})
-        self.client.post("/shows/t1/state", data={"state": "abandoned"})  # double-click keeps the original
-        self.client.post("/shows/t1/state", data={"state": "restore"})
+        self._post("/shows/t1/state", data={"state": "abandoned"})
+        self._post("/shows/t1/state", data={"state": "abandoned"})  # double-click keeps the original
+        self._post("/shows/t1/state", data={"state": "restore"})
         with db.db_session() as conn:
             row = conn.execute("SELECT show_state, abandoned_override FROM shows WHERE trakt_id = 't1'").fetchone()
         self.assertEqual((row["show_state"], row["abandoned_override"]), ("anticipated", 0))
@@ -219,7 +363,7 @@ class WebTests(unittest.TestCase):
     def test_credential_test_result_is_remembered(self):
         self._sign_in()
         with mock.patch.object(webapp, "check_login", return_value=None):
-            self.client.post("/credentials/test/email")
+            self._post("/credentials/test/email")
         page = self.client.get("/credentials").data
         self.assertIn(b"Works", page)
         self.assertTrue(webapp._last_credential_test("email")["ok"])
@@ -323,7 +467,7 @@ class WebTests(unittest.TestCase):
 
     def test_service_advice_and_kept_reason_copy(self):
         self._sign_in()
-        self.client.post("/services", data={"name": "Hulu", "status": "subscribed", "monthly_cost": "10"})
+        self._post("/services", data={"name": "Hulu", "status": "subscribed", "monthly_cost": "10"})
         svc = webapp.get_all_services()[0]
         results = {"suspend": [{**svc, "reason": "No recent viewing."}],
                    "keep": [{"name": "Other", "reason": "1 active show(s). Prepaid through 2026-10-30."}]}
@@ -345,12 +489,12 @@ class WebTests(unittest.TestCase):
             page = self.client.get(path).data
             self.assertIn(f"<title>{title} - Streamsaver</title>".encode(), page)
             self.assertIn(b'href="#main"', page)
-        page = self.client.post("/lock", follow_redirects=True).data
+        page = self._post("/lock", follow_redirects=True).data
         self.assertIn(b'Signed out.', page)
         self.assertIn(b'role="status"', page)
         self.assertIn(b'class="flash-stack" tabindex="-1"', page)
         self.assertNotIn(b'aria-live', page)
-        page = self.client.post("/unlock", data={"passphrase": "wrong"}).data
+        page = self._post("/unlock", data={"passphrase": "wrong"}).data
         self.assertIn(b'role="alert"', page)
         self.assertIn(b'Authentication rejected.', page)
 
@@ -384,15 +528,15 @@ class WebTests(unittest.TestCase):
                 self.assertEqual(webapp._credential_error_message(exc), message)
         self._sign_in()
         with mock.patch.object(webapp, "check_login", side_effect=smtplib.SMTPAuthenticationError(535, b"private")):
-            page = self.client.post("/credentials/test/email", follow_redirects=True).data
+            page = self._post("/credentials/test/email", follow_redirects=True).data
         self.assertEqual(webapp._last_credential_test("email")["message"], "Authentication rejected.")
         self.assertIn(b'<p class="muted connection-message">Authentication rejected.</p>', page)
         self.assertNotIn(b"private", page)
         with mock.patch.object(webapp, "_tmdb_client") as client:
-            page = self.client.post("/credentials/test/tmdb", follow_redirects=True).data
+            page = self._post("/credentials/test/tmdb", follow_redirects=True).data
             client.assert_not_called()
         self.assertIn(b"Not configured. Add the connection details.", page)
-        self.assertEqual(self.client.post("/credentials/test/unknown").status_code, 404)
+        self.assertEqual(self._post("/credentials/test/unknown").status_code, 404)
 
     def test_shows_pagination_sort_and_filters(self):
         self._sign_in()

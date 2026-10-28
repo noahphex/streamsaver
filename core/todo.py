@@ -60,6 +60,7 @@ def mark_done(service_id, action, rec=None, today=None):
     service = get_service(service_id)
     if service is None:
         raise LookupError("Service not found.")
+    prev = {key: service[key] for key in ("status", "billing_anchor_date", "auto_renew")}
     today = today or date.today()
     if action == "suspend":
         set_service_status(service_id, "suspended")
@@ -68,4 +69,19 @@ def mark_done(service_id, action, rec=None, today=None):
     else:
         update_service(service_id, auto_renew=0)
         snooze(service["name"], action, default_until(rec or {}, today))
-    return service
+    return service, prev
+
+
+def undo_done(service_id, action, prev, name=None):
+    if action not in DONE_LABELS:
+        raise ValueError("Invalid to-do action.")
+    service = get_service(service_id)
+    if service is None:
+        raise LookupError("Service not found.")
+    with db_session() as conn:
+        conn.execute(
+            "UPDATE services SET status = ?, billing_anchor_date = ?, auto_renew = ? WHERE id = ?",
+            (prev["status"], prev["billing_anchor_date"], prev["auto_renew"], service_id),
+        )
+    if action == "consider_non_renewal":
+        unsnooze(name or service["name"], action)

@@ -63,6 +63,7 @@
           <td>
             {% if show.show_state not in ("completed", "archived") %}
             <form method="post" action="{{ url_for('set_show_state', trakt_id=show.trakt_id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="state" value="{{ 'restore' if show.show_state == 'abandoned' else 'abandoned' }}">
               <button class="link-button small" aria-label="{{ ('Unmark ' if show.show_state == 'abandoned' else 'Abandon ') ~ show.title }}">{{ "Unmark" if show.show_state == "abandoned" else "Abandon" }}</button>
             </form>
