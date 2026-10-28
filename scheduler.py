@@ -268,8 +268,17 @@ def main() -> None:
         sys.exit(0 if ok else 1)
         return
 
+    def _nightly() -> None:
+        # Re-read credentials each run so a re-auth in the web UI is picked up without a restart.
+        nonlocal creds
+        try:
+            creds = load_credentials(passphrase)
+        except Exception as exc:
+            logger.warning("Could not reload credentials, using the ones from startup: %s", exc)
+        run_daily_job(creds, passphrase)
+
     # Schedule daily job and block
-    schedule.every().day.at(args.run_at).do(run_daily_job, creds=creds, passphrase=passphrase)
+    schedule.every().day.at(args.run_at).do(_nightly)
     logger.info("Scheduled daily job at %s. Waiting…", args.run_at)
 
     while True:

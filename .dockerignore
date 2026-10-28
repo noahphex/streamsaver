@@ -9,3 +9,4 @@ config/.salt
 data/streamsaver.db
 data/streamsaver*.log
 backups
+config/*.bak-*

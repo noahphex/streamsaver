@@ -12,12 +12,13 @@ Recommendation types:
   UNCERTAIN            — billing date is stale/missing; user should verify
 
 Billing model:
-  Monthly services are evaluated at every billing date (roll forward month-by-month,
-  up to MONTHLY_STALE_CYCLES missed cycles before marking uncertain).
+  Monthly services are evaluated at every billing date (roll the anchor forward
+  month-by-month; an old monthly anchor is never stale).
   Annual services are only evaluated within ANNUAL_RENEWAL_EVAL_WINDOW days of renewal
   (roll forward one cycle; beyond ANNUAL_STALE_GRACE_DAYS past renewal → uncertain).
 """
 
+import calendar
 import logging
 from datetime import date, timedelta
 from typing import Optional
@@ -30,7 +31,6 @@ logger = logging.getLogger(__name__)
 # ── Tunable constants (internal — not user-configurable yet) ───────────────────
 ANNUAL_RENEWAL_EVAL_WINDOW   = 60   # days before annual renewal to start evaluating
 RENEW_SOON_WINDOW            = 45   # tighter window for positive (renew) signal
-MONTHLY_STALE_CYCLES         = 3    # missed monthly billing cycles → uncertain
 ANNUAL_STALE_GRACE_DAYS      = 30   # days past annual renewal before marking uncertain
 LOW_USAGE_SCORE              = 5    # watch_score below this = low engagement
 RENEW_SOON_ACTIVE_THRESHOLD  = 2    # min active shows for high-confidence renewal
@@ -81,30 +81,27 @@ def _advance_billing_date(anchor: date, cycle: str, today: date) -> tuple[date, 
     Returns (next_billing_date, is_uncertain) where is_uncertain=True means
     the date drifted past the staleness threshold.
     """
+    step = 12 if cycle == "annual" else 1
+    cycles = 0
     d = anchor
-    if cycle == "annual":
-        cycles = 0
-        while d < today:
-            d = date(d.year + 1, d.month, d.day)
-            cycles += 1
-            if cycles > 1:
-                # More than one missed annual cycle — data is stale
-                days_past = (today - d).days + 365
-                if days_past > ANNUAL_STALE_GRACE_DAYS:
-                    return d, True
-        return d, False
-    else:
-        # Monthly — roll forward month by month
-        cycles = 0
-        while d < today:
-            month = d.month + 1
-            year  = d.year + (month - 1) // 12
-            month = ((month - 1) % 12) + 1
-            d = d.replace(year=year, month=month)
-            cycles += 1
-            if cycles > MONTHLY_STALE_CYCLES:
-                return d, True
-        return d, False
+    while d < today:
+        cycles += 1
+        d = _add_months(anchor, step * cycles)  # always from the anchor, so the 31st stays the 31st
+
+    # Monthly billing just repeats, so an old anchor is still valid. An annual plan more than
+    # one cycle behind, and past the grace period, means the user likely changed plans.
+    if cycle == "annual" and cycles > 1:
+        previous = _add_months(anchor, step * (cycles - 1))
+        if (today - previous).days > ANNUAL_STALE_GRACE_DAYS:
+            return d, True
+    return d, False
+
+
+def _add_months(d: date, months: int) -> date:
+    """Shift by whole months, clamping the day (Jan 31 + 1 → Feb 28/29, Feb 29 + 12 → Feb 28)."""
+    years, month0 = divmod(d.month - 1 + months, 12)
+    year, month = d.year + years, month0 + 1
+    return date(year, month, min(d.day, calendar.monthrange(year, month)[1]))
 
 
 def _service_watch_score(service_id: int, conn) -> dict:
@@ -140,6 +137,8 @@ def _service_watch_score(service_id: int, conn) -> dict:
         elif state == "anticipated":
             air = _parse_date(row["next_air_date"])
             days_away = (air - today).days if air else None
+            if days_away is not None and days_away < 0:
+                continue  # already aired: not upcoming content
             anticipated.append({
                 "title":        row["title"],
                 "next_air_date": row["next_air_date"],

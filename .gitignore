@@ -28,3 +28,4 @@ backups/
 .vscode/
 .idea/
 assets/service_icons/
+config/*.bak-*
