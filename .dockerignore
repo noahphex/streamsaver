@@ -11,3 +11,4 @@ data/streamsaver*.log
 backups
 config/*.bak-*
 config/*.tmp
+data/*.bak-*

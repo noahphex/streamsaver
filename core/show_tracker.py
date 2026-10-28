@@ -289,11 +289,16 @@ def _upsert_show(
             if tmdb_id:
                 providers = tmdb_client.get_show_providers(tmdb_id)
                 if providers:
-                    best = providers[0]
+                    # TMDb lists several providers in no useful order (The Traitors: fuboTV before
+                    # Peacock); prefer the first one that matches a configured service.
+                    best, service_id = providers[0], None
+                    for provider in providers:
+                        sid = _resolve_service_id(provider.get("provider_id"), provider.get("provider_name"))
+                        if sid:
+                            best, service_id = provider, sid
+                            break
                     primary_provider    = best.get("provider_name")
                     primary_provider_id = best.get("provider_id")
-                    # Match to a user-configured service
-                    service_id = _resolve_service_id(primary_provider_id, primary_provider)
         except Exception as exc:
             logger.debug("TMDb lookup failed for '%s': %s", title, exc)
 
@@ -401,23 +406,27 @@ def _resolve_service_id_conn(
 
 def backfill_service_ids() -> int:
     """
-    Update service_id for any show where it is NULL but primary_provider_id/name
-    can be resolved via the services or service_bundles tables.
-    Run after every sync and after bundle config changes.
-    Returns number of rows updated.
+    Re-link every show with a known provider to the service that provider matches now
+    (via the services or service_bundles tables), clearing links that no longer match.
+
+    Shows keep an old service_id when TMDb later reports a provider with no matching
+    service (Apple TV shows stayed on Amazon Prime), so every row is re-resolved, not
+    only NULL ones. Shows with no provider at all keep their link.
+    Run after every sync, restore, and service/bundle change. Returns rows updated.
     """
     updated = 0
     with db_session() as conn:
-        orphans = conn.execute(
-            "SELECT id, primary_provider_id, primary_provider FROM shows WHERE service_id IS NULL"
+        rows = conn.execute(
+            "SELECT id, primary_provider_id, primary_provider, service_id FROM shows "
+            "WHERE primary_provider_id IS NOT NULL OR COALESCE(primary_provider, '') <> ''"
         ).fetchall()
-        for row in orphans:
+        for row in rows:
             sid = _resolve_service_id_conn(row["primary_provider_id"], row["primary_provider"], conn)
-            if sid:
+            if sid != row["service_id"]:
                 conn.execute("UPDATE shows SET service_id = ? WHERE id = ?", (sid, row["id"]))
                 updated += 1
     if updated:
-        logger.info("Backfilled service_id for %d shows.", updated)
+        logger.info("Re-linked service_id for %d shows.", updated)
     return updated
 
 
