@@ -1,0 +1,22 @@
+{% from "_service_mark.html" import service_mark, service_title with context %}
+{% macro event_row(event) -%}
+<li class="timeline-row timeline-{{ event.type }}">
+  <time class="timeline-date" datetime="{{ event.date }}">{{ event.date|timeline_date }}</time>
+  {{ service_mark(event.service_name, event.icon_path) }}
+  <div class="timeline-copy">
+    {% if event.type == 'bill' %}
+      <div><strong>{{ service_title(event.service_name) }}</strong> bills <strong>{{ event.amount|money }}</strong></div>
+      <div class="timeline-verdict verdict-{{ event.verdict.kind }}">
+        {% if event.verdict.kind != 'prepaid' %}<span class="verdict-dot" aria-hidden="true"></span>{% endif %}
+        {{ event.verdict.text }}{% if event.verdict.kind == 'returns' %}: {{ event.verdict.shows[:2]|join(', ') }}{% if event.verdict.shows|length > 2 %} +{{ event.verdict.shows|length - 2 }}{% endif %}{% endif %}
+        {% if event.verdict.kind == 'nothing_new' and event.todo is defined %}
+          <a class="inline-link timeline-todo" href="{{ url_for('dashboard') }}#todo">{{ event.todo.label }} →</a>
+        {% endif %}
+      </div>
+    {% else %}
+      <div><strong>{{ event.title }}</strong> returns</div>
+      <div class="muted">on {{ service_title(event.service_name) }}</div>
+    {% endif %}
+  </div>
+</li>
+{%- endmacro %}

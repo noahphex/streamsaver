@@ -640,7 +640,7 @@ class WebTests(unittest.TestCase):
                     page = self.client.get('/credentials').data.decode()
                 self.assertIn('<button type="submit"' + (' class="ghost"' if secondary else '') + '>Get Trakt code</button>', page)
 
-    def test_show_scores_and_stale_dates(self):
+    def test_shows_hide_scores_and_stale_dates(self):
         from datetime import timedelta
         self._sign_in()
         today = date.today()
@@ -650,14 +650,16 @@ class WebTests(unittest.TestCase):
                 ("watched", "Watched", 28, str(today), str(today + timedelta(days=1))),
                 ("future", "Future", 0, str(today + timedelta(days=2)), str(today)),
             ])
-        page = self.client.get("/shows").data.decode()
-        self.assertIn('title="Score 14 of 28"', page)
-        self.assertIn('value="14" max="28"', page)
+        page = self.client.get("/shows?view=all").data.decode()
+        self.assertNotIn('data-label="Score"', page)
+        self.assertNotIn('<meter', page)
+        self.assertNotIn('value="score"', page)
+        self.assertIn("What do the states mean?", page)
         self.assertEqual(page.count('data-label="Next">—</td>'), 2)
         self.assertEqual(page.count('class="mobile-next"'), 1)
         self.assertNotIn('class="mobile-next"> · —', page)
         self.assertIn(webapp._nice_date(str(today + timedelta(days=2))), page)
-        page = self.client.get("/shows?q=missing").data.decode()
+        page = self.client.get("/shows?view=all&q=missing").data.decode()
         self.assertIn("0–0 of 0", page)
 
     def test_shows_pagination_sort_and_filters(self):
@@ -666,7 +668,7 @@ class WebTests(unittest.TestCase):
             conn.executemany("INSERT INTO shows (trakt_id, title, show_state) VALUES (?, ?, ?)",
                              [(str(i), f"Series {i:03}", "active") for i in range(106)])
             conn.execute("INSERT INTO shows (trakt_id, title, show_state) VALUES ('done', 'Done', 'completed')")
-        url = "/shows?q=Series&state=Active&sort=title&dir=asc"
+        url = "/shows?view=all&q=Series&state=Active&sort=title&dir=asc"
         page = self.client.get(url).data
         self.assertIn("1–50 of 106", page.decode())
         self.assertIn(b"Next page", page)
@@ -686,11 +688,74 @@ class WebTests(unittest.TestCase):
         self.assertNotIn(b'rel="next"', page)
         for value in ["bad", "-1", "0"]:
             self.assertIn(b"Series 000", self.client.get(url + "&page=" + value).data)
-        page = self.client.get("/shows?state=Completed&sort=invalid&dir=invalid").data
+        page = self.client.get("/shows?view=all&state=Completed&sort=invalid&dir=invalid").data
         self.assertIn(b"Done", page)
         self.assertNotIn(b"Abandon Done", page)
         self.assertIn(b'aria-sort="descending"', page)
-        self.assertEqual(webapp._show_sort("invalid", "invalid"), ("score", "desc"))
+        self.assertEqual(webapp._show_sort("invalid", "invalid"), ("state", "desc"))
+
+
+    def test_coming_up_default_and_dashboard_preview(self):
+        from datetime import timedelta
+        from core.service_manager import add_service
+        self._sign_in()
+        today = date.today()
+        sid = add_service("Netflix", status="subscribed", monthly_cost=40.03,
+                          billing_anchor_date=str(today + timedelta(days=5)))
+        with db.db_session() as conn:
+            conn.executemany(
+                "INSERT INTO shows (trakt_id, title, show_state, service_id, next_air_date) VALUES (?, ?, 'anticipated', ?, ?)",
+                [(str(i), title, sid, str(today + timedelta(days=2)))
+                 for i, title in enumerate(["Love is Blind", "Bake Off", "Third show"])])
+        page = self.client.get("/shows").data.decode()
+        self.assertIn('aria-current="page">Coming up', page)
+        self.assertIn("1 bills · $40.03 · 3 shows returning", page)
+        self.assertIn("3 shows return before this bill", page)
+        self.assertIn("+1", page)
+        self.assertNotIn('class="table-wrap"', page)
+        self.assertIn("Love is Blind", page)
+        dashboard = self.client.get("/").data.decode()
+        self.assertIn("Next 14 days", dashboard)
+        self.assertIn("See all coming up", dashboard)
+        self.assertIn('id="todo"', dashboard)
+        self.assertIn("/shows?view=all", dashboard)  # state chips
+        with db.db_session() as conn:
+            conn.execute("DELETE FROM shows")
+        page = self.client.get("/shows").data.decode()
+        self.assertIn('href="/#todo"', page)
+        self.assertIn("Pause suggested", page)
+
+    def test_empty_timeline_and_preview_limit(self):
+        from datetime import timedelta
+        self._sign_in()
+        page = self.client.get("/shows").data.decode()
+        self.assertIn("Nothing billing or returning in the next 60 days.", page)
+        self.assertIn('href="/shows?view=all"', page)
+        self.assertNotIn("Next 14 days", self.client.get("/").data.decode())
+        with db.db_session() as conn:
+            conn.executemany(
+                "INSERT INTO shows (trakt_id, title, next_air_date) VALUES (?, ?, ?)",
+                [(str(i), f"Return {i}", str(date.today() + timedelta(days=i))) for i in range(7)])
+        page = self.client.get("/").data.decode()
+        self.assertEqual(page.count('class="timeline-row timeline-return"'), 5)
+        self.assertNotIn("Return 5", page)
+
+    def test_timeline_tab_keeps_table_params_and_ignores_unknown_params(self):
+        self._sign_in()
+        page = self.client.get("/shows?q=Silo&state=Active&sort=title&dir=asc&page=2&endpoint=bad").data.decode()
+        self.assertIn('href="/shows?q=Silo&amp;state=Active&amp;sort=title&amp;dir=asc&amp;page=2&amp;view=all"', page)
+        self.assertNotIn("endpoint=bad", page)
+        page = self.client.get("/shows?view=all&q=Silo&state=Active&sort=title&dir=asc&page=2").data.decode()
+        self.assertIn('href="/shows?q=Silo&amp;state=Active&amp;sort=title&amp;dir=asc&amp;page=2&amp;view=upcoming"', page)
+
+    def test_legacy_score_sort_maps_to_state_and_title(self):
+        self._sign_in()
+        with db.db_session() as conn:
+            conn.executemany("INSERT INTO shows (trakt_id, title, show_state) VALUES (?, ?, ?)",
+                             [("z", "Zulu", "active"), ("a", "Alpha", "active"), ("d", "Dormant", "dormant")])
+        page = self.client.get("/shows?view=all&sort=score").data.decode()
+        self.assertLess(page.index('class="title">Alpha'), page.index('class="title">Zulu'))
+        self.assertIn('value="state" selected', page)
 
 
 if __name__ == "__main__":

@@ -105,7 +105,7 @@ def _add_months(d: date, months: int) -> date:
     return date(year, month, min(d.day, calendar.monthrange(year, month)[1]))
 
 
-def _service_watch_score(service_id: int, conn) -> dict:
+def service_watch_signals(service_id: int, conn, today=None) -> dict:
     """
     Aggregate watch signals for a service.
 
@@ -128,7 +128,7 @@ def _service_watch_score(service_id: int, conn) -> dict:
     active_count = 0
     watch_score  = 0
     anticipated  = []
-    today        = date.today()
+    today        = today or date.today()
 
     for row in rows:
         state = row["show_state"]
@@ -226,7 +226,7 @@ def run_analysis() -> dict:
             next_billing, is_uncertain = _advance_billing_date(anchor, cycle, today) if anchor else (today, False)
             days_until_renewal = (next_billing - today).days
 
-            signals = _service_watch_score(s["id"], conn)
+            signals = service_watch_signals(s["id"], conn)
             summary = _build_summary(s, next_billing, signals, cycle, days_until_renewal)
             if not anchor:
                 summary["billing_date"] = ""  # don't present today as a billing date

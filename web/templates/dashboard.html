@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Dashboard - Streamsaver{% endblock %}
 {% from "_service_mark.html" import service_mark, snooze_undo, service_title with context %}
+{% from "_timeline.html" import event_row with context %}
 {% block content %}
 {% if todo_undo %}
 <section class="flash-stack" tabindex="-1">
@@ -29,7 +30,16 @@
   <p>{{ spend.total|money }} due in the next 30 days · {{ spend.count }} bill{{ '' if spend.count == 1 else 's' }} <span class="muted">· {{ totals.annual_total|money }}/yr</span></p>
   {% if savings > 0 %}<p class="spend-savings">Could save {{ savings|money }}/mo</p>{% endif %}
 </section>
-<section class="panel todo-panel">
+{% if upcoming %}
+<section class="panel timeline-preview">
+  <h2>Next 14 days</h2>
+  <ul class="timeline-list">
+    {% for event in upcoming %}{{ event_row(event) }}{% endfor %}
+  </ul>
+  <a class="button quiet" href="{{ url_for('shows') }}">See all coming up →</a>
+</section>
+{% endif %}
+<section class="panel todo-panel" id="todo">
   <h2>To do</h2>
   <div class="todo-summary">
     {% if todo_summary %}<span>{{ todo_summary }}</span>{% endif %}
@@ -107,7 +117,7 @@
     <h2>Show states</h2>
     <div class="chips">
       {% for key, count in counts.items() %}
-        <a class="chip state {{ key }}" href="{{ url_for('shows', state=key.title()) }}">{{ key.title() }} <strong>{{ count }}</strong> <span aria-hidden="true">›</span></a>
+        <a class="chip state {{ key }}" href="{{ url_for('shows', view='all', state=key.title()) }}">{{ key.title() }} <strong>{{ count }}</strong> <span aria-hidden="true">›</span></a>
       {% else %}
         <span class="muted">No shows synced yet.</span>
       {% endfor %}

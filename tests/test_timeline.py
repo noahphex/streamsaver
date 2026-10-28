@@ -1,0 +1,151 @@
+from copy import deepcopy
+from datetime import date, timedelta
+from unittest import mock
+
+import pytest
+
+import db
+from core import analysis
+from core.timeline import build_timeline, preview, timeline_summary
+
+TODAY = date(2026, 11, 2)
+
+
+@pytest.fixture
+def database(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "timeline.db"))
+    db.init_db()
+
+
+def rec(id=1, offset=7, **values):
+    return dict(dict(id=id, name=f"Service {id}", status="subscribed",
+                     billing_cycle="monthly", monthly_cost=12.34,
+                     billing_date=str(TODAY + timedelta(days=offset))), **values)
+
+
+def show(title, offset=2, state="anticipated", service_id=1, **values):
+    data = dict(trakt_id=title, title=title, show_state=state, service_id=service_id,
+                next_air_date=str(TODAY + timedelta(days=offset)), **values)
+    with db.db_session() as conn:
+        if service_id is not None:
+            conn.execute("INSERT OR IGNORE INTO services (id, name) VALUES (?, ?)",
+                         (service_id, f"Service {service_id}"))
+        columns = ", ".join(data)
+        conn.execute(f"INSERT INTO shows ({columns}) VALUES ({', '.join('?' for _ in data)})",
+                     list(data.values()))
+
+
+def events(results, days=60):
+    return [event for week in build_timeline(results, TODAY, days) for event in week["events"]]
+
+
+def test_bill_window_cycles_subscription_and_dedupe(database):
+    results = {"keep": [rec(offset=0), rec(2, 60), rec(3, -1), rec(4, 61),
+                        rec(5, 3, status="suspended"), rec(6, 3, billing_date="bad")],
+               "snoozed": [rec(offset=0), rec(7, 4, billing_cycle="annual", annual_cost=99.99)],
+               "renew_soon": [rec(8, 2)], "consider_non_renewal": [rec(9, 2)],
+               "suspend": [rec(10, 2)],
+               "resubscribe": [rec(11, 2, status="unsubscribed")]}
+    before = deepcopy(results)
+    found = events(results)
+    assert [e["service_id"] for e in found] == [1, 10, 8, 9, 7, 2]
+    assert next(e for e in found if e["service_id"] == 7)["amount"] == 99.99
+    assert found[0]["amount"] == 12.34
+    assert results == before
+    assert timeline_summary(build_timeline(results, TODAY)) == {"bills": 6, "amount": 161.69, "returns": 0}
+    no_id = rec(id=None)
+    assert len(events({"keep": [no_id], "snoozed": [no_id]})) == 1
+
+
+def test_verdict_matches_analysis_and_todo_is_not_on_snoozed(database):
+    with db.db_session() as conn:
+        conn.executemany(
+            "INSERT INTO services (id, name, status, monthly_cost, billing_anchor_date) VALUES (?, ?, 'subscribed', 10, ?)",
+            [(1, "Service 1", "2026-11-09"), (2, "Service 2", "2026-11-09")])
+    show("Before")
+    show("On bill", 7)
+    show("After", 8)
+    show("Past", -1)
+    show("Other", 8, service_id=2)
+    with mock.patch.object(analysis, "date") as clock:
+        clock.today.return_value = TODAY
+        clock.fromisoformat.side_effect = date.fromisoformat
+        results = analysis.run_analysis()
+    assert [r["id"] for r in results["keep"]] == [1]
+    assert [r["id"] for r in results["suspend"]] == [2]
+    bills = [e for e in events(results) if e["type"] == "bill"]
+    assert bills[0]["verdict"] == {"kind": "returns", "shows": ["Before", "On bill"],
+                                    "text": "2 shows return before this bill"}
+    assert bills[1]["verdict"] == {"kind": "nothing_new", "text": "Nothing new before this bill"}
+    assert bills[1]["todo"] == {"label": "Pause suggested"}
+    assert "todo" not in bills[0]
+    results["snoozed"] = results.pop("suspend")
+    assert "todo" not in next(e for e in events(results) if e.get("service_id") == 2)
+
+
+def test_annual_neutral_outside_analysis_window(database):
+    # Matches ANNUAL_RENEWAL_EVAL_WINDOW (60): judged inside it, neutral beyond it.
+    found = events({"keep": [rec(offset=60, billing_cycle="annual", annual_cost=120),
+                             rec(2, 61, billing_cycle="annual", annual_cost=80)]}, days=90)
+    assert found[0]["verdict"]["kind"] == "nothing_new"
+    assert found[1]["verdict"] == {"kind": "prepaid", "text": "Annual renewal"}
+
+
+def test_returns_exclusions_stale_dates_and_mapped_service(database):
+    with db.db_session() as conn:
+        conn.execute("INSERT INTO services (id, name, icon_path) VALUES (1, 'Bundle', 'bundle.png')")
+    for state in ("abandoned", "ignored", "archived"):
+        show(state, state=state)
+    show("Past", -1)
+    show("Watched later", last_watch_date="2026-11-06")
+    show("Too far", 61)
+    show("Mapped", primary_provider="Provider")
+    show("Fallback", service_id=None, primary_provider="Independent")
+    show("Today", 0, state="active")
+    show("Last day", 60)
+    found = events({})
+    assert [e["title"] for e in found] == ["Today", "Fallback", "Mapped", "Last day"]
+    mapped = next(e for e in found if e["title"] == "Mapped")
+    assert (mapped["service_name"], mapped["icon_path"]) == ("Bundle", "bundle.png")
+    assert next(e for e in found if e["title"] == "Fallback")["service_name"] == "Independent"
+
+
+def test_week_labels_day_order_and_preview(database):
+    show("Same day", 0)
+    timeline = build_timeline({"keep": [rec(offset=0), rec(2, 7), rec(3, 15), rec(4, 60)]}, TODAY)
+    assert [w["label"] for w in timeline] == ["This week", "Next week", "Week of Nov 16", "Week of Dec 28"]
+    assert [e["type"] for e in timeline[0]["events"]] == ["bill", "return"]
+    with mock.patch("core.timeline.date") as clock:
+        clock.today.return_value = TODAY
+        clock.fromisoformat.side_effect = date.fromisoformat
+        assert [e["date"] for e in preview(timeline)] == ["2026-11-02", "2026-11-02", "2026-11-09"]
+        assert len(preview(timeline, days=60)) == 5
+    assert build_timeline({}, TODAY)  # return only
+
+
+def test_timeline_only_reads_database(database):
+    show("Return")
+    connect = db.get_connection
+
+    def read_only_connection():
+        conn = connect()
+        conn.execute("PRAGMA query_only = ON")
+        return conn
+
+    with mock.patch.object(db, "get_connection", side_effect=read_only_connection):
+        found = events({"suspend": [rec()]})
+    assert [e["type"] for e in found] == ["return", "bill"]
+    assert found[1]["verdict"]["text"] == "1 show returns before this bill"
+
+
+def test_preview_includes_day_14_and_week_boundary_from_sunday(database):
+    show("Day fourteen", 14)
+    show("Day fifteen", 15)
+    timeline = build_timeline({}, TODAY)
+    with mock.patch("core.timeline.date") as clock:
+        clock.today.return_value = TODAY
+        clock.fromisoformat.side_effect = date.fromisoformat
+        assert [e["title"] for e in preview(timeline)] == ["Day fourteen"]
+    sunday = date(2026, 11, 1)
+    grouped = build_timeline({"keep": [rec(offset=-1), rec(2, 0), rec(3, 7)]}, sunday)
+    assert [w["label"] for w in grouped] == ["This week", "Next week", "Week of Nov 9", "Week of Nov 16"]

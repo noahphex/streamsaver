@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Shows - Streamsaver{% endblock %}
+{% from "_timeline.html" import event_row with context %}
 {% block content %}
 <section class="hero">
   <div class="hero-copy">
@@ -7,7 +8,42 @@
     <p>Everything synced from Trakt, the service it counts toward, and when it's back.</p>
   </div>
 </section>
+{% set all_query = dict(all_params, view='all') %}
+<nav class="view-tabs" aria-label="Shows views">
+  <a href="{{ url_for('shows', **dict(all_params, view='upcoming')) }}"{% if view != 'all' %} aria-current="page"{% endif %}>Coming up</a>
+  <a href="{{ url_for('shows', **all_query) }}"{% if view == 'all' %} aria-current="page"{% endif %}>All shows</a>
+</nav>
+{% if view != 'all' %}
+<p class="muted">{{ summary.bills }} bills · {{ summary.amount|money }} · {{ summary.returns }} shows returning in the next 60 days</p>
+{% for week in timeline %}
+<section class="timeline-week">
+  <h2>{{ week.label }}</h2>
+  <ul class="timeline-list">
+    {% for event in week.events %}{{ event_row(event) }}{% endfor %}
+  </ul>
+</section>
+{% else %}
+<section class="panel">
+  <p>Nothing billing or returning in the next 60 days.</p>
+  <a class="button ghost" href="{{ url_for('shows', **all_query) }}">All shows</a>
+</section>
+{% endfor %}
+{% else %}
+<details class="state-help">
+  <summary>What do the states mean?</summary>
+  <ul>
+    <li><strong>Active:</strong> watched within the last 7 days, unless a show-status rule below applies.</li>
+    <li><strong>Occasional:</strong> watched within the last 30 days, but not within the last 7 days, unless a show-status rule below applies.</li>
+    <li><strong>Dormant:</strong> no viewing within the last 30 days, or not seen in the sync window.</li>
+    <li><strong>Anticipated:</strong> a returning series with an announced next episode or season.</li>
+    <li><strong>Completed:</strong> ended or canceled, or a returning series with no next episode and no viewing for at least 30 days.</li>
+    <li><strong>Abandoned:</strong> manually marked to stop counting toward recommendations; Unmark restores its previous state.</li>
+    <li><strong>Ignored:</strong> excluded from service recommendations.</li>
+    <li><strong>Archived:</strong> low activity, no announced return, and last watched over two years ago (or never), with ended, canceled, or unknown status.</li>
+  </ul>
+</details>
 <form class="toolbar" method="get">
+  <input type="hidden" name="view" value="all">
   <input name="q" value="{{ q }}" placeholder="Search shows" aria-label="Search shows">
   <select name="state" onchange="this.form.submit()" aria-label="Show state">
     {% for item in ["All", "Active", "Occasional", "Dormant", "Completed", "Abandoned", "Anticipated", "Ignored", "Archived"] %}
@@ -17,7 +53,7 @@
   <div class="mobile-sort-row">
     <label class="mobile-sort">Sort by
       <select name="sort" onchange="this.form.submit()">
-        {% for key, label in [("title", "Title"), ("state", "State"), ("score", "Score"), ("service", "Service"), ("provider", "Provider"), ("last", "Last"), ("next", "Next")] %}
+        {% for key, label in [("title", "Title"), ("state", "State"), ("service", "Service"), ("provider", "Provider"), ("last", "Last"), ("next", "Next")] %}
           <option value="{{ key }}" {% if sort == key %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
@@ -33,19 +69,18 @@
 {% macro sort_link(key, label) -%}
   {% set active = sort == key %}
   {% set next_dir = 'asc' if not active or direction == 'desc' else 'desc' %}
-  <a class="sort-link {{ 'active' if active else '' }}" href="{{ url_for('shows', q=q, state=state, sort=key, dir=next_dir) }}">
+  <a class="sort-link {{ 'active' if active else '' }}" href="{{ url_for('shows', view='all', q=q, state=state, sort=key, dir=next_dir) }}">
     <span>{{ label }}</span>
     {% if active %}<span class="sort-arrow" aria-hidden="true">{{ '▲' if direction == 'asc' else '▼' }}</span>{% endif %}
   </a>
 {%- endmacro %}
 <section class="table-wrap">
   <table>
-    <colgroup><col class="col-title"><col class="col-state"><col class="col-score"><col class="col-service"><col class="col-provider"><col class="col-date"><col class="col-date"><col class="col-action"></colgroup>
+    <colgroup><col class="col-title"><col class="col-state"><col class="col-service"><col class="col-provider"><col class="col-date"><col class="col-date"><col class="col-action"></colgroup>
     <thead>
       <tr>
         <th aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort == 'title' else 'none' }}">{{ sort_link('title', 'Title') }}</th>
         <th aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort == 'state' else 'none' }}">{{ sort_link('state', 'State') }}</th>
-        <th aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort == 'score' else 'none' }}">{{ sort_link('score', 'Score') }}</th>
         <th aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort == 'service' else 'none' }}">{{ sort_link('service', 'Service') }}</th>
         <th aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort == 'provider' else 'none' }}">{{ sort_link('provider', 'Provider') }}</th>
         <th aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort == 'last' else 'none' }}">{{ sort_link('last', 'Last') }}</th>
@@ -58,7 +93,6 @@
         <tr>
           <td data-label="Title" class="title">{{ show.title }}</td>
           <td data-label="State"><span class="state {{ show.show_state }}">{{ show.show_state }}</span></td>
-          <td data-label="Score"><span class="score" title="Score {{ show.interest_score }} of {{ score_max }}"><meter min="0" value="{{ show.interest_score }}" max="{{ score_max }}" aria-hidden="true"></meter><span aria-hidden="true">{{ show.interest_score }}</span><span class="visually-hidden">Score {{ show.interest_score }} of {{ score_max }}</span></span></td>
           <td data-label="Service">{{ show.service_name or "—" }}{% if show.next_air_date %}<span class="mobile-next"> · {{ show.next_air_date|nice_date }}</span>{% endif %}</td>
           <td data-label="Provider">{{ show.primary_provider if show.primary_provider and show.primary_provider != show.service_name else "" }}</td>
           <td data-label="Last">{{ show.last_watch_date|nice_date }}</td>
@@ -74,14 +108,15 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="8">No shows found.</td></tr>
+        <tr><td colspan="7">No shows found.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </section>
 <nav class="pagination button-row" aria-label="Shows pages">
-  {% if page > 1 %}<a class="button ghost" rel="prev" href="{{ url_for('shows', q=q, state=state, sort=sort, dir=direction, page=page-1) }}">Previous page</a>{% endif %}
+  {% if page > 1 %}<a class="button ghost" rel="prev" href="{{ url_for('shows', view='all', q=q, state=state, sort=sort, dir=direction, page=page-1) }}">Previous page</a>{% endif %}
   <span class="muted">{{ range_start }}–{{ range_end }} of {{ total }}</span>
-  {% if has_next %}<a class="button ghost" rel="next" href="{{ url_for('shows', q=q, state=state, sort=sort, dir=direction, page=page+1) }}">Next page</a>{% endif %}
+  {% if has_next %}<a class="button ghost" rel="next" href="{{ url_for('shows', view='all', q=q, state=state, sort=sort, dir=direction, page=page+1) }}">Next page</a>{% endif %}
 </nav>
+{% endif %}
 {% endblock %}

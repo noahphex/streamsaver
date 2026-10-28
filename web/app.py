@@ -9,7 +9,7 @@ import smtplib
 import sys
 import tempfile
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -53,7 +53,8 @@ from core.service_manager import (
     set_bundle_providers,
     update_service,
 )
-from core.show_tracker import MAX_INTEREST_SCORE, backfill_service_ids, run_full_sync, visible_next_air_date
+from core.show_tracker import backfill_service_ids, run_full_sync, visible_next_air_date
+from core.timeline import build_timeline, preview, timeline_summary
 from core.tmdb_client import TMDbClient
 from core.trakt_client import TraktAuthError, TraktClient, poll_device_token, request_device_code
 from db import db_session, init_db
@@ -84,7 +85,6 @@ _CREDENTIAL_REQUIRED_KEYS = {
 SHOW_SORT_COLUMNS = {
     "title": "LOWER(s.title)",
     "state": "LOWER(s.show_state)",
-    "score": "s.interest_score",
     "service": "LOWER(COALESCE(svc.name, ''))",
     "provider": "LOWER(COALESCE(s.primary_provider, ''))",
     "last": "COALESCE(s.last_watch_date, '')",
@@ -124,6 +124,7 @@ def create_app():
         }
 
     app.add_template_filter(_nice_date, "nice_date")
+    app.add_template_filter(_timeline_date, "timeline_date")
     app.add_template_filter(_local_time, "local_time")
     app.add_template_filter(_money, "money")
     app.add_template_filter(_service_mark, "service_mark")
@@ -261,6 +262,7 @@ def create_app():
                            "consider_non_renewal": "as having renewal turned off"},
             todo=_todo_items(results, services),
             spend=next_30_days_spend(results),
+            upcoming=preview(build_timeline(results))[:5],
             savings=potential_monthly_savings(results),
             todo_summary=_todo_summary(results),
             issues=_connection_issues(),
@@ -393,15 +395,21 @@ def create_app():
 
     @app.get("/shows")
     def shows():
+        all_params = {key: request.args[key] for key in ("q", "state", "sort", "dir", "page")
+                      if key in request.args}
+        if request.args.get("view") != "all":
+            timeline = build_timeline(run_analysis())
+            return render_template("shows.html", view="upcoming", timeline=timeline,
+                                   summary=timeline_summary(timeline), all_params=all_params)
         q = request.args.get("q", "").strip()
         state = request.args.get("state", "All")
-        sort, direction = _show_sort(request.args.get("sort", "score"), request.args.get("dir", "desc"))
+        sort, direction = _show_sort(request.args.get("sort", "state"), request.args.get("dir", "desc"))
         page = max(1, min(request.args.get("page", 1, type=int) or 1, 1000000))
         rows, total = _shows(q, state, sort, direction, page=page)
-        return render_template("shows.html", shows=rows, q=q, state=state, sort=sort,
+        return render_template("shows.html", view="all", all_params=all_params, shows=rows, q=q, state=state, sort=sort,
                                direction=direction, page=page, has_next=page * 50 < total,
                                total=total, range_start=(page - 1) * 50 + 1 if rows else 0,
-                               range_end=(page - 1) * 50 + len(rows) if rows else 0, score_max=MAX_INTEREST_SCORE)
+                               range_end=(page - 1) * 50 + len(rows) if rows else 0)
 
     @app.post("/shows/<trakt_id>/state")
     def set_show_state(trakt_id):
@@ -1049,6 +1057,11 @@ def _service_sort_key(svc, next_bill):
     return (order.get(svc.get("status"), 9), next_bill.get(svc.get("name")) or "9999", svc.get("name", "").lower())
 
 
+def _timeline_date(value):
+    day = date.fromisoformat(value)
+    return f"{day:%a %b} {day.day}"
+
+
 def _nice_date(value):
     """'2026-10-27' → 'Oct 27' (adds the year when it isn't this year); blank stays blank."""
     if not value:
@@ -1087,12 +1100,12 @@ def _show_counts():
 
 
 def _show_sort(sort, direction):
-    sort = sort if sort in SHOW_SORT_COLUMNS else "score"
+    sort = sort if sort in SHOW_SORT_COLUMNS else "state"
     direction = "asc" if direction == "asc" else "desc"
     return sort, direction
 
 
-def _shows(q, state, sort="score", direction="desc", page=None):
+def _shows(q, state, sort="state", direction="desc", page=None):
     sort, direction = _show_sort(sort, direction)
     query = """
         SELECT s.trakt_id, s.title, s.show_state, s.interest_score,
