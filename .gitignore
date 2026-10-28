@@ -30,3 +30,4 @@ backups/
 assets/service_icons/
 config/*.bak-*
 config/*.tmp
+data/*.bak-*
