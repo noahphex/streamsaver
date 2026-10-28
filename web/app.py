@@ -1,10 +1,13 @@
+import hmac
 import json
 import os
 import logging
 import re
+import secrets
 import smtplib
 import sys
 import tempfile
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -26,7 +29,7 @@ from flask import (
 )
 
 from core.analysis import run_analysis
-from core.todo import ACTIONABLE_KEYS, DONE_LABELS, default_until, mark_done, snooze, unsnooze
+from core.todo import ACTIONABLE_KEYS, DONE_LABELS, default_until, mark_done, snooze, undo_done, unsnooze
 from core.backup import export_backup, import_backup
 from core.newsletter import (
     FREQUENCY_OPTIONS,
@@ -99,11 +102,17 @@ def create_app():
     app.config["CREDS"] = None
     app.config["CRED_PASSPHRASE"] = None
 
+    def csrf_token():
+        if "csrf_token" not in session:
+            session["csrf_token"] = secrets.token_urlsafe(32)
+        return session["csrf_token"]
+
     @app.context_processor
     def inject_globals():
         return {
             "is_unlocked": bool(_credentials(optional=True)),
             "signed_in": bool(session.get("signed_in")),
+            "csrf_token": csrf_token,
             "status_labels": {
                 "subscribed": "Subscribed",
                 "suspended": "Suspended",
@@ -119,6 +128,26 @@ def create_app():
 
     @app.before_request
     def require_sign_in():
+        undo = session.get("todo_undo")
+        if undo is not None:
+            try:
+                valid = (
+                    undo["action"] in DONE_LABELS
+                    and isinstance(undo["service_id"], int)
+                    and isinstance(undo["name"], str)
+                    and isinstance(undo["prev"], dict)
+                    and set(undo["prev"]) == {"status", "billing_anchor_date", "auto_renew"}
+                    and 0 <= time.time() - undo["timestamp"] < 600
+                )
+            except (KeyError, TypeError):
+                valid = False
+            if not valid:
+                session.pop("todo_undo")
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            token = request.form.get("csrf_token") or request.headers.get("X-CSRF-Token", "")
+            expected = session.get("csrf_token", "")
+            if not expected or not hmac.compare_digest(token.encode(), expected.encode()):
+                return "Your session expired. Reload the page and try again.", 400, {"Content-Type": "text/plain; charset=utf-8"}
         # The app is reachable from the whole LAN and auto-unlocks credentials from the env,
         # so every page needs a signed-in browser, and POSTs must come from this site.
         if request.method == "POST" and not _same_origin():
@@ -138,6 +167,7 @@ def create_app():
     def _sign_in():
         session.permanent = True
         session["signed_in"] = True
+        session["csrf_token"] = secrets.token_urlsafe(32)
         session["unlocked_at"] = datetime.now().isoformat(timespec="seconds")
 
     @app.get("/health")
@@ -222,6 +252,9 @@ def create_app():
             totals=totals,
             counts=counts,
             settings=settings,
+            todo_undo=session.get("todo_undo"),
+            done_messages={"suspend": "as paused", "resubscribe": "as resubscribed",
+                           "consider_non_renewal": "as having renewal turned off"},
             todo=_todo_items(results),
             todo_summary=_todo_summary(results),
             issues=_connection_issues(),
@@ -235,13 +268,30 @@ def create_app():
         if action not in DONE_LABELS:
             abort(400)
         rec = next((rec for rec in run_analysis().get(action, []) if rec.get("id") == service_id), None)
+        if rec is None:
+            flash("That suggestion is no longer on your to-do list.", "error")
+            return redirect(url_for("dashboard"))
         try:
-            service = mark_done(service_id, action, rec)
+            service, prev = mark_done(service_id, action, rec)
         except LookupError:
             abort(404)
-        message = {"suspend": "as paused", "resubscribe": "as resubscribed",
-                   "consider_non_renewal": "as having renewal turned off"}[action]
-        flash(f"Marked {service['name']} {message}. Change it on the Services page.", "success")
+        session["todo_undo"] = {"service_id": service_id, "name": service["name"],
+                                "action": action, "prev": prev, "timestamp": time.time()}
+        return redirect(url_for("dashboard"))
+
+    @app.post("/todo/undo")
+    def todo_undo():
+        undo = session.get("todo_undo")
+        if not undo or undo["service_id"] != request.form.get("service_id", type=int):
+            flash("Nothing to undo.", "info")
+            return redirect(url_for("dashboard"))
+        session.pop("todo_undo")
+        try:
+            undo_done(undo["service_id"], undo["action"], undo["prev"], name=undo["name"])
+        except LookupError:
+            flash("Nothing to undo.", "info")
+        else:
+            flash(f"Undid {undo['name']}.", "success")
         return redirect(url_for("dashboard"))
 
     @app.post("/todo/snooze")

@@ -1,6 +1,18 @@
 {% extends "base.html" %}
 {% block title %}Dashboard - Streamsaver{% endblock %}
 {% block content %}
+{% if todo_undo %}
+<section class="flash-stack" tabindex="-1">
+  <div class="flash success button-row" role="status">
+    <span>Marked {{ todo_undo.name }} {{ done_messages[todo_undo.action] }}.</span>
+    <form method="post" action="{{ url_for('todo_undo') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="service_id" value="{{ todo_undo.service_id }}">
+      <button class="small ghost" aria-label="Undo: {{ todo_undo.name }}">Undo</button>
+    </form>
+  </div>
+</section>
+{% endif %}
 {% if issues %}
 <section class="panel connection-issues" role="status" aria-label="Connections need attention">
   {% for issue in issues %}
@@ -29,10 +41,12 @@
           <div class="todo-actions">
             {% if item.has_done %}
               <form method="post" action="{{ url_for('todo_done', service_id=item.service_id, action=item.key) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="small" aria-label="{{ item.done_label }}: {{ item.name }}">{{ item.done_label }}</button>
               </form>
             {% endif %}
             <form method="post" action="{{ url_for('todo_snooze') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="name" value="{{ item.name }}">
               <input type="hidden" name="action" value="{{ item.key }}">
               {% set snooze_label = 'Ignore' if item.key == 'untracked' else 'Not now' %}
@@ -63,6 +77,7 @@
           <li>
             <span><strong>{{ rec.name }}</strong>: {{ rec.label }} · until {{ rec.until|nice_date }}</span>
             <form method="post" action="{{ url_for('todo_unsnooze') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="name" value="{{ rec.name }}">
               <input type="hidden" name="action" value="{{ rec.action }}">
               <button class="small ghost" aria-label="Undo: {{ rec.name }}">Undo</button>
@@ -84,8 +99,8 @@
   <div class="panel">
     <h2>Actions</h2>
     <div class="button-row">
-      <form method="post" action="{{ url_for('action_sync') }}"><button>Sync now</button></form>
-      <form method="post" action="{{ url_for('action_analyze') }}"><button class="ghost">Analyze &amp; email report</button></form>
+      <form method="post" action="{{ url_for('action_sync') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button>Sync now</button></form>
+      <form method="post" action="{{ url_for('action_analyze') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="ghost">Analyze &amp; email report</button></form>
       <a class="button ghost" href="{{ url_for('settings') }}">More in Settings</a>
     </div>
   </div>

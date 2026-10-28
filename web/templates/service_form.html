@@ -20,6 +20,7 @@
 {% set bundles = bundle_map[editable.id] if editable else [] %}
 <section class="panel form-panel">
   <form method="post" action="{{ url_for('service_save') }}" class="stack" data-cycle="{{ cycle }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {% if editable %}<input type="hidden" name="service_id" value="{{ editable.id }}">{% endif %}
     <label>Name <input name="name" list="networks" value="{{ editable.name if editable else prefill_name }}" required></label>
     <datalist id="networks">{% for name in network_names %}<option value="{{ name }}">{% endfor %}</datalist>
@@ -70,6 +71,7 @@
   <h2>Delete service</h2>
   <p class="muted">Removes {{ editable.name }} and its bundles. Shows linked to it become unlinked; nothing on the streaming service changes.</p>
   <form method="post" action="{{ url_for('delete_service_route', service_id=editable.id) }}" onsubmit="return confirm('Delete {{ editable.name }}? This cannot be undone.')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button class="ghost danger-text">Delete {{ editable.name }}</button>
   </form>
 </section>

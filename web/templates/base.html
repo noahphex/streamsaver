@@ -19,7 +19,7 @@
           <a href="{{ url_for(endpoint) }}" {% if request.endpoint == endpoint %}aria-current="page"{% endif %}>{{ label }}</a>
         {% endfor %}
       </nav>
-      <form method="post" action="{{ url_for('lock') }}"><button class="link-button">Sign out</button></form>
+      <form method="post" action="{{ url_for('lock') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="link-button">Sign out</button></form>
     {% endif %}
   </header>
   <main class="page" id="main" tabindex="-1">
