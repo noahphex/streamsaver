@@ -428,7 +428,8 @@ def _build_resubscribe_content(recommendations: list[dict]) -> tuple[str, str, A
             badge_label  = "Resubscribe",
             badge_bg     = bg,
             badge_fg     = fg,
-            billing_line = f"Last billing date on file: {rec['billing_date']}",
+            billing_line = (f"Last billing date on file: {rec['billing_date']}" if rec.get("billing_date")
+                            else "No billing date on file"),
             cost_rows    = [],
             reason       = "High-interest content is returning to this service.",
             extra_html   = extra,

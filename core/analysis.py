@@ -34,7 +34,7 @@ RENEW_SOON_WINDOW            = 45   # tighter window for positive (renew) signal
 ANNUAL_STALE_GRACE_DAYS      = 30   # days past annual renewal before marking uncertain
 LOW_USAGE_SCORE              = 5    # watch_score below this = low engagement
 RENEW_SOON_ACTIVE_THRESHOLD  = 2    # min active shows for high-confidence renewal
-RESUBSCRIBE_SCORE_THRESHOLD  = 80   # min interest_score for resubscribe recommendation
+RESUBSCRIBE_SCORE_THRESHOLD  = 15   # min interest_score (scores top out at 28; 15 = "active") for resubscribe
 UPCOMING_CONTENT_DAYS        = 30   # days window for "upcoming" content signal
 
 
@@ -211,20 +211,27 @@ def run_analysis() -> dict:
             anchor_raw   = s.get("billing_anchor_date") or s.get("next_billing_date")
             anchor       = _parse_date(anchor_raw)
 
-            # Skip services with no billing data at all
-            if not anchor:
+            # Paid services need a billing date; an inactive one has no bill, so judge it from today
+            # (otherwise unsubscribed services, which rarely have a date, never get resubscribe advice).
+            if not anchor and status not in ("suspended", "unsubscribed"):
                 logger.debug("Skipping '%s' — no billing anchor date.", s["name"])
                 continue
 
             # Roll billing date forward and check for staleness
-            next_billing, is_uncertain = _advance_billing_date(anchor, cycle, today)
+            next_billing, is_uncertain = _advance_billing_date(anchor, cycle, today) if anchor else (today, False)
             days_until_renewal = (next_billing - today).days
 
             signals = _service_watch_score(s["id"], conn)
             summary = _build_summary(s, next_billing, signals, cycle, days_until_renewal)
+            if not anchor:
+                summary["billing_date"] = ""  # don't present today as a billing date
 
             # ── Active subscriptions ───────────────────────────────────────
             if status == "subscribed":
+                if not (s.get("monthly_cost") or s.get("annual_cost")):
+                    # Free (e.g. a card perk): pausing or not renewing saves nothing.
+                    result["keep"].append({**summary, "reason": "Free ($0) — nothing to save by pausing or not renewing."})
+                    continue
                 if is_uncertain:
                     result["uncertain"].append({
                         **summary,
