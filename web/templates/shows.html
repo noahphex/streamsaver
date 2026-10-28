@@ -14,19 +14,21 @@
       <option value="{{ item }}" {% if state == item %}selected{% endif %}>{{ item }}</option>
     {% endfor %}
   </select>
-  <label class="mobile-sort">Sort by
-    <select name="sort" onchange="this.form.submit()">
-      {% for key, label in [("title", "Title"), ("state", "State"), ("score", "Score"), ("service", "Service"), ("provider", "Provider"), ("last", "Last"), ("next", "Next")] %}
-        <option value="{{ key }}" {% if sort == key %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label class="mobile-sort">Direction
-    <select name="dir" onchange="this.form.submit()">
-      <option value="asc" {% if direction == 'asc' %}selected{% endif %}>Ascending</option>
-      <option value="desc" {% if direction == 'desc' %}selected{% endif %}>Descending</option>
-    </select>
-  </label>
+  <div class="mobile-sort-row">
+    <label class="mobile-sort">Sort by
+      <select name="sort" onchange="this.form.submit()">
+        {% for key, label in [("title", "Title"), ("state", "State"), ("score", "Score"), ("service", "Service"), ("provider", "Provider"), ("last", "Last"), ("next", "Next")] %}
+          <option value="{{ key }}" {% if sort == key %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="mobile-sort">Direction
+      <select name="dir" onchange="this.form.submit()">
+        <option value="asc" {% if direction == 'asc' %}selected{% endif %}>Ascending</option>
+        <option value="desc" {% if direction == 'desc' %}selected{% endif %}>Descending</option>
+      </select>
+    </label>
+  </div>
 </form>
 {% macro sort_link(key, label) -%}
   {% set active = sort == key %}
@@ -55,17 +57,17 @@
         <tr>
           <td data-label="Title" class="title">{{ show.title }}</td>
           <td data-label="State"><span class="state {{ show.show_state }}">{{ show.show_state }}</span></td>
-          <td data-label="Score">{{ show.interest_score }}</td>
-          <td data-label="Service">{{ show.service_name or "" }}</td>
+          <td data-label="Score"><span class="score" title="Score {{ show.interest_score }} of {{ score_max }}"><meter min="0" value="{{ show.interest_score }}" max="{{ score_max }}" aria-hidden="true"></meter><span aria-hidden="true">{{ show.interest_score }}</span><span class="visually-hidden">Score {{ show.interest_score }} of {{ score_max }}</span></span></td>
+          <td data-label="Service">{{ show.service_name or "—" }}<span class="mobile-next"> · {{ show.next_air_date|nice_date or "—" }}</span></td>
           <td data-label="Provider">{{ show.primary_provider if show.primary_provider and show.primary_provider != show.service_name else "" }}</td>
           <td data-label="Last">{{ show.last_watch_date|nice_date }}</td>
-          <td data-label="Next">{{ show.next_air_date|nice_date }}</td>
+          <td data-label="Next">{{ show.next_air_date|nice_date or "—" }}</td>
           <td>
             {% if show.show_state not in ("completed", "archived") %}
             <form method="post" action="{{ url_for('set_show_state', trakt_id=show.trakt_id) }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="state" value="{{ 'restore' if show.show_state == 'abandoned' else 'abandoned' }}">
-              <button class="link-button small" aria-label="{{ ('Unmark ' if show.show_state == 'abandoned' else 'Abandon ') ~ show.title }}">{{ "Unmark" if show.show_state == "abandoned" else "Abandon" }}</button>
+              <button class="quiet small show-action" aria-label="{{ ('Unmark ' if show.show_state == 'abandoned' else 'Abandon ') ~ show.title }}">{{ "Unmark" if show.show_state == "abandoned" else "Abandon" }}</button>
             </form>
             {% endif %}
           </td>
@@ -77,8 +79,8 @@
   </table>
 </section>
 <nav class="pagination button-row" aria-label="Shows pages">
-  {% if page > 1 %}<a class="button ghost" rel="prev" href="{{ url_for('shows', q=q, state=state, sort=sort, dir=direction, page=page-1) }}">Previous</a>{% endif %}
-  <span class="muted">Page {{ page }}</span>
-  {% if has_next %}<a class="button ghost" rel="next" href="{{ url_for('shows', q=q, state=state, sort=sort, dir=direction, page=page+1) }}">Next</a>{% endif %}
+  {% if page > 1 %}<a class="button ghost" rel="prev" href="{{ url_for('shows', q=q, state=state, sort=sort, dir=direction, page=page-1) }}">Previous page</a>{% endif %}
+  <span class="muted">{{ range_start }}–{{ range_end }} of {{ total }}</span>
+  {% if has_next %}<a class="button ghost" rel="next" href="{{ url_for('shows', q=q, state=state, sort=sort, dir=direction, page=page+1) }}">Next page</a>{% endif %}
 </nav>
 {% endblock %}

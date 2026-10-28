@@ -224,14 +224,15 @@ class WebTests(unittest.TestCase):
         page = self.client.get("/").data.decode()
         self.assertIn('aria-label="Paused it: Max"', page)
         self.assertIn('aria-label="Not now: Max"', page)
-        self.assertIn("1 change · could save $10.00/mo", page)
+        self.assertIn("1 change", page)
+        self.assertEqual(page.count("could save $10.00/mo"), 1)
         data = {"name": "Max", "action": "suspend"}
         page = self._post("/todo/snooze", data=data, follow_redirects=True).data.decode()
         self.assertNotIn('class="todo-link"', page)
         self.assertIn("Snoozed (1)", page)
         self.assertIn("Snoozed Max until", page)
         self.assertIn('aria-label="Undo: Max"', page)
-        self.assertIn("0 changes", page)
+        self.assertNotIn("0 changes", page)
         page = self._post("/todo/unsnooze", data=data, follow_redirects=True).data.decode()
         self.assertIn('aria-label="Paused it: Max"', page)
         self.assertNotIn("Snoozed (1)", page)
@@ -376,7 +377,7 @@ class WebTests(unittest.TestCase):
         self.assertTrue(items[0]["why"].startswith("Cupertino returns Oct 30"))
 
     def test_todo_summary_counts_and_monthly_savings(self):
-        self.assertEqual(webapp._todo_summary({}), "0 changes")
+        self.assertEqual(webapp._todo_summary({}), "")
         self.assertEqual(webapp._todo_summary({"resubscribe": [{"monthly_cost": 20}]}), "1 change")
         results = {
             "suspend": [{"monthly_cost": 12.50}, {"monthly_cost": None}],
@@ -385,7 +386,7 @@ class WebTests(unittest.TestCase):
             "resubscribe": [{"monthly_cost": 30}],
             "keep": [{"monthly_cost": 50}],
         }
-        self.assertEqual(webapp._todo_summary(results), "5 changes · could save $22.50/mo")
+        self.assertEqual(webapp._todo_summary(results), "5 changes")
         self.assertEqual(webapp._todo_summary({"suspend": [{"monthly_cost": 0}]}), "1 change")
 
     def test_connection_issues_use_stored_state(self):
@@ -444,7 +445,8 @@ class WebTests(unittest.TestCase):
             client.assert_not_called()
         self.assertIn('<h1>To do</h1>', page)
         self.assertNotIn("Streaming Cost Control", page)
-        self.assertIn("1 change · could save $15.00/mo", page)
+        self.assertIn("1 change", page)
+        self.assertEqual(page.count("could save $15.00/mo"), 1)
         self.assertIn("Synced never", page)
         self.assertIn('role="status" aria-label="Connections need attention"', page)
         self.assertLess(page.index("Connections need attention"), page.index("<h1>To do</h1>"))
@@ -460,7 +462,7 @@ class WebTests(unittest.TestCase):
         with mock.patch.object(webapp, "run_analysis", return_value={"keep": [{"name": "Hulu", "reason": "Active viewing."}]}):
             page = self.client.get("/").data.decode()
         self.assertNotIn("Connections need attention", page)
-        self.assertIn("0 changes", page)
+        self.assertNotIn("0 changes", page)
         self.assertIn("Nothing to change.</strong> 1 service worth keeping right now.", page)
         self.assertIn("Why each service is kept", page)
 
@@ -538,6 +540,63 @@ class WebTests(unittest.TestCase):
         self.assertIn(b"Not configured. Add the connection details.", page)
         self.assertEqual(self._post("/credentials/test/unknown").status_code, 404)
 
+    def test_service_mark_and_channel_display_helpers(self):
+        self.assertEqual(webapp._service_mark("  Prime Video Channel ")["initials"], "PV")
+        self.assertEqual(webapp._service_mark("hulu")["initials"], "H")
+        self.assertEqual(webapp._service_mark("")["initials"], "")
+        self.assertEqual(webapp._service_mark("Prime Video"), webapp._service_mark("Prime Video"))
+        self.assertIn(webapp._service_mark("Prime Video")["accent"],
+                      ("purple", "pink", "cyan", "green", "orange", "yellow", "red"))
+        self.assertEqual(webapp._service_name("Max Amazon Channel"), {"base": "Max", "channel": True})
+        self.assertEqual(webapp._service_name("Amazon Channel News"), {"base": "Amazon Channel News", "channel": False})
+
+    def test_spend_hero_marks_and_snoozed_edit(self):
+        from core.service_manager import add_service
+        self._sign_in()
+        service_id = add_service("Prime Video Amazon Channel", status="subscribed", monthly_cost=12,
+                                 billing_anchor_date=date.today().isoformat())
+        with db.db_session() as conn:
+            conn.execute("UPDATE services SET icon_path = ? WHERE id = ?", ("assets/logos/8.jpg", service_id))
+        page = self.client.get("/").data.decode()
+        self.assertIn('class="spend-total">$12.00', page)
+        self.assertIn("next 30 days · 1 bills", page)
+        self.assertIn('src="/logos/8.jpg"', page)
+        self.assertIn('width="32" height="32" alt="" loading="lazy"', page)
+        self.assertIn('onerror="this.remove()"', page)
+        self.assertIn('aria-hidden="true">PV</span>', page)
+        page = self.client.get("/services").data.decode()
+        self.assertIn('class="card-link"', page)
+        self.assertIn('>Prime Video</a>', page)
+        self.assertIn('class="service-channel">Amazon Channel', page)
+        self.assertIn('aria-label="Edit Prime Video Amazon Channel"', page)
+        self._post("/todo/snooze", data={"name": "Prime Video Amazon Channel", "action": "suspend"})
+        page = self.client.get(f"/services/{service_id}/edit").data.decode()
+        self.assertIn("Snoozed until", page)
+        self.assertIn('aria-label="Undo: Prime Video Amazon Channel"', page)
+        with mock.patch.object(webapp, "run_analysis", return_value={"untracked": [{"name": "Untracked TV", "shows": ["A show"]}]}):
+            page = self.client.get("/").data.decode()
+        self.assertIn('aria-hidden="true">UT</span>', page)
+        self.assertNotIn('src="/logos/8.jpg"', page)
+        self.assertNotIn("could save", page)
+
+    def test_show_scores_and_stale_dates(self):
+        from datetime import timedelta
+        self._sign_in()
+        today = date.today()
+        with db.db_session() as conn:
+            conn.executemany("INSERT INTO shows (trakt_id, title, interest_score, next_air_date, last_watch_date) VALUES (?, ?, ?, ?, ?)", [
+                ("past", "Past", 14, str(today - timedelta(days=1)), str(today - timedelta(days=2))),
+                ("watched", "Watched", 28, str(today), str(today + timedelta(days=1))),
+                ("future", "Future", 0, str(today + timedelta(days=2)), str(today)),
+            ])
+        page = self.client.get("/shows").data.decode()
+        self.assertIn('title="Score 14 of 28"', page)
+        self.assertIn('value="14" max="28"', page)
+        self.assertEqual(page.count('data-label="Next">—</td>'), 2)
+        self.assertIn(webapp._nice_date(str(today + timedelta(days=2))), page)
+        page = self.client.get("/shows?q=missing").data.decode()
+        self.assertIn("0–0 of 0", page)
+
     def test_shows_pagination_sort_and_filters(self):
         self._sign_in()
         with db.db_session() as conn:
@@ -546,6 +605,8 @@ class WebTests(unittest.TestCase):
             conn.execute("INSERT INTO shows (trakt_id, title, show_state) VALUES ('done', 'Done', 'completed')")
         url = "/shows?q=Series&state=Active&sort=title&dir=asc"
         page = self.client.get(url).data
+        self.assertIn("1–50 of 106", page.decode())
+        self.assertIn(b"Next page", page)
         self.assertIn(b"Series 049", page)
         self.assertNotIn(b"Series 050", page)
         self.assertIn(b'aria-sort="ascending"', page)
@@ -554,6 +615,8 @@ class WebTests(unittest.TestCase):
         self.assertIn(b'name="dir"', page)
         self.assertIn(b'q=Series&amp;state=Active&amp;sort=title&amp;dir=asc&amp;page=2', page)
         page = self.client.get(url + "&page=3").data
+        self.assertIn("101–106 of 106", page.decode())
+        self.assertIn(b"Previous page", page)
         self.assertIn(b"Series 100", page)
         self.assertIn(b"Series 105", page)
         self.assertNotIn(b"Series 099", page)

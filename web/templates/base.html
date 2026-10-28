@@ -19,7 +19,7 @@
           <a href="{{ url_for(endpoint) }}" {% if request.endpoint == endpoint %}aria-current="page"{% endif %}>{{ label }}</a>
         {% endfor %}
       </nav>
-      <form method="post" action="{{ url_for('lock') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="link-button">Sign out</button></form>
+      <form method="post" action="{{ url_for('lock') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="quiet">Sign out</button></form>
     {% endif %}
   </header>
   <main class="page" id="main" tabindex="-1">
@@ -37,6 +37,9 @@
   <script>
     (() => {
       if (document.querySelector(".flash")) document.querySelector(".flash-stack").focus();
+      if (matchMedia("(max-width: 720px)").matches) {
+        document.querySelector('.nav [aria-current="page"]')?.scrollIntoView({inline: "nearest", block: "nearest"});
+      }
       const topbar = document.querySelector(".topbar");
       new ResizeObserver(() => {
         document.documentElement.style.setProperty("--topbar-height", `${topbar.getBoundingClientRect().height}px`);

@@ -1,13 +1,21 @@
 {% extends "base.html" %}
 {% block title %}{{ "Edit service" if editable else "Add service" }} - Streamsaver{% endblock %}
+{% from "_service_mark.html" import service_mark, snooze_undo with context %}
 {% block content %}
 <section class="hero compact">
   <div class="hero-copy">
-    <h1>{{ editable.name if editable else "Add service" }}</h1>
+    <h1>{% if editable %}{{ service_mark(editable.name, editable.icon_path, 24) }} {% endif %}{{ editable.name if editable else "Add service" }}</h1>
     <p>{{ "Billing, status, and which TMDb providers count toward this service." if editable else "Add a streaming service to track cost and watch activity." }}</p>
   </div>
   <a class="button ghost" href="{{ url_for('services') }}">All services</a>
 </section>
+
+{% for rec in snoozed %}
+<section class="panel button-row">
+  <p>Snoozed until {{ rec.until|nice_date }}: {{ rec.label }}</p>
+  {{ snooze_undo(rec) }}
+</section>
+{% endfor %}
 
 {% if advice %}
 <section class="panel">

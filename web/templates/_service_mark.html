@@ -1,0 +1,16 @@
+{% macro service_mark(name, icon_path=None, size=32) -%}
+  {% set mark = name|service_mark %}
+  <span class="service-mark mark-{{ mark.accent }}{{ ' service-mark-small' if size == 24 else '' }}">
+    <span aria-hidden="true">{{ mark.initials }}</span>
+    {% if icon_path %}<img src="{{ url_for('logos', filename=icon_path.split('/')[-1]) }}" width="32" height="32" alt="" loading="lazy" onerror="this.remove()">{% endif %}
+  </span>
+{%- endmacro %}
+
+{% macro snooze_undo(rec) -%}
+  <form method="post" action="{{ url_for('todo_unsnooze') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="name" value="{{ rec.name }}">
+    <input type="hidden" name="action" value="{{ rec.action }}">
+    <button class="small ghost" aria-label="Undo: {{ rec.name }}">Undo</button>
+  </form>
+{%- endmacro %}

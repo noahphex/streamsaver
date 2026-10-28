@@ -1,3 +1,4 @@
+import hashlib
 import hmac
 import json
 import os
@@ -29,6 +30,7 @@ from flask import (
 )
 
 from core.analysis import run_analysis
+from core.spend import next_30_days_spend, potential_monthly_savings
 from core.todo import ACTIONABLE_KEYS, DONE_LABELS, default_until, mark_done, snooze, undo_done, unsnooze
 from core.backup import export_backup, import_backup
 from core.newsletter import (
@@ -51,7 +53,7 @@ from core.service_manager import (
     set_bundle_providers,
     update_service,
 )
-from core.show_tracker import backfill_service_ids, run_full_sync
+from core.show_tracker import MAX_INTEREST_SCORE, backfill_service_ids, run_full_sync, visible_next_air_date
 from core.tmdb_client import TMDbClient
 from core.trakt_client import TraktAuthError, TraktClient, poll_device_token, request_device_code
 from db import db_session, init_db
@@ -124,6 +126,8 @@ def create_app():
     app.add_template_filter(_nice_date, "nice_date")
     app.add_template_filter(_local_time, "local_time")
     app.add_template_filter(_money, "money")
+    app.add_template_filter(_service_mark, "service_mark")
+    app.add_template_filter(_service_name, "service_name")
     app.add_template_filter(_recommendation_reason, "recommendation_reason")
 
     @app.before_request
@@ -255,12 +259,13 @@ def create_app():
             todo_undo=session.get("todo_undo"),
             done_messages={"suspend": "as paused", "resubscribe": "as resubscribed",
                            "consider_non_renewal": "as having renewal turned off"},
-            todo=_todo_items(results),
+            todo=_todo_items(results, services),
+            spend=next_30_days_spend(results),
+            savings=potential_monthly_savings(results),
             todo_summary=_todo_summary(results),
             issues=_connection_issues(),
             kept=results.get("keep", []),
-            snoozed=[{**rec, "label": next(label for key, label, _ in _TODO_ACTIONS if key == rec["action"])}
-                     for rec in results.get("snoozed", [])],
+            snoozed=_snoozed_items(results, services),
         )
 
     @app.post("/todo/<int:service_id>/done/<action>")
@@ -327,7 +332,7 @@ def create_app():
         all_services = get_all_services()
         bundle_map = {svc["id"]: get_bundle_providers(svc["id"]) for svc in all_services}
         results = run_analysis()
-        advice = {item["name"]: item for item in _todo_items(results)}
+        advice = {item["name"]: item for item in _todo_items(results, all_services)}
         # Next bill per service, from analysis (the stored anchor may be months in the past).
         next_bill = {rec["name"]: rec.get("billing_date") for recs in results.values() for rec in recs
                      if isinstance(rec, dict) and "billing_date" in rec}
@@ -391,9 +396,11 @@ def create_app():
         state = request.args.get("state", "All")
         sort, direction = _show_sort(request.args.get("sort", "score"), request.args.get("dir", "desc"))
         page = max(1, min(request.args.get("page", 1, type=int) or 1, 1000000))
-        rows = _shows(q, state, sort, direction, page=page)
-        return render_template("shows.html", shows=rows[:50], q=q, state=state, sort=sort,
-                               direction=direction, page=page, has_next=len(rows) > 50)
+        rows, total = _shows(q, state, sort, direction, page=page)
+        return render_template("shows.html", shows=rows, q=q, state=state, sort=sort,
+                               direction=direction, page=page, has_next=page * 50 < total,
+                               total=total, range_start=(page - 1) * 50 + 1 if rows else 0,
+                               range_end=(page - 1) * 50 + len(rows) if rows else 0, score_max=MAX_INTEREST_SCORE)
 
     @app.post("/shows/<trakt_id>/state")
     def set_show_state(trakt_id):
@@ -756,9 +763,11 @@ def _service_form(editable=None):
     bundle_map = {}
     next_renewal = None
     advice = None
+    snoozed = []
     if editable:
         bundle_map[editable["id"]] = get_bundle_providers(editable["id"])
         results = run_analysis()
+        snoozed = [rec for rec in _snoozed_items(results) if rec.get("id") == editable["id"]]
         advice = next((item for item in _todo_items(results) if item["service_id"] == editable["id"]), None)
         next_renewal = next((rec.get("billing_date") for recs in results.values() for rec in recs
                              if isinstance(rec, dict) and rec.get("id") == editable["id"]), None)
@@ -768,6 +777,7 @@ def _service_form(editable=None):
         bundle_map=bundle_map,
         next_renewal=next_renewal,
         advice=advice,
+        snoozed=snoozed,
         prefill_name=request.args.get("name", ""),
         network_names=get_cached_network_names(),
         statuses=sorted(VALID_STATUSES),
@@ -922,8 +932,9 @@ def _recommendation_reason(reason):
                   lambda match: f"{match[1]} active show{'' if int(match[1]) == 1 else 's'}", reason)
 
 
-def _todo_items(results):
+def _todo_items(results, services=()):
     """Flatten analysis results into to-do rows: action, tone, service, why, and when."""
+    icons = {svc["id"]: svc.get("icon_path") for svc in services}
     items = []
     for key, label, tone in _TODO_ACTIONS:
         for rec in results.get(key, []):
@@ -941,6 +952,7 @@ def _todo_items(results):
             items.append({"key": key, "label": label, "tone": tone, "name": rec["name"], "why": why,
                           "when": rec.get("billing_date") if key != "untracked" else "",
                           "cost": cost, "service_id": rec.get("id"),
+                          "icon_path": icons.get(rec.get("id")),
                           "has_done": key in DONE_LABELS, "done_label": DONE_LABELS.get(key)})
     return items
 
@@ -955,13 +967,26 @@ _CREDENTIAL_ERRORS = {
 
 def _todo_summary(results):
     count = sum(len(results.get(key, [])) for key, _, _ in _TODO_ACTIONS)
-    savings = sum(
-        (rec.get("annual_cost") or 0) / 12 if rec.get("billing_cycle") == "annual"
-        else (rec.get("monthly_cost") or 0)
-        for key in ("suspend", "consider_non_renewal") for rec in results.get(key, [])
-    )
-    summary = f"{count} change{'' if count == 1 else 's'}"
-    return summary + (f" · could save {_money(savings)}/mo" if savings > 0 else "")
+    return f"{count} change{'' if count == 1 else 's'}" if count else ""
+
+
+def _snoozed_items(results, services=()):
+    icons = {svc["id"]: svc.get("icon_path") for svc in services}
+    labels = {key: label for key, label, _ in _TODO_ACTIONS}
+    return [{**rec, "label": labels[rec["action"]], "icon_path": icons.get(rec.get("id"))}
+            for rec in results.get("snoozed", [])]
+
+
+def _service_mark(name):
+    accents = ("purple", "pink", "cyan", "green", "orange", "yellow", "red")
+    return {"initials": "".join(word[0] for word in name.split()[:2]).upper(),
+            "accent": accents[hashlib.sha256(name.encode()).digest()[0] % len(accents)]}
+
+
+def _service_name(name):
+    suffix = " Amazon Channel"
+    return {"base": name[:-len(suffix)] if name.endswith(suffix) else name,
+            "channel": name.endswith(suffix)}
 
 
 def _connection_issues():
@@ -1083,12 +1108,17 @@ def _shows(q, state, sort="score", direction="desc", page=None):
     if state and state != "All":
         query += " AND LOWER(s.show_state) = ?"
         params.append(state.lower())
+    count_query = "SELECT COUNT(*) FROM (" + query + ")"
     query += f" ORDER BY {SHOW_SORT_COLUMNS[sort]} {direction.upper()}, LOWER(s.title) ASC"
-    if page is not None:
-        query += " LIMIT ? OFFSET ?"
-        params.extend([51, (page - 1) * 50])
     with db_session() as conn:
-        return [dict(row) for row in conn.execute(query, params).fetchall()]
+        total = conn.execute(count_query, params).fetchone()[0]
+        if page is not None:
+            query += " LIMIT ? OFFSET ?"
+            params.extend([50, (page - 1) * 50])
+        rows = [dict(row) for row in conn.execute(query, params).fetchall()]
+    for row in rows:
+        row["next_air_date"] = visible_next_air_date(row["next_air_date"], row["last_watch_date"])
+    return rows, total
 
 
 def _service_payload(form):

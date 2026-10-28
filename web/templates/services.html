@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Services - Streamsaver{% endblock %}
+{% from "_service_mark.html" import service_mark with context %}
 {% block content %}
 <section class="hero">
   <div class="hero-copy">
@@ -22,12 +23,17 @@
     {% set bundles = bundle_map[svc.id]|map(attribute='provider_name')|list %}
     <article class="card status-{{ svc.status }}">
       <div class="card-head">
-        <h2>{{ svc.name }}</h2>
-        <span>{{ status_labels.get(svc.status, svc.status) }}</span>
+        {{ service_mark(svc.name, svc.icon_path) }}
+        <div class="service-identity">
+          {% set display = svc.name|service_name %}
+          <h2><a class="card-link" href="{{ url_for('service_edit', service_id=svc.id) }}">{{ display.base }}</a></h2>
+          {% if display.channel %}<span class="service-channel">Amazon Channel</span>{% endif %}
+          <p class="service-price">
+            {% if not (svc.monthly_cost or svc.annual_cost) %}Free{% elif svc.billing_cycle == "annual" %}{{ svc.annual_cost|money }}<small>/yr</small>{% else %}{{ svc.monthly_cost|money }}<small>/mo</small>{% endif %}
+          </p>
+        </div>
+        <span class="service-status">{{ status_labels.get(svc.status, svc.status) }}</span>
       </div>
-      <p>
-        {% if not (svc.monthly_cost or svc.annual_cost) %}Free{% elif svc.billing_cycle == "annual" %}{{ svc.annual_cost|money }}/yr{% else %}{{ svc.monthly_cost|money }}/mo{% endif %}
-      </p>
       <p class="muted">
         {% set renews = next_bill.get(svc.name) %}
         {% if svc.status != "subscribed" %}Not billing{% elif renews %}Renews {{ renews|nice_date }}{% else %}No billing date{% endif %}
@@ -35,11 +41,11 @@
       </p>
       <footer class="card-footer">
         <div class="meta">
-          {% if tip %}<span class="tone tone-{{ tip.tone }}">{{ tip.label }}</span>{% elif svc.status == "subscribed" %}<span class="tone tone-keep">Keep</span>{% endif %}
+          {% if tip %}<span class="tone tone-{{ tip.tone }}">{{ tip.label }}</span>{% endif %}
         </div>
         {% if tip %}<p class="muted">{{ tip.why }}</p>{% endif %}
         <div class="button-row">
-          <a class="button ghost" href="{{ url_for('service_edit', service_id=svc.id) }}" aria-label="Edit {{ svc.name }}">Edit</a>
+          <a class="button ghost card-edit" href="{{ url_for('service_edit', service_id=svc.id) }}" aria-label="Edit {{ svc.name }}">Edit</a>
         </div>
       </footer>
     </article>
@@ -47,7 +53,7 @@
     <article class="panel empty-state">
       <h2>No services yet</h2>
       <p class="muted">Add the services you subscribe to so Streamsaver can match Trakt activity to your monthly spend.</p>
-      <a class="button" href="{{ url_for('service_new') }}">Add service</a>
+      <a class="button ghost" href="{{ url_for('service_new') }}">Add service</a>
     </article>
   {% endfor %}
 </section>
