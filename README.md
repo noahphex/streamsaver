@@ -1,9 +1,21 @@
 # Streamsaver
 
 **Author:** Noah Lee  
-**Stack:** Python 3 · Tkinter · SQLite · Gmail SMTP · Trakt API
+**Stack:** Python 3 · Tkinter · SQLite · Gmail SMTP · Trakt API · TMDb API  
+**Status:** Beta
 
-Smart streaming cost management — tracks your Trakt.tv watch history and tells you when to suspend or resubscribe to streaming services.
+Smart streaming cost management — tracks your Trakt.tv watch history, scores shows by recent activity, maps them to streaming services via TMDb, and tells you when to suspend or resubscribe to save money.
+
+---
+
+## What it does
+
+- **Interest scoring** — Weights your watch history (+10 watched last 7 days, +5 last 30 days, binge bonus, dormancy penalty) to classify each show as Active, Occasional, Dormant, Anticipated, or Archived
+- **Show → Service matching** — Automatically maps each show to its streaming provider via TMDb's flatrate provider data
+- **Suspend recommendations** — Flags subscribed services with no active shows and no upcoming premieres before the next billing date
+- **Resubscribe alerts** — Detects anticipated shows with high interest scores returning on services you've suspended
+- **Incremental sync** — Only pulls watch history since the last sync (first sync: last 1 year); caps at 200 shows
+- **Email reports** — Dracula-themed HTML reports sent via Gmail SMTP
 
 ---
 
@@ -24,14 +36,16 @@ pip install -r requirements.txt
 
 ### 3. Configure credentials
 
-Run the setup wizard once to securely encrypt your Trakt API keys and Gmail App Password:
+Run the setup wizard once to securely encrypt your API keys and Gmail App Password:
 
 ```bash
 python setup_credentials.py
 ```
 
 You will need:
-- **Trakt API credentials** — create an app at https://trakt.tv/oauth/applications
+- **Trakt API credentials** — create an app at https://trakt.tv/oauth/applications  
+  The wizard will open a browser for PIN-based OAuth — no manual token copying needed
+- **TMDb read-only API key** — create at https://www.themoviedb.org/settings/api
 - **Gmail App Password** — generate at https://myaccount.google.com/apppasswords
 
 ### 4. Launch the GUI
@@ -42,17 +56,27 @@ python main.py
 
 Enter your passphrase when prompted to unlock credentials.
 
+**First launch:** The app will automatically fetch the streaming provider list from TMDb. Go to **Settings → Refresh Provider List** if you need to refresh it.
+
+### 5. Add your services
+
+Go to the **Services** tab, click **Add Service**, and pick from the TMDb provider dropdown. Enter your monthly/annual cost and next billing date.
+
+### 6. Sync and analyse
+
+In **Settings**, click **🔄 Sync Trakt Now** to pull your watch history. Then click **📧 Run Analysis & Send Report** to get suspend/resubscribe recommendations.
+
 ---
 
 ## Scheduler
 
-The scheduler runs a daily sync + analysis + email pipeline.
+The scheduler runs a daily sync + analysis + email pipeline automatically.
 
 ```bash
 # Run once immediately
 python scheduler.py --run-once
 
-# Run continuously (schedule at 2:00 AM daily)
+# Run continuously (schedules at 2:00 AM daily)
 python scheduler.py
 
 # Custom time
@@ -70,26 +94,29 @@ python scheduler.py --run-at 08:00
 0 2 * * * STREAMSAVER_PASSPHRASE=yourpass /path/to/streamsaver/.venv/bin/python /path/to/streamsaver/scheduler.py --run-once
 ```
 
-### Task Scheduler (Windows)
-
-Set the action to:
-```
-Program: C:\path\to\streamsaver\.venv\Scripts\python.exe
-Arguments: scheduler.py --run-once
-Start in: C:\path\to\streamsaver
-```
-Add `STREAMSAVER_PASSPHRASE` as a system environment variable.
-
 ---
 
 ## Features
 
 | Feature | Description |
 |---|---|
-| **Services tab** | Add/edit/delete streaming services. Set status: Subscribed, Suspended, Unsubscribed, Not Subscribed. Enter monthly/annual cost and billing date. |
-| **Shows tab** | View all Trakt watched shows with season progress, next episode, premiere dates. Manually mark shows as abandoned. |
-| **Settings tab** | Set notification email. Configure abandoned detection (manual or auto with 1/3/6/12 month threshold). Sync Trakt and run analysis on demand. |
+| **Services tab** | Add/edit/delete streaming services with TMDb provider picker. Set status: Subscribed, Suspended, Unsubscribed, Not Subscribed. Enter monthly/annual cost and billing date. |
+| **Shows tab** | View all synced shows with interest score, show state (color-coded), primary streaming provider, last watched date, and next air date. Filter by state. Manually mark shows as abandoned. |
+| **Settings tab** | Set notification email. Configure country for provider data. Sync Trakt, refresh providers, and run analysis on demand. Displays last sync timestamp. |
 | **Email reports** | Dracula-themed HTML reports sent to your notification email for suspend and resubscribe recommendations. |
+
+---
+
+## Show States
+
+| State | Meaning | Score |
+|---|---|---|
+| 🟢 Active | Currently watching | 15+ |
+| 🔵 Occasional | Watching but not binging | 5–14 |
+| ⚫ Dormant | Haven't watched in a while | < 5 |
+| 🟡 Anticipated | Upcoming new season, previously engaged | — |
+| 🔴 Abandoned | Manually marked or auto-detected | — |
+| 🗄 Archived | Ended 2+ years ago, low score, no future season | — |
 
 ---
 
@@ -99,26 +126,35 @@ Add `STREAMSAVER_PASSPHRASE` as a system environment variable.
 streamsaver/
 ├── main.py                        # GUI entry point
 ├── scheduler.py                   # Daily scheduled runner
-├── setup_credentials.py           # Credential setup wizard
-├── db.py                          # SQLite init and connection helpers
+├── setup_credentials.py           # Credential setup wizard (PIN OAuth)
+├── db.py                          # SQLite init, schema, migrations
 ├── requirements.txt
-├── config/                        # credentials.enc + .salt (auto-created)
-├── data/                          # streamsaver.db (auto-created)
+├── config/                        # credentials.enc + .salt (auto-created, gitignored)
+├── data/                          # streamsaver.db + logs (auto-created, gitignored)
 ├── core/
 │   ├── trakt_client.py            # Trakt REST API wrapper
-│   ├── show_tracker.py            # Sync Trakt data → SQLite
-│   ├── service_manager.py         # Service CRUD and cost logic
-│   ├── analysis.py                # Suspend / resubscribe engine
-│   └── abandoned.py               # Abandoned show detection
+│   ├── tmdb_client.py             # TMDb API wrapper (providers + show lookup)
+│   ├── show_tracker.py            # Incremental sync, interest scoring, archive pass
+│   ├── service_manager.py         # Service CRUD and provider cache
+│   └── analysis.py                # Suspend / resubscribe recommendation engine
 ├── gui/
 │   ├── app.py                     # Main window + credential unlock
 │   ├── theme.py                   # Dracula colour palette
 │   ├── widgets.py                 # Shared themed widgets + ttk styles
 │   ├── services_page.py           # Services tab
-│   ├── shows_page.py              # Shows tab
+│   ├── shows_page.py              # Shows tab (state badges, scores)
 │   └── settings_page.py           # Settings tab
 └── email_reports/
     ├── report_builder.py           # HTML report generator
     ├── mailer.py                   # Gmail SMTP sender
     └── templates/base.html         # Dracula email template
 ```
+
+---
+
+## Security notes
+
+- Credentials are encrypted with Fernet + PBKDF2 and stored in `config/credentials.enc`
+- The encryption salt is in `config/.salt`
+- **Both files are gitignored** — never committed to the repository
+- The passphrase is never stored; it is entered at startup each time

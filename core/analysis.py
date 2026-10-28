@@ -3,23 +3,39 @@ core/analysis.py
 Streamsaver — Suspend / resubscribe recommendation engine
 Author: Noah Lee
 
-Logic:
-  SUSPEND: A subscribed service has no watchable content and no upcoming
-           premieres before its next billing date.
+Recommendation types:
+  KEEP                 — active annual service, renewal far enough away; no action needed
+  SUSPEND              — active monthly service with low engagement
+  CONSIDER_NON_RENEWAL — active annual service nearing renewal with low engagement
+  RENEW_SOON           — active annual service nearing renewal with high confidence of value
+  RESUBSCRIBE          — inactive service with strong prior engagement + upcoming content
+  UNCERTAIN            — billing date is stale/missing; user should verify
 
-  RESUBSCRIBE: A suspended or unsubscribed service has a show with a premiere
-               date that falls before its next billing date.
-
-Returns a structured dict ready for the report builder and email sender.
+Billing model:
+  Monthly services are evaluated at every billing date (roll forward month-by-month,
+  up to MONTHLY_STALE_CYCLES missed cycles before marking uncertain).
+  Annual services are only evaluated within ANNUAL_RENEWAL_EVAL_WINDOW days of renewal
+  (roll forward one cycle; beyond ANNUAL_STALE_GRACE_DAYS past renewal → uncertain).
 """
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 from db import db_session
+from core.service_manager import estimated_monthly_spend, estimated_annual_spend
 
 logger = logging.getLogger(__name__)
+
+# ── Tunable constants (internal — not user-configurable yet) ───────────────────
+ANNUAL_RENEWAL_EVAL_WINDOW   = 60   # days before annual renewal to start evaluating
+RENEW_SOON_WINDOW            = 45   # tighter window for positive (renew) signal
+MONTHLY_STALE_CYCLES         = 3    # missed monthly billing cycles → uncertain
+ANNUAL_STALE_GRACE_DAYS      = 30   # days past annual renewal before marking uncertain
+LOW_USAGE_SCORE              = 5    # watch_score below this = low engagement
+RENEW_SOON_ACTIVE_THRESHOLD  = 2    # min active shows for high-confidence renewal
+RESUBSCRIBE_SCORE_THRESHOLD  = 80   # min interest_score for resubscribe recommendation
+UPCOMING_CONTENT_DAYS        = 30   # days window for "upcoming" content signal
 
 
 def _parse_date(raw: Optional[str]) -> Optional[date]:
@@ -31,90 +47,130 @@ def _parse_date(raw: Optional[str]) -> Optional[date]:
         return None
 
 
-def _has_upcoming_content(service_id: int, billing_date: date, conn) -> bool:
+def _advance_billing_date(anchor: date, cycle: str, today: date) -> tuple[date, bool]:
     """
-    Return True if any non-abandoned show on this service has a next episode
-    or a premiere arriving on or before the billing date.
+    Roll a billing anchor forward to the next future billing date.
+
+    Returns (next_billing_date, is_uncertain) where is_uncertain=True means
+    the date drifted past the staleness threshold.
+    """
+    d = anchor
+    if cycle == "annual":
+        cycles = 0
+        while d < today:
+            d = date(d.year + 1, d.month, d.day)
+            cycles += 1
+            if cycles > 1:
+                # More than one missed annual cycle — data is stale
+                days_past = (today - d).days + 365
+                if days_past > ANNUAL_STALE_GRACE_DAYS:
+                    return d, True
+        return d, False
+    else:
+        # Monthly — roll forward month by month
+        cycles = 0
+        while d < today:
+            month = d.month + 1
+            year  = d.year + (month - 1) // 12
+            month = ((month - 1) % 12) + 1
+            d = d.replace(year=year, month=month)
+            cycles += 1
+            if cycles > MONTHLY_STALE_CYCLES:
+                return d, True
+        return d, False
+
+
+def _service_watch_score(service_id: int, conn) -> dict:
+    """
+    Aggregate watch signals for a service.
+
+    Returns:
+        active_count   — Active/Occasional shows
+        watch_score    — sum of interest_scores for Active/Occasional
+        anticipated    — list of anticipated shows with next_air_date
+        upcoming_days  — min days until next anticipated air date (or None)
     """
     rows = conn.execute(
         """
-        SELECT next_episode, next_premiere_date
+        SELECT show_state, interest_score, title, next_air_date
         FROM   shows
         WHERE  service_id = ?
-          AND  is_abandoned = 0
+          AND  show_state NOT IN ('ignored', 'archived', 'completed')
         """,
         (service_id,),
     ).fetchall()
 
+    active_count = 0
+    watch_score  = 0
+    anticipated  = []
+    today        = date.today()
+
     for row in rows:
-        # A watchable next episode exists (no date check needed — it's already out)
-        if row["next_episode"]:
-            return True
-        # A premiere is scheduled before the billing date
-        premiere = _parse_date(row["next_premiere_date"])
-        if premiere and premiere <= billing_date:
-            return True
+        state = row["show_state"]
+        if state in ("active", "occasional"):
+            active_count += 1
+            watch_score  += row["interest_score"]
+        elif state == "anticipated":
+            air = _parse_date(row["next_air_date"])
+            days_away = (air - today).days if air else None
+            anticipated.append({
+                "title":        row["title"],
+                "next_air_date": row["next_air_date"],
+                "score":        row["interest_score"],
+                "days_away":    days_away,
+            })
 
-    # Also check watchlist items
-    wl_rows = conn.execute(
-        "SELECT premiere_date FROM watchlist WHERE service_id = ?",
-        (service_id,),
-    ).fetchall()
-    for row in wl_rows:
-        premiere = _parse_date(row["premiere_date"])
-        if premiere and premiere <= billing_date:
-            return True
+    upcoming_days = None
+    if anticipated:
+        near = [a["days_away"] for a in anticipated if a["days_away"] is not None]
+        if near:
+            upcoming_days = min(near)
 
-    return False
+    return {
+        "active_count":  active_count,
+        "watch_score":   watch_score,
+        "anticipated":   anticipated,
+        "upcoming_days": upcoming_days,
+    }
 
 
-def _upcoming_premieres_for_service(
-    service_id: int, billing_date: date, conn
-) -> list[dict]:
-    """Return list of show titles + premiere dates arriving before billing_date."""
-    premieres = []
-
-    rows = conn.execute(
-        """
-        SELECT title, next_premiere_date
-        FROM   shows
-        WHERE  service_id = ?
-          AND  is_abandoned = 0
-          AND  next_premiere_date IS NOT NULL
-        """,
-        (service_id,),
-    ).fetchall()
-    for row in rows:
-        d = _parse_date(row["next_premiere_date"])
-        if d and d <= billing_date:
-            premieres.append({"title": row["title"], "premiere_date": str(d)})
-
-    wl_rows = conn.execute(
-        "SELECT title, premiere_date FROM watchlist WHERE service_id = ?",
-        (service_id,),
-    ).fetchall()
-    for row in wl_rows:
-        d = _parse_date(row["premiere_date"])
-        if d and d <= billing_date:
-            premieres.append({"title": row["title"], "premiere_date": str(d)})
-
-    return premieres
+def _renew_soon_confidence(signals: dict) -> bool:
+    """
+    Return True only if there is high confidence the service is worth renewing.
+    Conservative — requires multiple strong signals.
+    """
+    return (
+        signals["active_count"] >= RENEW_SOON_ACTIVE_THRESHOLD
+        or signals["watch_score"] >= 70
+        or (
+            signals["upcoming_days"] is not None
+            and signals["upcoming_days"] <= UPCOMING_CONTENT_DAYS
+        )
+    )
 
 
 def run_analysis() -> dict:
     """
-    Analyse all services and return recommendations.
+    Analyse all services and return layered recommendations.
 
     Returns:
         {
-            "suspend":      [ { service, billing_date, savings_monthly, ... }, ... ],
-            "resubscribe":  [ { service, billing_date, premieres: [...], ... }, ... ],
-            "ok":           [ { service, ... }, ... ],
+            "keep":                 [...],
+            "suspend":              [...],
+            "consider_non_renewal": [...],
+            "renew_soon":           [...],
+            "resubscribe":          [...],
+            "uncertain":            [...],
         }
     """
-    suspend_list:     list[dict] = []
-    resubscribe_list: list[dict] = []
-    ok_list:          list[dict] = []
+    result: dict[str, list] = {
+        "keep":                 [],
+        "suspend":              [],
+        "consider_non_renewal": [],
+        "renew_soon":           [],
+        "resubscribe":          [],
+        "uncertain":            [],
+    }
 
     today = date.today()
 
@@ -122,69 +178,136 @@ def run_analysis() -> dict:
         services = conn.execute("SELECT * FROM services").fetchall()
 
         for svc in services:
-            svc_dict     = dict(svc)
-            billing_date = _parse_date(svc_dict.get("next_billing_date"))
-            status       = svc_dict["status"]
+            s            = dict(svc)
+            status       = s["status"]
+            cycle        = s.get("billing_cycle") or "monthly"
+            auto_renew   = s.get("auto_renew", 1)
+            anchor_raw   = s.get("billing_anchor_date") or s.get("next_billing_date")
+            anchor       = _parse_date(anchor_raw)
 
-            # We can only reason about services with a known billing date
-            if not billing_date:
-                logger.debug(
-                    "Skipping service '%s' — no billing date set.", svc_dict["name"]
-                )
+            # Skip services with no billing data at all
+            if not anchor:
+                logger.debug("Skipping '%s' — no billing anchor date.", s["name"])
                 continue
 
-            if billing_date < today:
-                # Billing date has already passed — data needs updating
-                logger.debug(
-                    "Service '%s' billing date is in the past.", svc_dict["name"]
-                )
-                continue
+            # Roll billing date forward and check for staleness
+            next_billing, is_uncertain = _advance_billing_date(anchor, cycle, today)
+            days_until_renewal = (next_billing - today).days
 
+            signals = _service_watch_score(s["id"], conn)
+            summary = _build_summary(s, next_billing, signals, cycle, days_until_renewal)
+
+            # ── Active subscriptions ───────────────────────────────────────
             if status == "subscribed":
-                has_content = _has_upcoming_content(svc_dict["id"], billing_date, conn)
-                if has_content:
-                    ok_list.append(_service_summary(svc_dict, billing_date))
-                else:
-                    suspend_list.append(
-                        {
-                            **_service_summary(svc_dict, billing_date),
+                if is_uncertain:
+                    result["uncertain"].append({
+                        **summary,
+                        "reason": f"Billing date appears stale (last anchor: {anchor_raw}). Please verify.",
+                    })
+                    continue
+
+                if cycle == "annual":
+                    if not auto_renew:
+                        # Auto-renew disabled — treat like it's expiring
+                        if days_until_renewal <= ANNUAL_RENEWAL_EVAL_WINDOW and signals["active_count"] == 0 and signals["watch_score"] < LOW_USAGE_SCORE:
+                            result["consider_non_renewal"].append({**summary, "reason": "Auto-renew is off. Low engagement near expiry."})
+                        else:
+                            result["keep"].append({**summary, "reason": f"Prepaid through {next_billing}. Auto-renew disabled."})
+                    elif days_until_renewal > ANNUAL_RENEWAL_EVAL_WINDOW:
+                        # Already paid and renewal is far away — no action
+                        result["keep"].append({
+                            **summary,
+                            "reason": f"Annual plan prepaid through {next_billing} ({days_until_renewal} days). No action needed.",
+                        })
+                    elif _renew_soon_confidence(signals):
+                        result["renew_soon"].append({
+                            **summary,
                             "reason": (
-                                "No upcoming episodes or premieres before next billing date."
+                                f"Annual plan renews in {days_until_renewal} days. "
+                                f"{signals['active_count']} active show(s), watch score {signals['watch_score']}."
                             ),
-                        }
-                    )
+                        })
+                    else:
+                        result["consider_non_renewal"].append({
+                            **summary,
+                            "reason": (
+                                f"Annual plan renews in {days_until_renewal} days. "
+                                f"Low engagement — watch score {signals['watch_score']}. "
+                                "Consider disabling auto-renew."
+                            ),
+                        })
+                else:
+                    # Monthly
+                    if signals["active_count"] > 0 or signals["watch_score"] >= LOW_USAGE_SCORE:
+                        result["keep"].append({
+                            **summary,
+                            "reason": f"{signals['active_count']} active show(s), watch score {signals['watch_score']}.",
+                        })
+                    else:
+                        # Check for upcoming content before billing
+                        upcoming_before_billing = [
+                            a for a in signals["anticipated"]
+                            if a["days_away"] is not None and a["days_away"] <= days_until_renewal
+                        ]
+                        if upcoming_before_billing:
+                            result["keep"].append({
+                                **summary,
+                                "reason": f"Upcoming content before {next_billing}: {', '.join(a['title'] for a in upcoming_before_billing)}.",
+                            })
+                        else:
+                            result["suspend"].append({
+                                **summary,
+                                "reason": (
+                                    f"No active shows and no upcoming content before {next_billing}. "
+                                    f"Watch score: {signals['watch_score']}."
+                                ),
+                            })
 
+            # ── Inactive subscriptions ─────────────────────────────────────
             elif status in ("suspended", "unsubscribed"):
-                premieres = _upcoming_premieres_for_service(
-                    svc_dict["id"], billing_date, conn
-                )
-                if premieres:
-                    resubscribe_list.append(
-                        {
-                            **_service_summary(svc_dict, billing_date),
-                            "premieres": premieres,
-                        }
-                    )
+                resubscribe_shows = [
+                    a for a in signals["anticipated"]
+                    if a["score"] >= RESUBSCRIBE_SCORE_THRESHOLD
+                    and a["days_away"] is not None
+                    and a["days_away"] <= UPCOMING_CONTENT_DAYS
+                ]
+                if resubscribe_shows:
+                    result["resubscribe"].append({
+                        **summary,
+                        "shows": resubscribe_shows,
+                    })
 
-    logger.info(
-        "Analysis complete — suspend: %d, resubscribe: %d, ok: %d",
-        len(suspend_list), len(resubscribe_list), len(ok_list),
-    )
-    return {
-        "suspend":     suspend_list,
-        "resubscribe": resubscribe_list,
-        "ok":          ok_list,
-    }
+    _log_summary(result)
+    return result
 
 
-def _service_summary(svc: dict, billing_date: date) -> dict:
+def _build_summary(svc: dict, billing_date: date, signals: dict, cycle: str, days_until: int) -> dict:
     """Build a compact summary dict for a service recommendation."""
     return {
-        "id":              svc["id"],
-        "name":            svc["name"],
-        "status":          svc["status"],
-        "monthly_cost":    svc["monthly_cost"],
-        "annual_cost":     svc["annual_cost"],
-        "billing_date":    str(billing_date),
-        "icon_path":       svc.get("icon_path"),
+        "id":            svc["id"],
+        "name":          svc["name"],
+        "status":        svc["status"],
+        "billing_cycle": cycle,
+        "billing_date":  str(billing_date),
+        "days_until_renewal": days_until,
+        "monthly_cost":  svc.get("monthly_cost") or 0.0,
+        "annual_cost":   svc.get("annual_cost") or 0.0,
+        "estimated_monthly_spend": estimated_monthly_spend(svc),
+        "estimated_annual_spend":  estimated_annual_spend(svc),
+        "icon_path":     svc.get("icon_path"),
+        "active_count":  signals["active_count"],
+        "watch_score":   signals["watch_score"],
     }
+
+
+def _log_summary(result: dict) -> None:
+    logger.info(
+        "Analysis — keep: %d, suspend: %d, consider_non_renewal: %d, "
+        "renew_soon: %d, resubscribe: %d, uncertain: %d",
+        len(result["keep"]),
+        len(result["suspend"]),
+        len(result["consider_non_renewal"]),
+        len(result["renew_soon"]),
+        len(result["resubscribe"]),
+        len(result["uncertain"]),
+    )

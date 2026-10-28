@@ -36,6 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from db import init_db, db_session
 from core.trakt_client import TraktClient
+from core.tmdb_client  import TMDbClient
 from core.show_tracker import run_full_sync
 from core.analysis     import run_analysis
 from email_reports.report_builder import build_report
@@ -86,13 +87,20 @@ def run_daily_job(creds: dict) -> None:
         refresh_token = creds.get("trakt_refresh_token", ""),
         username      = creds.get("trakt_username", ""),
     )
+
+    tmdb_key = creds.get("tmdb_api_key", "")
+    country  = _get_setting("provider_country") or "US"
+    tmdb_client = TMDbClient(api_key=tmdb_key, country=country) if tmdb_key else None
+    if not tmdb_client:
+        logger.warning("No TMDb API key — provider lookup will be skipped during sync.")
+
     try:
-        sync_results = run_full_sync(client)
+        sync_results = run_full_sync(client, tmdb_client)
         logger.info(
-            "Sync complete — shows: %d, watchlist: %d, abandoned updated: %d",
+            "Sync complete — shows: %d, watchlist: %d, archived: %d",
             sync_results["shows"],
             sync_results["watchlist"],
-            sync_results["abandoned"],
+            sync_results["archived"],
         )
     except Exception as exc:
         logger.error("Trakt sync failed: %s", exc)
@@ -102,10 +110,14 @@ def run_daily_job(creds: dict) -> None:
     try:
         results = run_analysis()
         logger.info(
-            "Analysis — suspend: %d, resubscribe: %d, ok: %d",
-            len(results["suspend"]),
-            len(results["resubscribe"]),
-            len(results["ok"]),
+            "Analysis — keep: %d, suspend: %d, consider_non_renewal: %d, "
+            "renew_soon: %d, resubscribe: %d, uncertain: %d",
+            len(results.get("keep", [])),
+            len(results.get("suspend", [])),
+            len(results.get("consider_non_renewal", [])),
+            len(results.get("renew_soon", [])),
+            len(results.get("resubscribe", [])),
+            len(results.get("uncertain", [])),
         )
     except Exception as exc:
         logger.error("Analysis failed: %s", exc)
@@ -118,35 +130,29 @@ def run_daily_job(creds: dict) -> None:
         return
 
     sent = 0
-    for rec in results["suspend"]:
-        try:
-            html = build_report("suspend", [rec])
-            send_report_with_credentials(
-                creds=creds,
-                to_address=notify_email,
-                subject=f"Streamsaver: Consider suspending {rec['name']}",
-                html_body=html,
-            )
-            logger.info("Sent suspend report for: %s", rec["name"])
-            sent += 1
-        except Exception as exc:
-            logger.error("Failed to send suspend report for %s: %s", rec["name"], exc)
 
-    for rec in results["resubscribe"]:
-        try:
-            html = build_report("resubscribe", [rec])
-            send_report_with_credentials(
-                creds=creds,
-                to_address=notify_email,
-                subject=f"Streamsaver: Resubscribe to {rec['name']}",
-                html_body=html,
-            )
-            logger.info("Sent resubscribe report for: %s", rec["name"])
-            sent += 1
-        except Exception as exc:
-            logger.error(
-                "Failed to send resubscribe report for %s: %s", rec["name"], exc
-            )
+    _REPORT_TYPES = [
+        ("suspend",              "Consider suspending"),
+        ("consider_non_renewal", "Annual renewal to review"),
+        ("renew_soon",           "Annual renewal approaching"),
+        ("resubscribe",          "Time to resubscribe"),
+    ]
+    for rtype, subject_prefix in _REPORT_TYPES:
+        recs = results.get(rtype, [])
+        if recs:
+            names = ", ".join(r["name"] for r in recs)
+            try:
+                html = build_report(rtype, recs)
+                send_report_with_credentials(
+                    creds=creds,
+                    to_address=notify_email,
+                    subject=f"Streamsaver: {subject_prefix} — {names}",
+                    html_body=html,
+                )
+                logger.info("Sent %s digest for: %s", rtype, names)
+                sent += 1
+            except Exception as exc:
+                logger.error("Failed to send %s digest: %s", rtype, exc)
 
     logger.info("Daily job complete. %d email(s) sent.", sent)
     logger.info("=" * 60)
