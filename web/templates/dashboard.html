@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block title %}Dashboard - Streamsaver{% endblock %}
 {% block content %}
 <section class="hero">
   <div class="hero-copy">
@@ -35,7 +36,7 @@
     <details>
       <summary>Why each service is kept</summary>
       <ul class="kept">
-        {% for rec in kept %}<li><strong>{{ rec.name }}</strong>: {{ rec.reason }}</li>{% endfor %}
+        {% for rec in kept %}<li><strong>{{ rec.name }}</strong>: {{ rec.reason|recommendation_reason }}</li>{% endfor %}
       </ul>
     </details>
   {% endif %}

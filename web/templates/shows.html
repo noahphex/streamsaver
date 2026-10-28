@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block title %}Shows - Streamsaver{% endblock %}
 {% block content %}
 <section class="hero">
   <div class="hero-copy">
@@ -13,27 +14,40 @@
       <option value="{{ item }}" {% if state == item %}selected{% endif %}>{{ item }}</option>
     {% endfor %}
   </select>
+  <label class="mobile-sort">Sort by
+    <select name="sort" onchange="this.form.submit()">
+      {% for key, label in [("title", "Title"), ("state", "State"), ("score", "Score"), ("service", "Service"), ("provider", "Provider"), ("last", "Last"), ("next", "Next")] %}
+        <option value="{{ key }}" {% if sort == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="mobile-sort">Direction
+    <select name="dir" onchange="this.form.submit()">
+      <option value="asc" {% if direction == 'asc' %}selected{% endif %}>Ascending</option>
+      <option value="desc" {% if direction == 'desc' %}selected{% endif %}>Descending</option>
+    </select>
+  </label>
 </form>
 {% macro sort_link(key, label) -%}
   {% set active = sort == key %}
   {% set next_dir = 'asc' if not active or direction == 'desc' else 'desc' %}
   <a class="sort-link {{ 'active' if active else '' }}" href="{{ url_for('shows', q=q, state=state, sort=key, dir=next_dir) }}">
     <span>{{ label }}</span>
-    {% if active %}<span class="sort-arrow">{{ '▲' if direction == 'asc' else '▼' }}</span>{% endif %}
+    {% if active %}<span class="sort-arrow" aria-hidden="true">{{ '▲' if direction == 'asc' else '▼' }}</span>{% endif %}
   </a>
 {%- endmacro %}
 <section class="table-wrap">
   <table>
     <thead>
       <tr>
-        <th>{{ sort_link('title', 'Title') }}</th>
-        <th>{{ sort_link('state', 'State') }}</th>
-        <th>{{ sort_link('score', 'Score') }}</th>
-        <th>{{ sort_link('service', 'Service') }}</th>
-        <th>{{ sort_link('provider', 'Provider') }}</th>
-        <th>{{ sort_link('last', 'Last') }}</th>
-        <th>{{ sort_link('next', 'Next') }}</th>
-        <th></th>
+        <th aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort == 'title' else 'none' }}">{{ sort_link('title', 'Title') }}</th>
+        <th aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort == 'state' else 'none' }}">{{ sort_link('state', 'State') }}</th>
+        <th aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort == 'score' else 'none' }}">{{ sort_link('score', 'Score') }}</th>
+        <th aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort == 'service' else 'none' }}">{{ sort_link('service', 'Service') }}</th>
+        <th aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort == 'provider' else 'none' }}">{{ sort_link('provider', 'Provider') }}</th>
+        <th aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort == 'last' else 'none' }}">{{ sort_link('last', 'Last') }}</th>
+        <th aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort == 'next' else 'none' }}">{{ sort_link('next', 'Next') }}</th>
+        <th><span class="visually-hidden">Actions</span></th>
       </tr>
     </thead>
     <tbody>
@@ -47,10 +61,12 @@
           <td data-label="Last">{{ show.last_watch_date|nice_date }}</td>
           <td data-label="Next">{{ show.next_air_date|nice_date }}</td>
           <td>
+            {% if show.show_state not in ("completed", "archived") %}
             <form method="post" action="{{ url_for('set_show_state', trakt_id=show.trakt_id) }}">
               <input type="hidden" name="state" value="{{ 'restore' if show.show_state == 'abandoned' else 'abandoned' }}">
-              <button class="ghost small" aria-label="{{ ('Unmark ' if show.show_state == 'abandoned' else 'Abandon ') ~ show.title }}">{{ "Unmark" if show.show_state == "abandoned" else "Abandon" }}</button>
+              <button class="link-button small" aria-label="{{ ('Unmark ' if show.show_state == 'abandoned' else 'Abandon ') ~ show.title }}">{{ "Unmark" if show.show_state == "abandoned" else "Abandon" }}</button>
             </form>
+            {% endif %}
           </td>
         </tr>
       {% else %}
@@ -59,4 +75,9 @@
     </tbody>
   </table>
 </section>
+<nav class="pagination button-row" aria-label="Shows pages">
+  {% if page > 1 %}<a class="button ghost" rel="prev" href="{{ url_for('shows', q=q, state=state, sort=sort, dir=direction, page=page-1) }}">Previous</a>{% endif %}
+  <span class="muted">Page {{ page }}</span>
+  {% if has_next %}<a class="button ghost" rel="next" href="{{ url_for('shows', q=q, state=state, sort=sort, dir=direction, page=page+1) }}">Next</a>{% endif %}
+</nav>
 {% endblock %}

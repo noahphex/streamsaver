@@ -9,6 +9,13 @@
   <a class="button ghost" href="{{ url_for('services') }}">All services</a>
 </section>
 
+{% if advice %}
+<section class="panel">
+  <h2>{{ advice.label }}</h2>
+  <p class="muted">{{ advice.why }}</p>
+</section>
+{% endif %}
+
 {% set cycle = editable.billing_cycle if editable else "monthly" %}
 {% set bundles = bundle_map[editable.id] if editable else [] %}
 <section class="panel form-panel">

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block title %}Services - Streamsaver{% endblock %}
 {% block content %}
 <section class="hero">
   <div class="hero-copy">
@@ -32,12 +33,15 @@
         {% if svc.status != "subscribed" %}Not billing{% elif renews %}Renews {{ renews|nice_date }}{% else %}No billing date{% endif %}
         {% if bundles %}· {{ bundles|length }} bundled provider{{ "" if bundles|length == 1 else "s" }}{% endif %}
       </p>
-      <div class="meta">
-        {% if tip %}<span class="tone tone-{{ tip.tone }}" title="{{ tip.why }}">{{ tip.label }}</span>{% elif svc.status == "subscribed" %}<span class="tone tone-keep">Keep</span>{% endif %}
-      </div>
-      <div class="button-row">
-        <a class="button ghost" href="{{ url_for('service_edit', service_id=svc.id) }}">Edit</a>
-      </div>
+      <footer class="card-footer">
+        <div class="meta">
+          {% if tip %}<span class="tone tone-{{ tip.tone }}">{{ tip.label }}</span>{% elif svc.status == "subscribed" %}<span class="tone tone-keep">Keep</span>{% endif %}
+        </div>
+        {% if tip %}<p class="muted">{{ tip.why }}</p>{% endif %}
+        <div class="button-row">
+          <a class="button ghost" href="{{ url_for('service_edit', service_id=svc.id) }}" aria-label="Edit {{ svc.name }}">Edit</a>
+        </div>
+      </footer>
     </article>
   {% else %}
     <article class="panel empty-state">
