@@ -343,6 +343,7 @@ def create_app():
             bundle_map=bundle_map,
             totals=get_cost_totals(status_filter="subscribed"),
             advice=advice,
+            keep_reasons={rec["name"]: rec.get("reason", "") for rec in results.get("keep", [])},
         )
 
     @app.get("/services/new")

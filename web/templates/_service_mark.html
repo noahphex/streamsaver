@@ -11,6 +11,10 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="name" value="{{ rec.name }}">
     <input type="hidden" name="action" value="{{ rec.action }}">
-    <button class="small ghost" aria-label="Undo: {{ rec.name }}">Undo</button>
+    <button class="small ghost" aria-label="Undo snooze: {{ rec.name }}">Undo snooze</button>
   </form>
+{%- endmacro %}
+
+{% macro service_title(name) -%}
+  {% set display = name|service_name %}{{ display.base }}{% if display.channel %}<span class="service-channel">Amazon Channel</span>{% endif %}
 {%- endmacro %}

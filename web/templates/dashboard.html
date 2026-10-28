@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Dashboard - Streamsaver{% endblock %}
-{% from "_service_mark.html" import service_mark, snooze_undo with context %}
+{% from "_service_mark.html" import service_mark, snooze_undo, service_title with context %}
 {% block content %}
 {% if todo_undo %}
 <section class="flash-stack" tabindex="-1">
@@ -22,15 +22,15 @@
 </section>
 {% endif %}
 
+<section class="panel money-band">
+  <h1>Your streaming</h1>
+  {% if todo %}<p class="muted">Spending</p>{% else %}<p>All {{ kept|length }} service{{ "" if kept|length == 1 else "s" }} {{ "is" if kept|length == 1 else "are" }} earning their keep.</p>{% endif %}
+  <div class="spend-total">{{ totals.monthly_total|money }}<small class="muted">/mo</small></div>
+  <p>{{ spend.total|money }} due in the next 30 days · {{ spend.count }} bill{{ '' if spend.count == 1 else 's' }} <span class="muted">· {{ totals.annual_total|money }}/yr</span></p>
+  {% if savings > 0 %}<p class="spend-savings">Could save {{ savings|money }}/mo</p>{% endif %}
+</section>
 <section class="panel todo-panel">
-  <div class="todo-heading">
-    <h1>To do</h1>
-    <div class="spend-hero">
-      <div class="spend-total">{{ spend.total|money }}</div>
-      <div class="muted">next 30 days · {{ spend.count }} bills</div>
-      {% if savings > 0 %}<div class="spend-savings">could save {{ savings|money }}/mo</div>{% endif %}
-    </div>
-  </div>
+  <h2>To do</h2>
   <div class="todo-summary">
     {% if todo_summary %}<span>{{ todo_summary }}</span>{% endif %}
     <span class="muted">Synced {{ settings.last_trakt_sync|local_time }}</span>
@@ -42,7 +42,7 @@
         <li>
           <a class="todo-link" href="{{ href }}">
             {{ service_mark(item.name, item.icon_path) }}
-            <span class="todo-name"><span class="name">{{ item.name }}</span> <span class="tone tone-{{ item.tone }}">{{ item.label }}</span></span>
+            <span class="todo-name"><span class="name">{{ service_title(item.name) }}</span> <span class="tone tone-{{ item.tone }}">{{ item.label }}</span></span>
             <span class="when">{% if item.cost %}{{ item.cost }}{% endif %}{% if item.cost and item.when %} · {% endif %}{% if item.when %}bills {{ item.when|nice_date }}{% endif %}</span>
             {% if item.why %}<span class="why">{{ item.why }}</span>{% endif %}
           </a>
@@ -65,15 +65,16 @@
       {% endfor %}
     </ul>
   {% else %}
-    <div class="all-clear">
-      <p><strong>Nothing to change.</strong> {{ kept|length }} service{{ "" if kept|length == 1 else "s" }} worth keeping right now.</p>
-    </div>
+    <p class="muted empty-todo">Nothing to change.</p>
   {% endif %}
   {% if kept %}
     <details>
       <summary>Why each service is kept</summary>
       <ul class="kept">
-        {% for rec in kept %}<li><strong>{{ rec.name }}</strong>: {{ rec.reason|recommendation_reason }}</li>{% endfor %}
+        {% for rec in kept %}
+          {% set svc = services|selectattr('name', 'equalto', rec.name)|first %}
+          <li>{{ service_mark(rec.name, svc.icon_path if svc else none, 24) }}<span><strong>{{ service_title(rec.name) }}</strong>: {{ rec.reason|recommendation_reason }}</span></li>
+        {% endfor %}
       </ul>
     </details>
   {% endif %}
@@ -84,19 +85,13 @@
         {% for rec in snoozed %}
           <li>
             {{ service_mark(rec.name, rec.icon_path, 24) }}
-            <span class="snoozed-copy"><strong>{{ rec.name }}</strong>: {{ rec.label }} · until {{ rec.until|nice_date }}</span>
+            <span class="snoozed-copy"><strong>{{ service_title(rec.name) }}</strong>: {{ rec.label }} · until {{ rec.until|nice_date }}</span>
             {{ snooze_undo(rec) }}
           </li>
         {% endfor %}
       </ul>
     </details>
   {% endif %}
-</section>
-
-<section class="metrics metrics-compact">
-  <div><span>{{ totals.monthly_total|money }}</span><small>Monthly</small></div>
-  <div><span>{{ totals.annual_total|money }}</span><small>Annualized</small></div>
-  <div><span>{{ services|selectattr("status", "equalto", "subscribed")|list|length }}</span><small>Subscribed</small></div>
 </section>
 
 <section class="grid two">

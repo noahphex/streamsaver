@@ -26,7 +26,7 @@
         {{ service_mark(svc.name, svc.icon_path) }}
         <div class="service-identity">
           {% set display = svc.name|service_name %}
-          <h2><a class="card-link" href="{{ url_for('service_edit', service_id=svc.id) }}">{{ display.base }}</a></h2>
+          <h2><a class="card-link" aria-label="Edit {{ svc.name }}" href="{{ url_for('service_edit', service_id=svc.id) }}">{{ display.base }}</a></h2>
           {% if display.channel %}<span class="service-channel">Amazon Channel</span>{% endif %}
           <p class="service-price">
             {% if not (svc.monthly_cost or svc.annual_cost) %}Free{% elif svc.billing_cycle == "annual" %}{{ svc.annual_cost|money }}<small>/yr</small>{% else %}{{ svc.monthly_cost|money }}<small>/mo</small>{% endif %}
@@ -40,13 +40,8 @@
         {% if bundles %}· {{ bundles|length }} bundled provider{{ "" if bundles|length == 1 else "s" }}{% endif %}
       </p>
       <footer class="card-footer">
-        <div class="meta">
-          {% if tip %}<span class="tone tone-{{ tip.tone }}">{{ tip.label }}</span>{% endif %}
-        </div>
-        {% if tip %}<p class="muted">{{ tip.why }}</p>{% endif %}
-        <div class="button-row">
-          <a class="button ghost card-edit" href="{{ url_for('service_edit', service_id=svc.id) }}" aria-label="Edit {{ svc.name }}">Edit</a>
-        </div>
+        {% if tip %}<div class="meta"><span class="tone tone-{{ tip.tone }}">{{ tip.label }}</span></div>{% endif %}
+        {% if tip %}<p class="muted">{{ tip.why }}</p>{% elif keep_reasons.get(svc.name) %}<p class="muted">{{ keep_reasons[svc.name]|recommendation_reason }}</p>{% endif %}
       </footer>
     </article>
   {% else %}
