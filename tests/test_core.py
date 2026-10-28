@@ -40,6 +40,20 @@ class BillingDateTests(unittest.TestCase):
         self.assertTrue(uncertain)
 
 
+class NextAirDateTests(unittest.TestCase):
+    def test_display_date_requires_today_or_later_and_not_before_last_watch(self):
+        today = date(2026, 10, 28)
+        for air, watched, expected in [
+            ("2026-10-27", "2026-10-20", None),
+            ("2026-10-28", "2026-10-29", None),
+            ("2026-10-28", "2026-10-28T10:30:00Z", "2026-10-28"),
+            ("2026-11-01", None, "2026-11-01"),
+            ("bad", None, None), (None, None, None),
+        ]:
+            with self.subTest(air=air, watched=watched):
+                self.assertEqual(show_tracker.visible_next_air_date(air, watched, today), expected)
+
+
 def _resp(status, payload=None):
     return mock.Mock(status_code=status, headers={}, text="", json=lambda: payload)
 

@@ -15,7 +15,7 @@ Incremental sync strategy:
 
 import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from db import db_session
@@ -23,6 +23,10 @@ from core.trakt_client import TraktClient
 from core.tmdb_client import TMDbClient
 
 logger = logging.getLogger(__name__)
+
+# Maximum viewing activity (10 + 5 + 5) plus the returning-show boost (8).
+MAX_INTEREST_SCORE = 28
+
 
 # Interest scoring thresholds (from build_admin.txt spec)
 _SCORE_ACTIVE     = 15
@@ -55,6 +59,16 @@ def _to_date_str(raw: Optional[str]) -> Optional[str]:
     """Return YYYY-MM-DD from a Trakt ISO datetime string, or None."""
     dt = _parse_dt(raw)
     return dt.strftime("%Y-%m-%d") if dt else None
+
+
+def visible_next_air_date(next_air_date, last_watch_date, today=None):
+    """Hide stale air dates without changing the stored sync data."""
+    today = today or date.today()
+    air = _parse_dt(next_air_date)
+    watched = _parse_dt(last_watch_date)
+    if not air or air.date() < today or (watched and air.date() < watched.date()):
+        return None
+    return next_air_date
 
 
 def _compute_interest_score(watch_events: list[datetime]) -> int:

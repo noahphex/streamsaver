@@ -39,7 +39,7 @@
       <h3>Sync</h3>
       <p class="muted">Last sync {{ settings.last_trakt_sync|local_time }} · provider list from {{ settings.networks_fetched_at|local_time }}</p>
       <div class="button-row">
-        <form method="post" action="{{ url_for('action_sync') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button>Sync now</button></form>
+        <form method="post" action="{{ url_for('action_sync') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="ghost">Sync now</button></form>
         <form method="post" action="{{ url_for('action_sync') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="force_backfill" value="1"><button class="ghost">Backfill last year</button></form>
         <form method="post" action="{{ url_for('action_refresh_providers') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="ghost">Refresh provider list</button></form>
       </div>
