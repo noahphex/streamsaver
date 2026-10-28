@@ -1,6 +1,8 @@
 import json
 import os
 import logging
+import re
+import smtplib
 import sys
 import tempfile
 from datetime import datetime, timedelta
@@ -8,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import requests
+from cryptography.fernet import InvalidToken
 from flask import (
     abort,
     Flask,
@@ -45,7 +48,7 @@ from core.service_manager import (
 )
 from core.show_tracker import backfill_service_ids, run_full_sync
 from core.tmdb_client import TMDbClient
-from core.trakt_client import TraktClient, poll_device_token, request_device_code
+from core.trakt_client import TraktAuthError, TraktClient, poll_device_token, request_device_code
 from db import db_session, init_db
 from email_reports.mailer import check_login, send_report
 from email_reports.report_builder import build_all_clear, build_report
@@ -105,6 +108,7 @@ def create_app():
     app.add_template_filter(_nice_date, "nice_date")
     app.add_template_filter(_local_time, "local_time")
     app.add_template_filter(_money, "money")
+    app.add_template_filter(_recommendation_reason, "recommendation_reason")
 
     @app.before_request
     def require_sign_in():
@@ -185,7 +189,8 @@ def create_app():
                 flash("Signed in.", "success")
                 return redirect(url_for("dashboard"))
             except Exception as exc:
-                flash(f"Could not unlock credentials: {exc}", "error")
+                logger.exception("Credential unlock failed")
+                flash(_credential_error_message(exc), "error")
         return render_template("unlock.html", has_credentials=Path(CRED_FILE).exists())
 
     @app.post("/lock")
@@ -193,7 +198,7 @@ def create_app():
         app.config["CREDS"] = None
         app.config["CRED_PASSPHRASE"] = None
         session.clear()
-        flash("Credentials locked.", "info")
+        flash("Signed out.", "info")
         return redirect(url_for("unlock"))
 
     @app.get("/")
@@ -285,8 +290,10 @@ def create_app():
         q = request.args.get("q", "").strip()
         state = request.args.get("state", "All")
         sort, direction = _show_sort(request.args.get("sort", "score"), request.args.get("dir", "desc"))
-        rows = _shows(q, state, sort, direction)
-        return render_template("shows.html", shows=rows, q=q, state=state, sort=sort, direction=direction)
+        page = max(1, min(request.args.get("page", 1, type=int) or 1, 1000000))
+        rows = _shows(q, state, sort, direction, page=page)
+        return render_template("shows.html", shows=rows[:50], q=q, state=state, sort=sort,
+                               direction=direction, page=page, has_next=len(rows) > 50)
 
     @app.post("/shows/<trakt_id>/state")
     def set_show_state(trakt_id):
@@ -345,25 +352,30 @@ def create_app():
     @app.post("/credentials/test/<provider>")
     def test_credentials(provider):
         creds = _credentials()
+        if provider not in {"trakt", "tmdb", "email"}:
+            abort(404)
         try:
+            required = {"trakt": ("trakt_client_id", "trakt_access_token"),
+                        "tmdb": ("tmdb_api_key",), "email": ("gmail_sender", "gmail_app_password")}
+            if not all(creds.get(key) for key in required[provider]):
+                raise FileNotFoundError()
             if provider == "trakt":
                 user = _trakt_client(creds, _persist_trakt_tokens, _load_saved_trakt_tokens)._get("/users/settings")
                 message = f"Trakt works: signed in as @{(user or {}).get('user', {}).get('username', '?')}."
             elif provider == "tmdb":
-                if not creds.get("tmdb_api_key") or _tmdb_client(creds)._get("/configuration") is None:
+                if _tmdb_client(creds)._get("/configuration") is None:
                     raise RuntimeError("TMDb did not accept the key.")
                 message = "TMDb works."
             elif provider == "email":
                 check_login(creds.get("gmail_sender", ""), creds.get("gmail_app_password", ""))
                 message = f"Gmail works: signed in as {creds.get('gmail_sender')} (nothing was sent)."
-            else:
-                abort(404)
             flash(message, "success")
             _record_credential_test(provider, True, message)
         except Exception as exc:
-            _record_credential_test(provider, False, str(exc))
-            logger.warning("Credential test for %s failed: %s", provider, exc)
-            flash(f"{provider.upper() if provider == 'tmdb' else provider.title()} test failed: {exc}", "error")
+            message = _credential_error_message(exc)
+            _record_credential_test(provider, False, message)
+            logger.exception("Credential test for %s failed", provider)
+            flash(message, "error")
         return redirect(url_for("credentials"))
 
     @app.post("/credentials/trakt/device/start")
@@ -645,9 +657,11 @@ def create_app():
 def _service_form(editable=None):
     bundle_map = {}
     next_renewal = None
+    advice = None
     if editable:
         bundle_map[editable["id"]] = get_bundle_providers(editable["id"])
         results = run_analysis()
+        advice = next((item for item in _todo_items(results) if item["service_id"] == editable["id"]), None)
         next_renewal = next((rec.get("billing_date") for recs in results.values() for rec in recs
                              if isinstance(rec, dict) and rec.get("id") == editable["id"]), None)
     return render_template(
@@ -655,6 +669,7 @@ def _service_form(editable=None):
         editable=editable,
         bundle_map=bundle_map,
         next_renewal=next_renewal,
+        advice=advice,
         prefill_name=request.args.get("name", ""),
         network_names=get_cached_network_names(),
         statuses=sorted(VALID_STATUSES),
@@ -803,6 +818,12 @@ _TODO_ACTIONS = [
 ]
 
 
+def _recommendation_reason(reason):
+    reason = re.sub(r"\b\d{4}-\d{2}-\d{2}\b", lambda match: _nice_date(match.group()), reason)
+    return re.sub(r"(\d+) active show\(s\)",
+                  lambda match: f"{match[1]} active show{'' if int(match[1]) == 1 else 's'}", reason)
+
+
 def _todo_items(results):
     """Flatten analysis results into to-do rows: action, tone, service, why, and when."""
     items = []
@@ -815,7 +836,7 @@ def _todo_items(results):
                 why = "; ".join(f"{s['title']} returns {_nice_date(s.get('next_air_date'))}"
                                 if s.get("next_air_date") else s["title"] for s in shows) + "."
             else:
-                why = rec.get("reason", "")
+                why = _recommendation_reason(rec.get("reason", ""))
             cycle = rec.get("billing_cycle")
             cost = (f"{_money(rec.get('annual_cost'))}/yr" if cycle == "annual" else
                     f"{_money(rec.get('monthly_cost'))}/mo") if key != "untracked" else ""
@@ -825,6 +846,31 @@ def _todo_items(results):
     return items
 
 
+_CREDENTIAL_ERRORS = {
+    "auth": "Authentication rejected.",
+    "network": "Could not connect. Check your network and try again.",
+    "missing": "Not configured. Add the connection details.",
+    "unknown": "Connection test failed. Try again.",
+}
+
+
+def _credential_error_message(exc):
+    cause = exc.__cause__ or exc
+    status = getattr(getattr(cause, "response", None), "status_code", None)
+    # TMDb deliberately strips the request URL (which contains its key).
+    tmdb_error = re.fullmatch(r"TMDb request failed \(([^)]+)\)\.", str(exc))
+    kind = tmdb_error.group(1) if tmdb_error else ""
+    if isinstance(cause, (InvalidToken, TraktAuthError, smtplib.SMTPAuthenticationError)) or status in (401, 403) or kind in ("401", "403"):
+        return _CREDENTIAL_ERRORS["auth"]
+    if ((isinstance(cause, (requests.ConnectionError, requests.Timeout, OSError))
+         and not isinstance(cause, FileNotFoundError))
+            or kind in ("Timeout", "ConnectTimeout", "ReadTimeout", "ConnectionError")):
+        return _CREDENTIAL_ERRORS["network"]
+    if isinstance(cause, (FileNotFoundError, KeyError)):
+        return _CREDENTIAL_ERRORS["missing"]
+    return _CREDENTIAL_ERRORS["unknown"]
+
+
 def _record_credential_test(provider, ok, message):
     _set_setting(f"credential_test_{provider}", json.dumps(
         {"ok": ok, "at": datetime.now().astimezone().isoformat(timespec="seconds"), "message": message[:200]}))
@@ -832,7 +878,10 @@ def _record_credential_test(provider, ok, message):
 
 def _last_credential_test(provider):
     try:
-        return json.loads(_get_setting(f"credential_test_{provider}") or "null")
+        result = json.loads(_get_setting(f"credential_test_{provider}") or "null")
+        if result and not result.get("ok") and result.get("message") not in _CREDENTIAL_ERRORS.values():
+            result["message"] = _credential_error_message(RuntimeError(result.get("message", "")))
+        return result
     except ValueError:
         return None
 
@@ -886,7 +935,7 @@ def _show_sort(sort, direction):
     return sort, direction
 
 
-def _shows(q, state, sort="score", direction="desc"):
+def _shows(q, state, sort="score", direction="desc", page=None):
     sort, direction = _show_sort(sort, direction)
     query = """
         SELECT s.trakt_id, s.title, s.show_state, s.interest_score,
@@ -904,6 +953,9 @@ def _shows(q, state, sort="score", direction="desc"):
         query += " AND LOWER(s.show_state) = ?"
         params.append(state.lower())
     query += f" ORDER BY {SHOW_SORT_COLUMNS[sort]} {direction.upper()}, LOWER(s.title) ASC"
+    if page is not None:
+        query += " LIMIT ? OFFSET ?"
+        params.extend([51, (page - 1) * 50])
     with db_session() as conn:
         return [dict(row) for row in conn.execute(query, params).fetchall()]
 

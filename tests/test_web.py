@@ -36,7 +36,7 @@ class WebTests(unittest.TestCase):
             p.start()
         sc.encrypt_credentials({"trakt_client_id": "cid", "trakt_client_secret": "sec",
                                 "trakt_access_token": "old", "trakt_refresh_token": "old-r",
-                                "gmail_app_password": "keep-me"}, PASSPHRASE, quiet=True)
+                                "gmail_sender": "sender@example.test", "gmail_app_password": "keep-me"}, PASSPHRASE, quiet=True)
         self.client = webapp.create_app().test_client()
 
     def tearDown(self):
@@ -115,7 +115,8 @@ class WebTests(unittest.TestCase):
         self._sign_in()
         with mock.patch.object(webapp, "check_login", side_effect=RuntimeError("Gmail login failed (closed).")):
             r = self.client.post("/credentials/test/email", follow_redirects=True)
-        self.assertIn(b"Email test failed: Gmail login failed", r.data)
+        self.assertIn(b"Connection test failed. Try again.", r.data)
+        self.assertNotIn(b"closed", r.data)
 
     def test_todo_items_and_dates(self):
         items = webapp._todo_items({
@@ -156,6 +157,106 @@ class WebTests(unittest.TestCase):
                                                        "shows": [{"title": "Cupertino", "next_air_date": "2026-10-30"}]}]})
         self.assertEqual((items[0]["service_id"], items[0]["cost"]), (7, "$13.99/mo"))
         self.assertTrue(items[0]["why"].startswith("Cupertino returns Oct 30"))
+
+
+    def test_service_advice_and_kept_reason_copy(self):
+        self._sign_in()
+        self.client.post("/services", data={"name": "Hulu", "status": "subscribed", "monthly_cost": "10"})
+        svc = webapp.get_all_services()[0]
+        results = {"suspend": [{**svc, "reason": "No recent viewing."}],
+                   "keep": [{"name": "Other", "reason": "1 active show(s). Prepaid through 2026-10-30."}]}
+        with mock.patch.object(webapp, "run_analysis", return_value=results):
+            page = self.client.get("/services").data
+            self.assertIn(b'aria-label="Edit Hulu"', page)
+            self.assertIn(b'<p class="muted">No recent viewing.</p>', page)
+            page = self.client.get(f"/services/{svc['id']}/edit").data
+            self.assertIn(b"Pause", page)
+            self.assertIn(b"No recent viewing.", page)
+            page = self.client.get("/").data
+            self.assertIn(f"1 active show. Prepaid through {webapp._nice_date('2026-10-30')}.", page.decode())
+        self.assertEqual(webapp._recommendation_reason("2 active show(s)."), "2 active shows.")
+
+    def test_page_titles_and_flash_roles(self):
+        self._sign_in()
+        for path, title in [("/", "Dashboard"), ("/services", "Services"),
+                            ("/shows", "Shows"), ("/settings", "Settings")]:
+            page = self.client.get(path).data
+            self.assertIn(f"<title>{title} - Streamsaver</title>".encode(), page)
+            self.assertIn(b'href="#main"', page)
+        page = self.client.post("/lock", follow_redirects=True).data
+        self.assertIn(b'Signed out.', page)
+        self.assertIn(b'role="status"', page)
+        page = self.client.post("/unlock", data={"passphrase": "wrong"}).data
+        self.assertIn(b'role="alert"', page)
+        self.assertIn(b'Authentication rejected.', page)
+
+    def test_legacy_credential_failures_are_human_messages(self):
+        self._sign_in()
+        webapp._record_credential_test("email", False, "SMTP failure: private internal details")
+        result = webapp._last_credential_test("email")
+        self.assertEqual(result["message"], "Connection test failed. Try again.")
+        page = self.client.get("/credentials").data
+        self.assertNotIn(b"private internal details", page)
+
+    def test_credential_failure_kinds(self):
+        import smtplib
+        import requests
+        from cryptography.fernet import InvalidToken
+        disconnected = RuntimeError("private")
+        disconnected.__cause__ = smtplib.SMTPServerDisconnected("private")
+        cases = [(disconnected, "Could not connect. Check your network and try again."),
+                 (smtplib.SMTPConnectError(421, b"private"), "Could not connect. Check your network and try again."),
+                 (webapp.TraktAuthError("private"), "Authentication rejected."),
+                 (InvalidToken(), "Authentication rejected."),
+                 (smtplib.SMTPAuthenticationError(535, b"private"), "Authentication rejected."),
+                 (requests.HTTPError(response=mock.Mock(status_code=401)), "Authentication rejected."),
+                 (requests.Timeout("private"), "Could not connect. Check your network and try again."),
+                 (FileNotFoundError("private"), "Not configured. Add the connection details."),
+                 (RuntimeError("private"), "Connection test failed. Try again."),
+                 (RuntimeError("TMDb request failed (401)."), "Authentication rejected."),
+                 (RuntimeError("TMDb request failed (Timeout)."), "Could not connect. Check your network and try again.")]
+        for exc, message in cases:
+            with self.subTest(kind=type(exc).__name__):
+                self.assertEqual(webapp._credential_error_message(exc), message)
+        self._sign_in()
+        with mock.patch.object(webapp, "check_login", side_effect=smtplib.SMTPAuthenticationError(535, b"private")):
+            page = self.client.post("/credentials/test/email", follow_redirects=True).data
+        self.assertEqual(webapp._last_credential_test("email")["message"], "Authentication rejected.")
+        self.assertIn(b'<p class="muted connection-message">Authentication rejected.</p>', page)
+        self.assertNotIn(b"private", page)
+        with mock.patch.object(webapp, "_tmdb_client") as client:
+            page = self.client.post("/credentials/test/tmdb", follow_redirects=True).data
+            client.assert_not_called()
+        self.assertIn(b"Not configured. Add the connection details.", page)
+        self.assertEqual(self.client.post("/credentials/test/unknown").status_code, 404)
+
+    def test_shows_pagination_sort_and_filters(self):
+        self._sign_in()
+        with db.db_session() as conn:
+            conn.executemany("INSERT INTO shows (trakt_id, title, show_state) VALUES (?, ?, ?)",
+                             [(str(i), f"Series {i:03}", "active") for i in range(106)])
+            conn.execute("INSERT INTO shows (trakt_id, title, show_state) VALUES ('done', 'Done', 'completed')")
+        url = "/shows?q=Series&state=Active&sort=title&dir=asc"
+        page = self.client.get(url).data
+        self.assertIn(b"Series 049", page)
+        self.assertNotIn(b"Series 050", page)
+        self.assertIn(b'aria-sort="ascending"', page)
+        self.assertIn(b'<span class="sort-arrow" aria-hidden="true">', page)
+        self.assertIn(b'name="sort"', page)
+        self.assertIn(b'name="dir"', page)
+        self.assertIn(b'q=Series&amp;state=Active&amp;sort=title&amp;dir=asc&amp;page=2', page)
+        page = self.client.get(url + "&page=3").data
+        self.assertIn(b"Series 100", page)
+        self.assertIn(b"Series 105", page)
+        self.assertNotIn(b"Series 099", page)
+        self.assertNotIn(b'rel="next"', page)
+        for value in ["bad", "-1", "0"]:
+            self.assertIn(b"Series 000", self.client.get(url + "&page=" + value).data)
+        page = self.client.get("/shows?state=Completed&sort=invalid&dir=invalid").data
+        self.assertIn(b"Done", page)
+        self.assertNotIn(b"Abandon Done", page)
+        self.assertIn(b'aria-sort="descending"', page)
+        self.assertEqual(webapp._show_sort("invalid", "invalid"), ("score", "desc"))
 
 
 if __name__ == "__main__":

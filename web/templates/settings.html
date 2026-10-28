@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block title %}Settings - Streamsaver{% endblock %}
 {% block content %}
 <section class="hero">
   <div class="hero-copy">
@@ -32,6 +33,7 @@
   </form>
 
   <section class="panel">
+    <h2>Maintenance</h2>
     <div class="settings-group">
       <h3>Sync</h3>
       <p class="muted">Last sync {{ settings.last_trakt_sync|local_time }} · provider list from {{ settings.networks_fetched_at|local_time }}</p>
@@ -58,14 +60,18 @@
       <div class="button-row">
         <a class="button ghost" href="{{ url_for('backup_export') }}">Export backup</a>
       </div>
-      <form class="form-panel" method="post" action="{{ url_for('backup_restore') }}" enctype="multipart/form-data"
-            onsubmit="return confirm('Restore replaces all services and settings with the backup. Shows and credentials are not touched. Continue?')">
-        <label>Restore from a backup file
-          <input type="file" name="backup" accept="application/json,.json" required>
-        </label>
-        <button class="ghost danger-text">Restore backup</button>
-      </form>
     </div>
   </section>
+</section>
+<section class="panel danger-section">
+  <h2>Restore backup</h2>
+  <p class="muted">Restoring replaces all services and settings.</p>
+  <form class="form-panel" method="post" action="{{ url_for('backup_restore') }}" enctype="multipart/form-data"
+        onsubmit="return confirm('Restore replaces all services and settings with the backup. Shows and credentials are not touched. Continue?')">
+    <label>Restore from a backup file
+      <input type="file" name="backup" accept="application/json,.json" required>
+    </label>
+    <button class="ghost danger-text">Restore backup</button>
+  </form>
 </section>
 {% endblock %}

@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
 <body>
+  <a class="skip-link" href="#main">Skip to main content</a>
   <header class="topbar">
     <a class="brand" href="{{ url_for('dashboard') }}">
       <img src="{{ url_for('logos', filename='streamsaver_logo_transparent.png') }}" alt="" aria-hidden="true">
@@ -21,12 +22,12 @@
       <form method="post" action="{{ url_for('lock') }}"><button class="link-button">Sign out</button></form>
     {% endif %}
   </header>
-  <main class="page">
+  <main class="page" id="main" tabindex="-1">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         <section class="flash-stack">
           {% for category, message in messages %}
-            <div class="flash {{ category }}">{{ message }}</div>
+            <div class="flash {{ category }}" role="{{ 'alert' if category == 'error' else 'status' }}">{{ message }}</div>
           {% endfor %}
         </section>
       {% endif %}
@@ -35,6 +36,10 @@
   </main>
   <script>
     (() => {
+      const topbar = document.querySelector(".topbar");
+      new ResizeObserver(() => {
+        document.documentElement.style.setProperty("--topbar-height", `${topbar.getBoundingClientRect().height}px`);
+      }).observe(topbar);
       const loadingLabel = (text) => {
         const normalized = (text || "").trim().toLowerCase();
         if (normalized.includes("sync") || normalized.includes("backfill")) return "Syncing...";
@@ -56,8 +61,10 @@
         const form = event.target;
         const button = event.submitter || form.querySelector("button[type='submit'], button:not([type])");
         if (!button || button.classList.contains("is-loading")) return;
+        button.style.width = `${button.getBoundingClientRect().width}px`;
+        button.style.height = `${button.getBoundingClientRect().height}px`;
         button.dataset.originalText = button.textContent.trim();
-        button.innerHTML = `<span class="button-spinner" aria-hidden="true"></span><span>${loadingLabel(button.dataset.originalText)}</span>`;
+        button.innerHTML = `<span class="button-spinner" aria-hidden="true"></span><span class="visually-hidden">${loadingLabel(button.dataset.originalText)}</span>`;
         button.classList.add("is-loading");
         button.setAttribute("aria-busy", "true");
         button.disabled = true;
