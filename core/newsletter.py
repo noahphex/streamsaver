@@ -14,6 +14,7 @@ STATUS_CHANGE_KEYS = (
     "consider_non_renewal",
     "renew_soon",
     "resubscribe",
+    "untracked",  # providers you watch on but don't track: weekly-style nudge, not daily
 )
 
 FREQUENCY_OPTIONS = {
