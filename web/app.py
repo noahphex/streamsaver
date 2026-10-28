@@ -13,6 +13,7 @@ import requests
 from cryptography.fernet import InvalidToken
 from flask import (
     abort,
+    current_app,
     Flask,
     flash,
     redirect,
@@ -68,6 +69,11 @@ logger = logging.getLogger(__name__)
 
 _PUBLIC_ENDPOINTS = {"health", "unlock", "static", "logos"}
 _DISCORD_WEBHOOK_PREFIXES = ("https://discord.com/api/webhooks/", "https://discordapp.com/api/webhooks/")
+_CREDENTIAL_REQUIRED_KEYS = {
+    "trakt": ("trakt_client_id", "trakt_access_token"),
+    "tmdb": ("tmdb_api_key",),
+    "email": ("gmail_sender", "gmail_app_password"),
+}
 
 SHOW_SORT_COLUMNS = {
     "title": "LOWER(s.title)",
@@ -203,6 +209,7 @@ def create_app():
 
     @app.get("/")
     def dashboard():
+        _credentials(optional=True)
         services = get_all_services()
         totals = get_cost_totals(status_filter="subscribed")
         counts = _show_counts()
@@ -215,6 +222,8 @@ def create_app():
             counts=counts,
             settings=settings,
             todo=_todo_items(results),
+            todo_summary=_todo_summary(results),
+            issues=_connection_issues(),
             kept=results.get("keep", []),
         )
 
@@ -352,12 +361,10 @@ def create_app():
     @app.post("/credentials/test/<provider>")
     def test_credentials(provider):
         creds = _credentials()
-        if provider not in {"trakt", "tmdb", "email"}:
+        if provider not in _CREDENTIAL_REQUIRED_KEYS:
             abort(404)
         try:
-            required = {"trakt": ("trakt_client_id", "trakt_access_token"),
-                        "tmdb": ("tmdb_api_key",), "email": ("gmail_sender", "gmail_app_password")}
-            if not all(creds.get(key) for key in required[provider]):
+            if not all(creds.get(key) for key in _CREDENTIAL_REQUIRED_KEYS[provider]):
                 raise FileNotFoundError()
             if provider == "trakt":
                 user = _trakt_client(creds, _persist_trakt_tokens, _load_saved_trakt_tokens)._get("/users/settings")
@@ -852,6 +859,38 @@ _CREDENTIAL_ERRORS = {
     "missing": "Not configured. Add the connection details.",
     "unknown": "Connection test failed. Try again.",
 }
+
+
+def _todo_summary(results):
+    count = sum(len(results.get(key, [])) for key, _, _ in _TODO_ACTIONS)
+    savings = sum(
+        (rec.get("annual_cost") or 0) / 12 if rec.get("billing_cycle") == "annual"
+        else (rec.get("monthly_cost") or 0)
+        for key in ("suspend", "consider_non_renewal") for rec in results.get(key, [])
+    )
+    summary = f"{count} change{'' if count == 1 else 's'}"
+    return summary + (f" · could save {_money(savings)}/mo" if savings > 0 else "")
+
+
+def _connection_issues():
+    # None means credentials aren't loaded (locked), not missing; only report failed tests then.
+    creds = current_app.config.get("CREDS")
+    issues = []
+    for provider, name, impact, anchor in (
+        ("trakt", "Trakt", "Show sync is paused until this works.", "trakt"),
+        ("tmdb", "TMDb", "New shows can't be matched to services.", "tmdb"),
+        ("email", "Gmail", "Reports can't be emailed.", "gmail"),
+    ):
+        last_test = _last_credential_test(provider)
+        if last_test and not last_test.get("ok"):
+            message = last_test["message"]
+        elif creds is not None and not all(creds.get(key) for key in _CREDENTIAL_REQUIRED_KEYS[provider]):
+            message = _CREDENTIAL_ERRORS["missing"]
+        else:
+            continue
+        issues.append({"provider": provider, "name": name, "message": message,
+                       "impact": impact, "href": url_for("credentials") + "#" + anchor})
+    return issues
 
 
 def _credential_error_message(exc):

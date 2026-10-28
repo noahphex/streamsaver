@@ -25,7 +25,7 @@
   <main class="page" id="main" tabindex="-1">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
-        <section class="flash-stack">
+        <section class="flash-stack" tabindex="-1">
           {% for category, message in messages %}
             <div class="flash {{ category }}" role="{{ 'alert' if category == 'error' else 'status' }}">{{ message }}</div>
           {% endfor %}
@@ -36,6 +36,7 @@
   </main>
   <script>
     (() => {
+      if (document.querySelector(".flash")) document.querySelector(".flash-stack").focus();
       const topbar = document.querySelector(".topbar");
       new ResizeObserver(() => {
         document.documentElement.style.setProperty("--topbar-height", `${topbar.getBoundingClientRect().height}px`);
