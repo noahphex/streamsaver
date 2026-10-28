@@ -40,7 +40,7 @@ from core.service_manager import (
     set_bundle_providers,
     update_service,
 )
-from core.show_tracker import run_full_sync
+from core.show_tracker import backfill_service_ids, run_full_sync
 from core.tmdb_client import TMDbClient
 from core.trakt_client import TraktClient, poll_device_token, request_device_code
 from db import db_session, init_db
@@ -224,6 +224,7 @@ def create_app():
                 new_id = add_service(**payload)
                 set_bundle_providers(new_id, bundles)
                 flash("Service added.", "success")
+            backfill_service_ids()  # providers/bundles changed: re-link shows now, not at the next sync
         except Exception as exc:
             flash(f"Could not save service: {exc}", "error")
             if service_id:
@@ -235,6 +236,7 @@ def create_app():
     def delete_service_route(service_id):
         try:
             delete_service(service_id)
+            backfill_service_ids()
             flash("Service deleted.", "success")
         except Exception as exc:
             flash(f"Could not delete service: {exc}", "error")

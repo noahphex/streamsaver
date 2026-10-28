@@ -156,6 +156,49 @@ class DbTests(unittest.TestCase):
         self.assertEqual([s["name"] for s in results["suspend"]], ["Netflix"])
 
 
+    def test_relink_fixes_stale_service_links(self):
+        with db.db_session() as conn:
+            conn.execute("INSERT INTO services (name, status, tmdb_provider_id) VALUES ('Amazon Prime', 'subscribed', 9)")
+            conn.execute("INSERT INTO services (name, status, tmdb_provider_id) VALUES ('Apple TV', 'subscribed', 350)")
+            prime = conn.execute("SELECT id FROM services WHERE name = 'Amazon Prime'").fetchone()["id"]
+        self._add_show("silo", "anticipated", 23, None, service_id=prime)
+        self._add_show("orphan", "active", 20, None, service_id=prime)
+        self._add_show("manual", "active", 20, None, service_id=prime)  # no provider info: keep link
+        with db.db_session() as conn:
+            conn.execute("UPDATE shows SET primary_provider_id = 350, primary_provider = 'Apple TV' WHERE trakt_id = 'silo'")
+            conn.execute("UPDATE shows SET primary_provider_id = 337, primary_provider = 'Disney Plus' WHERE trakt_id = 'orphan'")
+
+        self.assertEqual(show_tracker.backfill_service_ids(), 2)
+
+        with db.db_session() as conn:
+            links = dict(conn.execute(
+                "SELECT shows.trakt_id, s.name FROM shows LEFT JOIN services s ON s.id = shows.service_id").fetchall())
+        self.assertEqual(links, {"silo": "Apple TV", "orphan": None, "manual": "Amazon Prime"})
+
+    def test_sync_prefers_a_provider_you_have(self):
+        with db.db_session() as conn:
+            conn.execute("INSERT INTO services (name, status, tmdb_provider_id) VALUES ('Peacock Premium Plus', 'subscribed', 387)")
+
+        class Trakt:
+            def get_show_summary(self, trakt_id): return {}
+            def get_next_episode(self, trakt_id): return None
+
+        class Tmdb:
+            def search_tv_show(self, title): return 215943
+            def get_show_providers(self, tmdb_id):
+                return [{"provider_id": 257, "provider_name": "fuboTV"},
+                        {"provider_id": 387, "provider_name": "Peacock Premium Plus"}]
+
+        now = show_tracker.datetime.now(show_tracker.timezone.utc)
+        show_tracker._upsert_show({"trakt_id": "200623", "title": "The Traitors", "events": [now, now, now],
+                                   "season": 4, "last_at_raw": now.strftime("%Y-%m-%dT%H:%M:%S.000Z")},
+                                  Trakt(), Tmdb(), "US")
+
+        with db.db_session() as conn:
+            row = conn.execute("SELECT sh.primary_provider, s.name FROM shows sh "
+                               "JOIN services s ON s.id = sh.service_id WHERE trakt_id = '200623'").fetchone()
+        self.assertEqual((row["primary_provider"], row["name"]), ("Peacock Premium Plus", "Peacock Premium Plus"))
+
     def test_restore_relinks_shows_to_services(self):
         import json
         from core.backup import import_backup
