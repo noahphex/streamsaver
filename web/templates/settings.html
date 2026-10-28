@@ -9,17 +9,6 @@
     <h2>Configuration</h2>
     <label>Report Email <input type="email" name="notification_email" value="{{ settings.notification_email }}"></label>
     <label>Provider Country <input name="provider_country" maxlength="2" value="{{ settings.provider_country or 'US' }}"></label>
-    <label>Abandoned Mode
-      <select name="abandoned_mode">
-        <option value="manual" {% if settings.abandoned_mode == "manual" %}selected{% endif %}>Manual</option>
-        <option value="auto" {% if settings.abandoned_mode == "auto" %}selected{% endif %}>Automatic</option>
-      </select>
-    </label>
-    <label>Inactivity Threshold
-      <select name="abandoned_threshold_days">
-        {% for label, value in thresholds %}<option value="{{ value }}" {% if settings.abandoned_threshold_days == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
-      </select>
-    </label>
     <label>Status Alert Frequency
       <select name="status_alert_frequency">
         <option value="daily" {% if settings.status_alert_frequency == "daily" %}selected{% endif %}>Daily</option>

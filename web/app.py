@@ -2,11 +2,13 @@ import os
 import logging
 import sys
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import requests
 from flask import (
+    abort,
     Flask,
     flash,
     redirect,
@@ -60,12 +62,8 @@ from setup_credentials import (
 logger = logging.getLogger(__name__)
 
 
-THRESHOLD_OPTIONS = [
-    ("1 month (30 days)", "30"),
-    ("3 months (90 days)", "90"),
-    ("6 months (180 days)", "180"),
-    ("12 months (365 days)", "365"),
-]
+_PUBLIC_ENDPOINTS = {"health", "unlock", "static", "logos"}
+_DISCORD_WEBHOOK_PREFIXES = ("https://discord.com/api/webhooks/", "https://discordapp.com/api/webhooks/")
 
 SHOW_SORT_COLUMNS = {
     "title": "LOWER(s.title)",
@@ -84,6 +82,9 @@ def create_app():
     app = Flask(__name__, static_folder="static", template_folder="templates")
     app.secret_key = os.environ.get("STREAMSAVER_SECRET_KEY", "streamsaver-local-change-me")
     app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
+    # Browsers won't send the session on cross-site POSTs; a sign-in lasts 30 days per browser.
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
     app.config["CREDS"] = None
     app.config["CRED_PASSPHRASE"] = None
 
@@ -98,6 +99,29 @@ def create_app():
                 "not_subscribed": "Not Subscribed",
             },
         }
+
+    @app.before_request
+    def require_sign_in():
+        # The app is reachable from the whole LAN and auto-unlocks credentials from the env,
+        # so every page needs a signed-in browser, and POSTs must come from this site.
+        if request.method == "POST" and not _same_origin():
+            abort(403)
+        if session.get("signed_in") or request.endpoint in _PUBLIC_ENDPOINTS:
+            return None
+        if request.endpoint == "setup" and not Path(CRED_FILE).exists():
+            return None  # first run: nothing to protect yet
+        if request.method == "POST":
+            abort(403)
+        return redirect(url_for("unlock"))
+
+    def _same_origin():
+        source = request.headers.get("Origin") or request.headers.get("Referer")
+        return not source or urlsplit(source).netloc == request.host
+
+    def _sign_in():
+        session.permanent = True
+        session["signed_in"] = True
+        session["unlocked_at"] = datetime.now().isoformat(timespec="seconds")
 
     @app.get("/health")
     def health():
@@ -127,7 +151,7 @@ def create_app():
                 encrypt_credentials(creds, passphrase)
                 app.config["CREDS"] = creds
                 app.config["CRED_PASSPHRASE"] = passphrase
-                session["unlocked_at"] = datetime.now().isoformat(timespec="seconds")
+                _sign_in()
                 if creds.get("notify_email"):
                     _set_setting("notification_email", creds["notify_email"])
                 if not creds["trakt_access_token"]:
@@ -151,7 +175,7 @@ def create_app():
             try:
                 app.config["CREDS"] = load_credentials(passphrase)
                 app.config["CRED_PASSPHRASE"] = passphrase
-                session["unlocked_at"] = datetime.now().isoformat(timespec="seconds")
+                _sign_in()
                 flash("Streamsaver unlocked.", "success")
                 return redirect(url_for("dashboard"))
             except Exception as exc:
@@ -270,8 +294,6 @@ def create_app():
         if request.method == "POST":
             _set_setting("notification_email", request.form.get("notification_email", "").strip())
             _set_setting("provider_country", (request.form.get("provider_country", "US").strip().upper() or "US"))
-            _set_setting("abandoned_mode", request.form.get("abandoned_mode", "manual"))
-            _set_setting("abandoned_threshold_days", request.form.get("abandoned_threshold_days", "90"))
             frequency = request.form.get("status_alert_frequency", "weekly")
             if frequency not in FREQUENCY_OPTIONS and frequency != "never":
                 frequency = "weekly"
@@ -280,10 +302,13 @@ def create_app():
             if request.form.get("clear_discord_webhook") == "1":
                 _set_setting("discord_webhook_url", "")
             elif webhook_url:
+                if not webhook_url.startswith(_DISCORD_WEBHOOK_PREFIXES):
+                    flash("Discord webhook must start with https://discord.com/api/webhooks/.", "error")
+                    return redirect(url_for("settings"))
                 _set_setting("discord_webhook_url", webhook_url)
             flash("Settings saved.", "success")
             return redirect(url_for("settings"))
-        return render_template("settings.html", settings=_settings(), thresholds=THRESHOLD_OPTIONS)
+        return render_template("settings.html", settings=_settings())
 
     @app.get("/credentials")
     def credentials():
@@ -603,8 +628,6 @@ def _settings():
     keys = [
         "notification_email",
         "provider_country",
-        "abandoned_mode",
-        "abandoned_threshold_days",
         "discord_webhook_url",
         "status_alert_frequency",
         "last_status_alert_sent",

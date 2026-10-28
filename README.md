@@ -189,7 +189,9 @@ python main.py
 
 Open `http://localhost:8092`.
 
-The legacy Tkinter GUI code is still present under `gui/`, but the maintained app path is the Flask web UI in `web/` served through `wsgi.py` and Docker.
+The app is the Flask web UI in `web/`, served through `wsgi.py` and Docker. (The old Tkinter GUI was removed.)
+
+Every page needs a signed-in browser: open Streamsaver and enter the passphrase once (each browser stays signed in for 30 days). `/health` stays public for monitoring. POSTs from other sites are rejected.
 
 ## Project Structure
 

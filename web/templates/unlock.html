@@ -2,8 +2,8 @@
 {% block title %}Unlock - Streamsaver{% endblock %}
 {% block content %}
 <section class="hero">
-  <h1>Unlock Streamsaver</h1>
-  <p>Enter the existing Streamsaver passphrase to decrypt credentials for this web session.</p>
+  <h1>Sign in to Streamsaver</h1>
+  <p>Enter your Streamsaver passphrase. This browser stays signed in for 30 days.</p>
 </section>
 {% if not has_credentials %}
   <div class="flash error">
@@ -17,6 +17,6 @@
     Passphrase
     <input type="password" name="passphrase" autocomplete="current-password" required>
   </label>
-  <button type="submit">Unlock</button>
+  <button type="submit">Sign In</button>
 </form>
 {% endblock %}

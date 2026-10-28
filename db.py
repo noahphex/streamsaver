@@ -140,8 +140,6 @@ def init_db() -> None:
             -- Seed default settings (ignored if already present)
             INSERT OR IGNORE INTO settings (key, value) VALUES
                 ('notification_email',        ''),
-                ('abandoned_mode',            'manual'),
-                ('abandoned_threshold_days',  '90'),
                 ('status_alert_frequency',    'weekly'),
                 ('last_status_alert_sent',     ''),
                 ('discord_webhook_url',        ''),
