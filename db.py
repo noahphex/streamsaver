@@ -160,6 +160,11 @@ def init_db() -> None:
         # Rebuild shows table if it's missing the 'completed' state in its CHECK constraint
         _migrate_shows_check_constraint(conn)
 
+        # After the rebuild above, so the rebuild can't drop it
+        _migrate_columns(conn, "shows", [
+            ("state_before_abandon", "TEXT"),  # restored when a show is un-abandoned
+        ])
+
     _migrate_billing_data()
     _seed_default_bundles()
     print(f"✅  Database ready: {DB_PATH}")

@@ -1,3 +1,4 @@
+import json
 import os
 import logging
 import sys
@@ -290,15 +291,22 @@ def create_app():
     @app.post("/shows/<trakt_id>/state")
     def set_show_state(trakt_id):
         state = request.form.get("state", "dormant")
-        if state not in {"abandoned", "dormant", "ignored"}:
+        if state not in {"abandoned", "dormant", "ignored", "restore"}:
             flash("Invalid show state.", "error")
             return redirect(url_for("shows"))
-        abandoned_override = 1 if state == "abandoned" else 0
         with db_session() as conn:
-            conn.execute(
-                "UPDATE shows SET show_state = ?, abandoned_override = ? WHERE trakt_id = ?",
-                (state, abandoned_override, trakt_id),
-            )
+            if state == "abandoned":
+                conn.execute(
+                    "UPDATE shows SET state_before_abandon = CASE WHEN show_state = 'abandoned' "
+                    "THEN state_before_abandon ELSE show_state END, show_state = 'abandoned', "
+                    "abandoned_override = 1 WHERE trakt_id = ?", (trakt_id,))
+            elif state == "restore":  # Unmark: back to whatever it was before Abandon
+                conn.execute(
+                    "UPDATE shows SET show_state = COALESCE(NULLIF(state_before_abandon, ''), 'dormant'), "
+                    "state_before_abandon = NULL, abandoned_override = 0 WHERE trakt_id = ?", (trakt_id,))
+            else:
+                conn.execute("UPDATE shows SET show_state = ?, abandoned_override = 0 WHERE trakt_id = ?",
+                             (state, trakt_id))
         flash("Show updated.", "success")
         return redirect(request.referrer or url_for("shows"))
 
@@ -331,6 +339,7 @@ def create_app():
             creds=_credential_view(creds),
             trakt_auth_url=_trakt_auth_url(creds.get("trakt_client_id", "")),
             trakt_device=_pending_trakt_device(),
+            tests={p: _last_credential_test(p) for p in ("trakt", "tmdb", "email")},
         )
 
     @app.post("/credentials/test/<provider>")
@@ -350,7 +359,9 @@ def create_app():
             else:
                 abort(404)
             flash(message, "success")
+            _record_credential_test(provider, True, message)
         except Exception as exc:
+            _record_credential_test(provider, False, str(exc))
             logger.warning("Credential test for %s failed: %s", provider, exc)
             flash(f"{provider.upper() if provider == 'tmdb' else provider.title()} test failed: {exc}", "error")
         return redirect(url_for("credentials"))
@@ -633,12 +644,18 @@ def create_app():
 
 def _service_form(editable=None):
     bundle_map = {}
+    next_renewal = None
     if editable:
         bundle_map[editable["id"]] = get_bundle_providers(editable["id"])
+        results = run_analysis()
+        next_renewal = next((rec.get("billing_date") for recs in results.values() for rec in recs
+                             if isinstance(rec, dict) and rec.get("id") == editable["id"]), None)
     return render_template(
         "service_form.html",
         editable=editable,
         bundle_map=bundle_map,
+        next_renewal=next_renewal,
+        prefill_name=request.args.get("name", ""),
         network_names=get_cached_network_names(),
         statuses=sorted(VALID_STATUSES),
     )
@@ -793,14 +810,31 @@ def _todo_items(results):
         for rec in results.get(key, []):
             shows = rec.get("shows") or []
             if key == "untracked":
-                why = "Watching " + ", ".join(shows)
+                why = "You're watching " + ", ".join(shows) + " here, but it isn't a service in Streamsaver."
             elif shows:
-                why = ", ".join(f"{s['title']} ({_nice_date(s.get('next_air_date'))})" for s in shows)
+                why = "; ".join(f"{s['title']} returns {_nice_date(s.get('next_air_date'))}"
+                                if s.get("next_air_date") else s["title"] for s in shows) + "."
             else:
                 why = rec.get("reason", "")
-            items.append({"key": key, "label": label, "tone": tone, "name": rec["name"],
-                          "why": why, "when": rec.get("billing_date") if key != "untracked" else ""})
+            cycle = rec.get("billing_cycle")
+            cost = (f"{_money(rec.get('annual_cost'))}/yr" if cycle == "annual" else
+                    f"{_money(rec.get('monthly_cost'))}/mo") if key != "untracked" else ""
+            items.append({"key": key, "label": label, "tone": tone, "name": rec["name"], "why": why,
+                          "when": rec.get("billing_date") if key != "untracked" else "",
+                          "cost": cost, "service_id": rec.get("id")})
     return items
+
+
+def _record_credential_test(provider, ok, message):
+    _set_setting(f"credential_test_{provider}", json.dumps(
+        {"ok": ok, "at": datetime.now().astimezone().isoformat(timespec="seconds"), "message": message[:200]}))
+
+
+def _last_credential_test(provider):
+    try:
+        return json.loads(_get_setting(f"credential_test_{provider}") or "null")
+    except ValueError:
+        return None
 
 
 def _service_sort_key(svc, next_bill):

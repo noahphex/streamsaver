@@ -15,11 +15,14 @@
   {% if todo %}
     <ul class="todo">
       {% for item in todo %}
+        {% set href = url_for('service_edit', service_id=item.service_id) if item.service_id else url_for('service_new', name=item.name) %}
         <li>
-          <span class="tone tone-{{ item.tone }}">{{ item.label }}</span>
-          <span class="name">{{ item.name }}</span>
-          <span class="when">{{ item.when|nice_date }}</span>
-          {% if item.why %}<span class="why">{{ item.why }}</span>{% endif %}
+          <a class="todo-link" href="{{ href }}">
+            <span class="tone tone-{{ item.tone }}">{{ item.label }}</span>
+            <span class="name">{{ item.name }}</span>
+            <span class="when">{% if item.cost %}{{ item.cost }}{% endif %}{% if item.cost and item.when %} · {% endif %}{% if item.when %}bills {{ item.when|nice_date }}{% endif %}</span>
+            {% if item.why %}<span class="why">{{ item.why }}</span>{% endif %}
+          </a>
         </li>
       {% endfor %}
     </ul>

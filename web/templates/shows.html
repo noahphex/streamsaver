@@ -13,7 +13,6 @@
       <option value="{{ item }}" {% if state == item %}selected{% endif %}>{{ item }}</option>
     {% endfor %}
   </select>
-  <button>Filter</button>
 </form>
 {% macro sort_link(key, label) -%}
   {% set active = sort == key %}
@@ -49,7 +48,7 @@
           <td data-label="Next">{{ show.next_air_date|nice_date }}</td>
           <td>
             <form method="post" action="{{ url_for('set_show_state', trakt_id=show.trakt_id) }}">
-              <input type="hidden" name="state" value="{{ 'dormant' if show.show_state == 'abandoned' else 'abandoned' }}">
+              <input type="hidden" name="state" value="{{ 'restore' if show.show_state == 'abandoned' else 'abandoned' }}">
               <button class="ghost small" aria-label="{{ ('Unmark ' if show.show_state == 'abandoned' else 'Abandon ') ~ show.title }}">{{ "Unmark" if show.show_state == "abandoned" else "Abandon" }}</button>
             </form>
           </td>

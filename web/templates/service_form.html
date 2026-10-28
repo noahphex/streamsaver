@@ -3,34 +3,55 @@
 {% block content %}
 <section class="hero compact">
   <div class="hero-copy">
-    <h1>{{ "Edit service" if editable else "Add service" }}</h1>
-    <p>{{ "Update subscription details and provider matching." if editable else "Add a streaming service to track cost and watch activity." }}</p>
+    <h1>{{ editable.name if editable else "Add service" }}</h1>
+    <p>{{ "Billing, status, and which TMDb providers count toward this service." if editable else "Add a streaming service to track cost and watch activity." }}</p>
   </div>
   <a class="button ghost" href="{{ url_for('services') }}">All services</a>
 </section>
 
+{% set cycle = editable.billing_cycle if editable else "monthly" %}
+{% set bundles = bundle_map[editable.id] if editable else [] %}
 <section class="panel form-panel">
-  <form method="post" action="{{ url_for('service_save') }}" class="stack">
+  <form method="post" action="{{ url_for('service_save') }}" class="stack" data-cycle="{{ cycle }}">
     {% if editable %}<input type="hidden" name="service_id" value="{{ editable.id }}">{% endif %}
-    <label>Name <input name="name" list="networks" value="{{ editable.name if editable else '' }}" required></label>
+    <label>Name <input name="name" list="networks" value="{{ editable.name if editable else prefill_name }}" required></label>
     <datalist id="networks">{% for name in network_names %}<option value="{{ name }}">{% endfor %}</datalist>
     <div class="form-grid">
       <label>Status
         <select name="status">{% for status in statuses %}<option value="{{ status }}" {% if editable and editable.status == status %}selected{% endif %}>{{ status_labels.get(status, status) }}</option>{% endfor %}</select>
       </label>
-      <label>Billing Cycle
-        <select name="billing_cycle">
-          <option value="monthly" {% if not editable or editable.billing_cycle == "monthly" %}selected{% endif %}>Monthly</option>
-          <option value="annual" {% if editable and editable.billing_cycle == "annual" %}selected{% endif %}>Annual</option>
+      <label>Billing cycle
+        <select name="billing_cycle" id="billing-cycle">
+          <option value="monthly" {% if cycle == "monthly" %}selected{% endif %}>Monthly</option>
+          <option value="annual" {% if cycle == "annual" %}selected{% endif %}>Annual</option>
         </select>
       </label>
-      <label>Monthly Cost <input type="number" name="monthly_cost" min="0" step="0.01" value="{{ editable.monthly_cost if editable else '' }}"></label>
-      <label>Annual Cost <input type="number" name="annual_cost" min="0" step="0.01" value="{{ editable.annual_cost if editable else '' }}"></label>
-      <label>Billing Date <input type="date" name="billing_anchor_date" value="{{ editable.billing_anchor_date or editable.next_billing_date if editable else '' }}"></label>
-      <label>TMDb Provider ID <input type="number" name="tmdb_provider_id" value="{{ editable.tmdb_provider_id if editable and editable.tmdb_provider_id else '' }}"></label>
+      <label class="cost cost-monthly">Monthly cost ($)
+        <input type="number" name="monthly_cost" min="0" step="0.01" value="{{ '%.2f'|format(editable.monthly_cost or 0) if editable else '' }}">
+      </label>
+      <label class="cost cost-annual">Annual cost ($)
+        <input type="number" name="annual_cost" min="0" step="0.01" value="{{ '%.2f'|format(editable.annual_cost or 0) if editable else '' }}">
+      </label>
+      <label>First billing date
+        <input type="date" name="billing_anchor_date" value="{{ editable.billing_anchor_date or editable.next_billing_date if editable else '' }}">
+        <small class="muted">{% if next_renewal %}Next renewal {{ next_renewal|nice_date }}. {% endif %}Any past billing date works; Streamsaver rolls it forward.</small>
+      </label>
     </div>
-    <label>Bundle Provider IDs <input name="bundle_provider_ids" value="{% if editable %}{{ bundle_map[editable.id]|map(attribute='tmdb_provider_id')|join(', ') }}{% endif %}" placeholder="337, 508"></label>
     <label class="check"><input type="checkbox" name="auto_renew" {% if not editable or editable.auto_renew %}checked{% endif %}> Auto renew</label>
+
+    <div class="bundles">
+      <span class="muted">Counts shows from:</span>
+      {% for b in bundles %}<span class="chip">{{ b.provider_name }}</span>{% else %}<span class="muted">only its own TMDb provider</span>{% endfor %}
+    </div>
+    <details class="more">
+      <summary>Provider matching (TMDb IDs)</summary>
+      <div class="form-grid">
+        <label>TMDb provider ID <input type="number" name="tmdb_provider_id" value="{{ editable.tmdb_provider_id if editable and editable.tmdb_provider_id else '' }}"></label>
+        <label>Bundled provider IDs <input name="bundle_provider_ids" value="{{ bundles|map(attribute='tmdb_provider_id')|join(', ') }}" placeholder="e.g. 337, 508"></label>
+      </div>
+      <p class="muted">Usually filled in for you when you pick the name from the list. Bundles let add-on channels count toward this service.</p>
+    </details>
+
     <div class="button-row">
       <button type="submit">Save service</button>
       <a class="button ghost" href="{{ url_for('services') }}">Cancel</a>
@@ -46,4 +67,14 @@
   </form>
 </section>
 {% endif %}
+<script>
+  (() => {
+    // Show only the cost field for the chosen cycle; the other keeps its value and is still submitted.
+    const form = document.querySelector("form[data-cycle]");
+    const select = document.getElementById("billing-cycle");
+    const sync = () => { form.dataset.cycle = select.value; };
+    select.addEventListener("change", sync);
+    sync();
+  })();
+</script>
 {% endblock %}

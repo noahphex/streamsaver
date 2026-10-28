@@ -25,8 +25,7 @@
         <span>{{ status_labels.get(svc.status, svc.status) }}</span>
       </div>
       <p>
-        {% if svc.billing_cycle == "annual" %}{{ svc.annual_cost|money }}/yr{% else %}{{ svc.monthly_cost|money }}/mo{% endif %}
-        {% if not (svc.monthly_cost or svc.annual_cost) %}<span class="muted">· free</span>{% endif %}
+        {% if not (svc.monthly_cost or svc.annual_cost) %}Free{% elif svc.billing_cycle == "annual" %}{{ svc.annual_cost|money }}/yr{% else %}{{ svc.monthly_cost|money }}/mo{% endif %}
       </p>
       <p class="muted">
         {% set renews = next_bill.get(svc.name) %}
