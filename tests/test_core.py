@@ -68,6 +68,35 @@ class TraktAuthTests(unittest.TestCase):
                 poll_device_token("id", "sec", "dev")
 
 
+class TokenRaceTests(unittest.TestCase):
+    def test_401_adopts_tokens_another_process_already_refreshed(self):
+        client = TraktClient(client_id="id", access_token="stale", client_secret="sec",
+                             refresh_token="dead-r", username="u",
+                             token_loader=lambda: {"access_token": "fresh", "refresh_token": "fresh-r"})
+        with mock.patch.object(client._session, "get", side_effect=[_resp(401), _resp(200, {"ok": 1})]), \
+             mock.patch("core.trakt_client.requests.post") as post:
+            self.assertEqual(client.get_show_summary("1"), {"ok": 1})
+        post.assert_not_called()  # the dead refresh token was never spent
+        self.assertEqual(client._session.headers["Authorization"], "Bearer fresh")
+        self.assertEqual(client.refresh_token, "fresh-r")
+
+    def test_saving_tokens_keeps_newer_fields_on_disk(self):
+        import setup_credentials as sc
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(sc, "CONFIG_DIR", tmp), \
+             mock.patch.object(sc, "CRED_FILE", os.path.join(tmp, "credentials.enc")), \
+             mock.patch.object(sc, "SALT_FILE", os.path.join(tmp, ".salt")):
+            sc.encrypt_credentials({"gmail_app_password": "changed-in-web-ui",
+                                    "trakt_access_token": "old", "trakt_refresh_token": "old-r"}, "pw-12345", quiet=True)
+            merged = sc.save_trakt_tokens("pw-12345", "new", "new-r")
+            on_disk = sc.load_credentials("pw-12345")
+            self.assertFalse(os.path.exists(sc.CRED_FILE + ".tmp"))
+        self.assertEqual(on_disk, merged)
+        self.assertEqual(on_disk["gmail_app_password"], "changed-in-web-ui")
+        self.assertEqual((on_disk["trakt_access_token"], on_disk["trakt_refresh_token"]), ("new", "new-r"))
+
+
 class _FakeTrakt:
     def get_all_show_history(self, start_at):
         return []
@@ -161,6 +190,14 @@ class EmailTests(unittest.TestCase):
         self.assertNotIn("<Death>", html)
         self.assertIn("Love &amp; &lt;Death&gt;", html)
         self.assertNotIn("Max <b>", html)
+
+    def test_all_clear_lists_kept_services(self):
+        from email_reports.report_builder import build_all_clear
+
+        html, _ = build_all_clear({"keep": [{"name": "Hulu", "reason": "1 active show(s)."}]})
+        self.assertIn("All Clear", html)
+        self.assertIn("Hulu", html)
+        self.assertIn("1 active show(s).", html)
 
 
 if __name__ == "__main__":

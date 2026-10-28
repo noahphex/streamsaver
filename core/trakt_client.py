@@ -40,6 +40,7 @@ class TraktClient:
         refresh_token: str = "",
         username: str = "",
         token_refresh_callback: Optional[Callable[[dict], None]] = None,
+        token_loader: Optional[Callable[[], dict]] = None,
     ) -> None:
         self.client_id     = client_id
         self.client_secret = client_secret
@@ -47,6 +48,8 @@ class TraktClient:
         self.refresh_token = refresh_token
         self.username      = username
         self._token_refresh_callback = token_refresh_callback
+        # Returns the saved {"access_token", "refresh_token"}; checked before refreshing.
+        self._token_loader = token_loader
         self._session      = requests.Session()
         self._session.headers.update(self._build_headers())
         logger.debug(
@@ -147,6 +150,21 @@ class TraktClient:
 
     def _refresh_access_token(self) -> bool:
         """Refresh the access token when Trakt returns 401."""
+        # Trakt rotates refresh tokens, and the web app and scheduler each hold a copy.
+        # If the other one already refreshed, adopt its saved tokens instead of spending a dead refresh token.
+        if self._token_loader:
+            try:
+                saved = self._token_loader()
+            except Exception as exc:
+                logger.warning("Could not read saved Trakt tokens: %s", exc)
+                saved = {}
+            if saved.get("access_token") and saved["access_token"] != self.access_token:
+                self.access_token = saved["access_token"]
+                self.refresh_token = saved.get("refresh_token") or self.refresh_token
+                self._refresh_headers()
+                logger.info("Using Trakt tokens refreshed by another Streamsaver process.")
+                return True
+            self.refresh_token = saved.get("refresh_token") or self.refresh_token
         if not (self.client_id and self.client_secret and self.refresh_token):
             return False
         try:

@@ -15,6 +15,7 @@ import os
 import base64
 import getpass
 import json
+import time
 import webbrowser
 
 import requests
@@ -64,8 +65,11 @@ def encrypt_credentials(data: dict, passphrase: str, quiet: bool = False) -> Non
     key    = _derive_key(passphrase, salt)
     fernet = Fernet(key)
     token  = fernet.encrypt(json.dumps(data).encode())
-    with open(CRED_FILE, "wb") as f:
+    # Write-then-rename: the web app and scheduler both save here, and a torn write would lose everything.
+    tmp = CRED_FILE + ".tmp"
+    with open(tmp, "wb") as f:
         f.write(token)
+    os.replace(tmp, CRED_FILE)
     if not quiet:
         print(f"\n✅  Credentials saved to: {CRED_FILE}")
 
@@ -82,6 +86,29 @@ def load_credentials(passphrase: str) -> dict:
     with open(CRED_FILE, "rb") as f:
         token = f.read()
     return json.loads(fernet.decrypt(token).decode())
+
+
+def load_trakt_tokens(passphrase: str) -> dict:
+    """The Trakt tokens currently on disk (another container may have refreshed them)."""
+    creds = load_credentials(passphrase)
+    return {
+        "access_token":  creds.get("trakt_access_token", ""),
+        "refresh_token": creds.get("trakt_refresh_token", ""),
+    }
+
+
+def save_trakt_tokens(passphrase: str, access_token: str, refresh_token: str = "") -> dict:
+    """
+    Merge new Trakt tokens into the credentials on disk and return the merged dict.
+    Merging (instead of writing this process's in-memory copy) keeps a stale copy from
+    overwriting newer Gmail/TMDb changes made through the web UI.
+    """
+    creds = load_credentials(passphrase)
+    creds["trakt_access_token"] = access_token
+    if refresh_token:
+        creds["trakt_refresh_token"] = refresh_token
+    encrypt_credentials(creds, passphrase, quiet=True)
+    return creds
 
 
 # ── Wizard ─────────────────────────────────────────────────────────────────────
@@ -103,66 +130,44 @@ def _prompt(label: str, secret: bool = False, default: str = "") -> str:
 
 def _trakt_oauth_flow(client_id: str, client_secret: str) -> tuple[str, str]:
     """
-    Run the Trakt PIN-based OAuth flow.
+    Authorize Streamsaver with a Trakt device code.
 
-    Opens the Trakt authorization page in the default browser, asks the user
-    to enter the displayed PIN, then exchanges it for access + refresh tokens.
+    Trakt's browser PIN page hangs on their new sign-in site, so the wizard shows a
+    short code to enter at trakt.tv/activate and waits for approval.
 
     Returns:
         (access_token, refresh_token)
     """
-    auth_url = (
-        f"{TRAKT_OAUTH_AUTHORIZE}"
-        f"?response_type=code"
-        f"&client_id={client_id}"
-        f"&redirect_uri={TRAKT_REDIRECT_URI}"
-    )
+    from core.trakt_client import poll_device_token, request_device_code
 
-    print("\n  Opening Trakt authorization page in your browser…")
-    print(f"  If it doesn't open, visit:\n    {auth_url}\n")
-    webbrowser.open(auth_url)
-
-    print("  After authorizing, Trakt will display a PIN code.")
-    while True:
-        pin = input("  Enter the PIN from Trakt: ").strip()
-        if pin:
-            break
-        print("  ⚠  PIN cannot be empty.")
-
-    print("  Exchanging PIN for access token…")
     try:
-        resp = requests.post(
-            TRAKT_OAUTH_TOKEN,
-            json={
-                "code":          pin,
-                "client_id":     client_id,
-                "client_secret": client_secret,
-                "redirect_uri":  TRAKT_REDIRECT_URI,
-                "grant_type":    "authorization_code",
-            },
-            headers={
-                "User-Agent":    "Streamsaver/1.0",
-                "Content-Type":  "application/json",
-                "Accept":        "application/json",
-            },
-            timeout=15,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        code = request_device_code(client_id)
     except requests.RequestException as exc:
-        print(f"\n  ❌  Token exchange failed: {exc}")
-        print("  Please check your Client ID and Client Secret and try again.")
+        print(f"\n  ❌  Could not start Trakt sign-in: {exc}")
+        print("  Please check your Client ID and try again.")
         raise SystemExit(1)
 
-    access_token  = data.get("access_token", "")
-    refresh_token = data.get("refresh_token", "")
+    print(f"\n  Go to {code['verification_url']} and enter this code:\n")
+    print(f"      {code['user_code']}\n")
+    webbrowser.open(code["verification_url"])
+    print("  Waiting for approval…")
 
-    if not access_token:
-        print(f"\n  ❌  No access token in response: {data}")
-        raise SystemExit(1)
+    deadline = time.time() + int(code["expires_in"])
+    while time.time() < deadline:
+        time.sleep(int(code.get("interval", 5)))
+        try:
+            tokens = poll_device_token(client_id, client_secret, code["device_code"])
+        except RuntimeError as exc:
+            print(f"\n  ❌  {exc}")
+            raise SystemExit(1)
+        except requests.RequestException:
+            continue  # transient network error: keep waiting
+        if tokens:
+            print("  ✅  Authorization successful!\n")
+            return tokens["access_token"], tokens.get("refresh_token", "")
 
-    print("  ✅  Authorization successful!\n")
-    return access_token, refresh_token
+    print("\n  ❌  The code expired before it was approved. Run the wizard again.")
+    raise SystemExit(1)
 
 
 def run_wizard() -> None:

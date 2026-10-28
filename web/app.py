@@ -45,7 +45,7 @@ from core.tmdb_client import TMDbClient
 from core.trakt_client import TraktClient, poll_device_token, request_device_code
 from db import db_session, init_db
 from email_reports.mailer import send_report
-from email_reports.report_builder import build_report
+from email_reports.report_builder import build_all_clear, build_report
 from setup_credentials import (
     CRED_FILE,
     TRAKT_OAUTH_AUTHORIZE,
@@ -53,6 +53,8 @@ from setup_credentials import (
     TRAKT_REDIRECT_URI,
     encrypt_credentials,
     load_credentials,
+    load_trakt_tokens,
+    save_trakt_tokens,
 )
 
 logger = logging.getLogger(__name__)
@@ -128,6 +130,9 @@ def create_app():
                 session["unlocked_at"] = datetime.now().isoformat(timespec="seconds")
                 if creds.get("notify_email"):
                     _set_setting("notification_email", creds["notify_email"])
+                if not creds["trakt_access_token"]:
+                    flash("Credentials saved. Now sign in to Trakt with a device code.", "success")
+                    return redirect(url_for("credentials"))
                 flash("Credentials saved and Streamsaver unlocked.", "success")
                 return redirect(url_for("settings"))
             except Exception as exc:
@@ -420,7 +425,7 @@ def create_app():
             creds = _credentials()
             force_backfill = request.form.get("force_backfill") == "1"
             results = run_full_sync(
-                _trakt_client(creds, _persist_trakt_tokens),
+                _trakt_client(creds, _persist_trakt_tokens, _load_saved_trakt_tokens),
                 _tmdb_client(creds),
                 force_backfill=force_backfill,
             )
@@ -456,7 +461,12 @@ def create_app():
             if not notify_email:
                 raise RuntimeError("No notification email configured.")
             sent = _send_analysis_reports(creds, notify_email)
-            flash(f"Analysis complete. {sent} email(s) sent.", "success")
+            if sent:
+                flash(f"Analysis complete. {sent} email(s) sent.", "success")
+            else:
+                # A manual run should always produce an email; the nightly job stays quiet instead.
+                _send_all_clear(creds, notify_email)
+                flash("Analysis complete: nothing to change. Sent an all-clear summary.", "success")
         except Exception as exc:
             flash(f"Analysis failed: {exc}", "error")
         return redirect(request.referrer or url_for("dashboard"))
@@ -538,12 +548,20 @@ def create_app():
         if tokens.get("refresh_token"):
             creds["trakt_refresh_token"] = tokens["refresh_token"]
         app.config["CREDS"] = creds
-        passphrase = app.config.get("CRED_PASSPHRASE") or os.environ.get("STREAMSAVER_PASSPHRASE")
+        passphrase = _passphrase()
         if not passphrase:
             logger.warning("Trakt token refreshed but no passphrase is available; token was not persisted.")
             return
-        encrypt_credentials(creds, passphrase, quiet=True)
+        # Merge into the file on disk, then adopt it, so newer saved changes win over this copy.
+        app.config["CREDS"] = save_trakt_tokens(passphrase, tokens["access_token"], tokens.get("refresh_token", ""))
         logger.info("Persisted refreshed Trakt tokens.")
+
+    def _load_saved_trakt_tokens():
+        passphrase = _passphrase()
+        return load_trakt_tokens(passphrase) if passphrase else {}
+
+    def _passphrase():
+        return app.config.get("CRED_PASSPHRASE") or os.environ.get("STREAMSAVER_PASSPHRASE")
 
     def _save_credentials(creds):
         passphrase = app.config.get("CRED_PASSPHRASE") or os.environ.get("STREAMSAVER_PASSPHRASE")
@@ -626,7 +644,6 @@ def _setup_credentials_from_form(form):
         "trakt_client_id": "Trakt Client ID",
         "trakt_client_secret": "Trakt Client Secret",
         "trakt_username": "Trakt Username",
-        "trakt_pin": "Trakt PIN",
         "gmail_sender": "Gmail sender address",
         "gmail_app_password": "Gmail App Password",
     }
@@ -635,10 +652,12 @@ def _setup_credentials_from_form(form):
     if missing:
         raise RuntimeError(f"Missing required setup fields: {', '.join(missing)}.")
 
-    token_data = _exchange_trakt_pin(
-        values["trakt_client_id"],
-        values["trakt_client_secret"],
-        values["trakt_pin"],
+    # PIN is optional: without one, setup saves the app keys and the user signs in with a
+    # device code on the Credentials page (Trakt's PIN page often hangs).
+    pin = form.get("trakt_pin", "").strip()
+    token_data = (
+        _exchange_trakt_pin(values["trakt_client_id"], values["trakt_client_secret"], pin)
+        if pin else {"access_token": "", "refresh_token": ""}
     )
     notify_email = form.get("notify_email", "").strip() or values["gmail_sender"]
     return {
@@ -681,7 +700,7 @@ def _exchange_trakt_pin(client_id, client_secret, pin):
     return data
 
 
-def _trakt_client(creds, token_refresh_callback=None):
+def _trakt_client(creds, token_refresh_callback=None, token_loader=None):
     return TraktClient(
         client_id=creds["trakt_client_id"],
         client_secret=creds.get("trakt_client_secret", ""),
@@ -689,6 +708,7 @@ def _trakt_client(creds, token_refresh_callback=None):
         refresh_token=creds.get("trakt_refresh_token", ""),
         username=creds.get("trakt_username", ""),
         token_refresh_callback=token_refresh_callback,
+        token_loader=token_loader,
     )
 
 
@@ -772,6 +792,18 @@ def _bundle_payload(raw):
                 }
             )
     return providers
+
+
+def _send_all_clear(creds, notify_email):
+    html, attachments = build_all_clear(run_analysis())
+    send_report(
+        to_address=notify_email,
+        subject="Streamsaver: All clear - no changes recommended",
+        html_body=html,
+        attachments=attachments,
+        from_address=creds.get("gmail_sender", ""),
+        app_password=creds.get("gmail_app_password", ""),
+    )
 
 
 def _send_analysis_reports(creds, notify_email):

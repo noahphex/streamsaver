@@ -593,3 +593,33 @@ def build_digest(analysis_results: dict) -> tuple[str, Attachments] | None:
         HEADER_IMG=header_img,
     )
     return html, attachments
+
+
+def build_all_clear(analysis_results: dict) -> tuple[str, Attachments]:
+    """Short summary for a manual run with nothing actionable: each kept service and why."""
+    kept = analysis_results.get("keep", [])
+    rows = "".join(
+        f'<tr><td style="padding:10px 12px;background:{_CARD_BG};border-radius:6px;'
+        f'font-family:Arial,Helvetica,sans-serif;font-size:14px;color:{_FG};">'
+        f'<b>{escape(rec["name"])}</b><br>'
+        f'<span style="font-size:13px;color:{_FG_DIM};">{escape(rec.get("reason", ""))}</span></td></tr>'
+        f'<tr><td style="height:8px;line-height:8px;">&nbsp;</td></tr>'
+        for rec in kept
+    )
+    content = (
+        _section_header("All Clear", "No services to pause, review, or resubscribe right now.")
+        + f'<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">{rows}</table>'
+    )
+    attachments: Attachments = {}
+    header_img, header_cid, header_mime = _get_header_logo()
+    if header_cid and header_mime:
+        attachments[header_cid] = header_mime
+    html = _render(
+        _load_template(),
+        TITLE="Streamsaver — All Clear",
+        PREHEADER=escape(f"No changes recommended for {len(kept)} service(s)."),
+        CONTENT=content,
+        YEAR=str(date.today().year),
+        HEADER_IMG=header_img,
+    )
+    return html, attachments
