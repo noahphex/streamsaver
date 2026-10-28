@@ -128,8 +128,8 @@ input[type="file"]::file-selector-button { margin-right: var(--sp-2); padding: v
 .check input { width: 22px; height: 22px; min-height: 22px; flex: 0 0 22px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--sp-3); }
 .services-list .card { display: flex; flex-direction: column; position: relative; }
-.card a.card-link::after { content: ""; position: absolute; inset: 0; border-radius: 8px; }
-.card a.card-link:focus-visible::after { outline: 2px solid var(--pink); outline-offset: 2px; }
+.card a.card-link::after, .timeline-bill .card-link::after { content: ""; position: absolute; inset: 0; border-radius: 8px; }
+.card a.card-link:focus-visible::after, .timeline-bill .card-link:focus-visible::after { outline: 2px solid var(--pink); outline-offset: 2px; }
 .services-list .card:hover, .services-list .card:focus-within { border-color: var(--button-border); background: color-mix(in srgb, var(--text) 3%, var(--panel)); }
 .card-head { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: var(--sp-2) var(--sp-3); align-items: start; }
 .card-head h2 { margin: 0; font-size: var(--fs-md); }
@@ -208,13 +208,13 @@ tr:hover .show-action, tr:focus-within .show-action { color: var(--text); }
 /* To-do list (dashboard) and advice pills (services) */
 .money-band p { margin: var(--sp-2) 0 0; }
 .spend-total { margin-top: var(--sp-3); font-size: var(--fs-hero); font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.15; }
-.spend-total small { font-size: var(--fs-lg); font-weight: 400; }
+.spend-total small { font-size: var(--fs-md); font-weight: 400; }
 .spend-savings { color: var(--green); }
 .empty-todo { margin: 0; }
 .snooze-panel p { margin: 0 0 var(--sp-2); }
 .todo-summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--sp-1) var(--sp-4); margin-bottom: var(--sp-4); }
 .todo-panel details { margin-top: var(--sp-4); }
-.connection-issues { border-left: 4px solid var(--red); color: color-mix(in srgb, var(--red), #fff 35%); }
+.connection-issues { border-top: 4px solid var(--red); color: color-mix(in srgb, var(--red), #fff 35%); }
 .connection-issues p { margin: 0; }
 .connection-issues p + p { margin-top: var(--sp-2); }
 .todo { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
@@ -262,16 +262,25 @@ form[data-cycle="monthly"] .cost-annual, form[data-cycle="annual"] .cost-monthly
 .view-tabs { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-4); }
 .timeline-week h2 { margin: var(--sp-5) 0 var(--sp-3); font-size: var(--fs-md); }
 .timeline-list { display: grid; gap: var(--sp-2); list-style: none; margin: 0; padding: 0; }
-.timeline-row { display: grid; grid-template-columns: 7rem 32px minmax(0, 1fr); gap: var(--sp-3); align-items: start; padding: var(--sp-4); border-radius: var(--sp-2); background: var(--panel); }
-.timeline-return { background: color-mix(in srgb, var(--accent) 5%, var(--panel)); box-shadow: inset 3px 0 0 var(--accent); }
+.timeline-row { display: grid; grid-template-columns: 6rem 32px minmax(0, 1fr); gap: var(--sp-3); align-items: center; padding: var(--sp-4); border-radius: var(--sp-2); background: var(--panel); }
+.timeline-bill { position: relative; align-items: start; border: 1px solid var(--line); }
+.bill-nothing_new { border-color: var(--yellow); }
+.timeline-bill .card-link { color: inherit; text-decoration: none; }
+.timeline-bill details, .timeline-todo { position: relative; z-index: 1; }
+.bill-heading { display: flex; justify-content: space-between; gap: var(--sp-3); align-items: baseline; }
+.bill-amount { font-size: var(--fs-md); font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.timeline-return { grid-template-columns: 6rem 24px minmax(0, 1fr); padding: var(--sp-3) var(--sp-4); background: var(--panel-2); }
 .timeline-date { color: var(--muted); font-variant-numeric: tabular-nums; font-size: var(--fs-sm); }
+.timeline-date-inline { display: none; }
 .timeline-copy { min-width: 0; overflow-wrap: anywhere; }
+.timeline-return .timeline-copy { font-size: var(--fs-sm); }
 .timeline-verdict { margin-top: var(--sp-1); color: var(--muted); font-size: var(--fs-sm); }
 .verdict-dot { display: inline-block; width: var(--sp-2); height: var(--sp-2); margin-right: var(--sp-1); border-radius: 50%; background: var(--yellow); }
 .verdict-returns .verdict-dot { background: var(--green); }
 .timeline-todo { display: inline-flex; align-items: center; min-height: 44px; }
-.timeline-preview .timeline-row { padding: var(--sp-2) var(--sp-3); background-color: var(--panel-2); }
 .timeline-preview > .button { margin-top: var(--sp-2); }
+.credential-panels { display: grid; }
+.provider-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .state-help { margin-bottom: var(--sp-3); }
 #todo { scroll-margin-top: calc(var(--topbar-height, 0px) + var(--sp-4)); }
 @media (min-width: 721px) {
@@ -288,9 +297,11 @@ form[data-cycle="monthly"] .cost-annual, form[data-cycle="annual"] .cost-monthly
   .table-wrap thead th { position: sticky; top: var(--topbar-height, 0px); z-index: 5; background: var(--panel-2); box-shadow: 0 1px 0 var(--line), 0 8px 18px rgba(0, 0, 0, .22); }
 }
 @media (max-width: 720px) {
-  .timeline-row { grid-template-columns: 32px minmax(0, 1fr); gap: var(--sp-2) var(--sp-3); }
-  .timeline-date { grid-column: 1 / -1; }
-  .timeline-preview .timeline-row { padding: var(--sp-3); }
+  .timeline-row { grid-template-columns: 32px minmax(0, 1fr); gap: var(--sp-2); padding: var(--sp-3); }
+  .timeline-return { grid-template-columns: 24px minmax(0, 1fr); min-height: 60px; padding-block: var(--sp-2); }
+  .timeline-date-desktop { display: none; }
+  .timeline-date-inline { display: inline; }
+  .return-context { display: block; }
   .topbar { position: static; flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); }
   .brand { font-size: var(--fs-md); min-height: 44px; }
   .brand img { width: 32px; height: 32px; }
@@ -298,7 +309,7 @@ form[data-cycle="monthly"] .cost-annual, form[data-cycle="annual"] .cost-monthly
   .nav > a, .nav-more > summary { flex: 1 1 auto; justify-content: center; padding: var(--sp-2) var(--sp-1); font-size: var(--fs-xs); background: var(--panel-2); }
   .nav .nav-secondary { display: none; }
   .nav-more { display: block; margin: 0; }
-  .nav-more > summary { display: flex; align-items: center; min-height: calc(var(--sp-6) + var(--sp-3)); border-radius: var(--sp-2); }
+  .nav-more > summary { display: flex; align-items: center; min-width: 44px; min-height: calc(var(--sp-6) + var(--sp-3)); border-radius: var(--sp-2); }
   .nav-extra { display: none; position: absolute; top: 100%; right: 0; min-width: 12rem; padding: var(--sp-2); background: var(--panel); border: 1px solid var(--line); border-radius: var(--sp-2); box-shadow: 0 var(--sp-2) var(--sp-4) #0008; }
   .nav-more[open] .nav-extra { display: grid; }
   .topbar > form { order: 2; margin-left: auto; }
