@@ -24,6 +24,7 @@ from datetime import date, timedelta
 from typing import Optional
 
 from db import db_session
+from core.todo import apply_snoozes
 from core.service_manager import estimated_monthly_spend, estimated_annual_spend
 
 logger = logging.getLogger(__name__)
@@ -188,6 +189,7 @@ def run_analysis() -> dict:
             "resubscribe":          [...],
             "uncertain":            [...],
             "untracked":            [{"name": provider, "shows": [titles]}],
+            "snoozed":              [...],  # recommendations with action and until
         }
     """
     result: dict[str, list] = {
@@ -198,6 +200,7 @@ def run_analysis() -> dict:
         "resubscribe":          [],
         "uncertain":            [],
         "untracked":            [],
+        "snoozed":              [],
     }
 
     today = date.today()
@@ -315,6 +318,7 @@ def run_analysis() -> dict:
 
         result["untracked"] = _untracked_providers(conn)
 
+    apply_snoozes(result, today)
     _log_summary(result)
     return result
 
@@ -362,7 +366,7 @@ def _untracked_providers(conn) -> list[dict]:
 def _log_summary(result: dict) -> None:
     logger.info(
         "Analysis — keep: %d, suspend: %d, consider_non_renewal: %d, "
-        "renew_soon: %d, resubscribe: %d, uncertain: %d, untracked: %d",
+        "renew_soon: %d, resubscribe: %d, uncertain: %d, untracked: %d, snoozed: %d",
         len(result["keep"]),
         len(result["suspend"]),
         len(result["consider_non_renewal"]),
@@ -370,4 +374,5 @@ def _log_summary(result: dict) -> None:
         len(result["resubscribe"]),
         len(result["uncertain"]),
         len(result["untracked"]),
+        len(result["snoozed"]),
     )

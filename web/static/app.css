@@ -388,10 +388,13 @@ td.title { font-weight: 600; }
 .connection-issues p { margin: 0; }
 .connection-issues p + p { margin-top: 6px; }
 .todo { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.todo li { display: block; padding: 0; background: var(--panel-2); border-radius: 8px; }
+.todo li { display: flex; align-items: center; padding: 0; background: var(--panel-2); border-radius: 8px; }
+.todo-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 18px 12px 0; }
+.snoozed { list-style: none; margin: 8px 0 0; padding: 0; color: var(--muted); }
+.snoozed li { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; }
 .todo .name { font-size: 18px; font-weight: 700; }
 .todo .why { grid-column: 1 / -1; color: var(--muted); font-size: 14px; margin-top: 4px; }
-.todo .when { color: var(--muted); font-size: 14px; white-space: nowrap; text-align: right; }
+.todo .when { grid-column: 1 / -1; color: var(--muted); font-size: 14px; }
 .tone { border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 700; justify-self: start; }
 .tone-pause       { color: var(--yellow); background: color-mix(in srgb, var(--yellow), transparent 86%); }
 .tone-review      { color: var(--orange); background: color-mix(in srgb, var(--orange), transparent 86%); }
@@ -425,14 +428,18 @@ td[data-label="Last"], td[data-label="Next"], td[data-label="Score"] { white-spa
 
 /* To-do rows are links to the service */
 .todo-link {
-  display: grid; grid-template-columns: 9.5rem minmax(0, 1fr) auto; gap: 4px 14px; align-items: baseline;
+  flex: 1; min-width: 0;
+  display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: 4px 14px; align-items: baseline;
+  overflow-wrap: anywhere;
   padding: 16px 18px; border-radius: 8px; color: inherit;
 }
 .todo-link:hover { background: color-mix(in srgb, var(--accent), transparent 90%); }
 .todo-link:hover .name { text-decoration: underline; text-underline-offset: 3px; }
 @media (max-width: 720px) {
+  .todo li { flex-direction: column; align-items: stretch; }
+  .todo-actions { padding: 0 18px 16px; }
+  .todo-actions button.small, .snoozed button.small { min-height: 44px; }
   .todo-link { grid-template-columns: 1fr; }
-  .todo .when { text-align: left; white-space: normal; }
 }
 
 /* Credentials: one row per provider */

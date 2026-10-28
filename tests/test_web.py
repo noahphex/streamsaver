@@ -48,6 +48,79 @@ class WebTests(unittest.TestCase):
         r = self.client.post("/unlock", data={"passphrase": PASSPHRASE})
         self.assertEqual(r.status_code, 302)
 
+    def test_todo_routes_validate_and_complete_actions(self):
+        from datetime import date
+        from core.service_manager import add_service, get_service
+
+        self._sign_in()
+        service_id = add_service("Max", status="subscribed", monthly_cost=10,
+                                 billing_anchor_date=date.today().isoformat())
+        self.assertEqual(self.client.post(f"/todo/{service_id}/done/bad").status_code, 400)
+        self.assertEqual(self.client.post("/todo/99999/done/suspend").status_code, 404)
+        for action in ("suspend", "resubscribe", "consider_non_renewal"):
+            response = self.client.post(f"/todo/{service_id}/done/{action}")
+            self.assertEqual((response.status_code, response.headers["Location"]), (302, "/"))
+        svc = get_service(service_id)
+        self.assertEqual((svc["status"], svc["billing_anchor_date"], svc["auto_renew"]),
+                         ("subscribed", date.today().isoformat(), 0))
+        for data in ({"name": "Max", "action": "bad"},
+                     {"name": "Missing", "action": "suspend"},
+                     {"name": "Max", "action": "untracked"}, {}):
+            self.assertEqual(self.client.post("/todo/snooze", data=data).status_code, 400)
+        self.assertEqual(self.client.post("/todo/unsnooze", data={"name": "Max", "action": "bad"}).status_code, 400)
+        self.assertEqual(self.client.get(f"/todo/{service_id}/done/suspend").status_code, 405)
+
+    def test_todo_snooze_and_unsnooze_dashboard(self):
+        from datetime import date
+        from core.service_manager import add_service
+
+        self._sign_in()
+        add_service("Max", status="subscribed", monthly_cost=10,
+                    billing_anchor_date=date.today().isoformat())
+        page = self.client.get("/").data.decode()
+        self.assertIn('aria-label="Paused it: Max"', page)
+        self.assertIn('aria-label="Not now: Max"', page)
+        self.assertIn("1 change · could save $10.00/mo", page)
+        data = {"name": "Max", "action": "suspend"}
+        page = self.client.post("/todo/snooze", data=data, follow_redirects=True).data.decode()
+        self.assertNotIn('class="todo-link"', page)
+        self.assertIn("Snoozed (1)", page)
+        self.assertIn("Snoozed Max until", page)
+        self.assertIn('aria-label="Undo: Max"', page)
+        self.assertIn("0 changes", page)
+        page = self.client.post("/todo/unsnooze", data=data, follow_redirects=True).data.decode()
+        self.assertIn('aria-label="Paused it: Max"', page)
+        self.assertNotIn("Snoozed (1)", page)
+
+    def test_snooze_uses_server_date_and_services_hide_advice(self):
+        from datetime import date, timedelta
+        from core.service_manager import add_service
+
+        self._sign_in()
+        billing = (date.today() + timedelta(days=9)).isoformat()
+        service_id = add_service("Max", status="subscribed", monthly_cost=10,
+                                 billing_anchor_date=billing)
+        response = self.client.post("/todo/snooze", data={"name": "Max", "action": "suspend",
+                                                        "until": "2099-01-01"})
+        self.assertEqual(response.status_code, 302)
+        with db.db_session() as conn:
+            self.assertEqual(conn.execute("SELECT until FROM todo_snoozes").fetchone()[0], billing)
+        self.assertNotIn('tone-pause', self.client.get("/services").data.decode())
+        self.assertNotIn('<h2>Pause</h2>', self.client.get(f"/services/{service_id}/edit").data.decode())
+
+    def test_untracked_todo_has_ignore_without_done(self):
+        self._sign_in()
+        with db.db_session() as conn:
+            conn.execute("INSERT INTO shows (trakt_id, title, show_state, primary_provider) "
+                         "VALUES ('u', 'Example show', 'active', 'Untracked')")
+        page = self.client.get("/").data.decode()
+        self.assertIn('aria-label="Ignore: Untracked"', page)
+        self.assertNotIn('/done/', page)
+        page = self.client.post("/todo/snooze", data={"name": "Untracked", "action": "untracked"},
+                                follow_redirects=True).data.decode()
+        self.assertNotIn('class="todo-link"', page)
+        self.assertIn("Snoozed (1)", page)
+
     def test_pages_need_sign_in_but_health_does_not(self):
         self.assertEqual(self.client.get("/health").status_code, 200)
         r = self.client.get("/settings")

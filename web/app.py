@@ -26,6 +26,7 @@ from flask import (
 )
 
 from core.analysis import run_analysis
+from core.todo import ACTIONABLE_KEYS, DONE_LABELS, default_until, mark_done, snooze, unsnooze
 from core.backup import export_backup, import_backup
 from core.newsletter import (
     FREQUENCY_OPTIONS,
@@ -225,7 +226,47 @@ def create_app():
             todo_summary=_todo_summary(results),
             issues=_connection_issues(),
             kept=results.get("keep", []),
+            snoozed=[{**rec, "label": next(label for key, label, _ in _TODO_ACTIONS if key == rec["action"])}
+                     for rec in results.get("snoozed", [])],
         )
+
+    @app.post("/todo/<int:service_id>/done/<action>")
+    def todo_done(service_id, action):
+        if action not in DONE_LABELS:
+            abort(400)
+        rec = next((rec for rec in run_analysis().get(action, []) if rec.get("id") == service_id), None)
+        try:
+            service = mark_done(service_id, action, rec)
+        except LookupError:
+            abort(404)
+        message = {"suspend": "as paused", "resubscribe": "as resubscribed",
+                   "consider_non_renewal": "as having renewal turned off"}[action]
+        flash(f"Marked {service['name']} {message}. Change it on the Services page.", "success")
+        return redirect(url_for("dashboard"))
+
+    @app.post("/todo/snooze")
+    def todo_snooze():
+        name = request.form.get("name", "")
+        action = request.form.get("action", "")
+        if action not in ACTIONABLE_KEYS:
+            abort(400)
+        rec = next((rec for rec in run_analysis().get(action, []) if rec["name"] == name), None)
+        if rec is None:
+            abort(400)
+        until = default_until(rec)
+        snooze(name, action, until)
+        flash(f"Snoozed {name} until {_nice_date(until)}.", "success")
+        return redirect(url_for("dashboard"))
+
+    @app.post("/todo/unsnooze")
+    def todo_unsnooze():
+        name = request.form.get("name", "")
+        action = request.form.get("action", "")
+        if not name or action not in ACTIONABLE_KEYS:
+            abort(400)
+        unsnooze(name, action)
+        flash(f"Unsnoozed {name}.", "success")
+        return redirect(url_for("dashboard"))
 
     @app.get("/about")
     def about():
@@ -849,7 +890,8 @@ def _todo_items(results):
                     f"{_money(rec.get('monthly_cost'))}/mo") if key != "untracked" else ""
             items.append({"key": key, "label": label, "tone": tone, "name": rec["name"], "why": why,
                           "when": rec.get("billing_date") if key != "untracked" else "",
-                          "cost": cost, "service_id": rec.get("id")})
+                          "cost": cost, "service_id": rec.get("id"),
+                          "has_done": key in DONE_LABELS, "done_label": DONE_LABELS.get(key)})
     return items
 
 
