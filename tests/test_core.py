@@ -156,6 +156,33 @@ class DbTests(unittest.TestCase):
         self.assertEqual([s["name"] for s in results["suspend"]], ["Netflix"])
 
 
+    def test_returning_favourite_on_unsubscribed_service_suggests_resubscribe(self):
+        with db.db_session() as conn:
+            conn.execute(
+                "INSERT INTO services (name, status, monthly_cost, billing_cycle, billing_anchor_date) "
+                "VALUES ('Paramount+', 'unsubscribed', 8.0, 'monthly', NULL)")  # unsubscribed: usually no date
+            sid = conn.execute("SELECT id FROM services").fetchone()["id"]
+        # 28 is the highest score the tracker can produce
+        self._add_show("cup", "anticipated", 28, date.today().isoformat(),
+                       next_air=(date.today() + timedelta(days=2)).isoformat(), service_id=sid)
+
+        results = analysis.run_analysis()
+
+        self.assertEqual([r["name"] for r in results["resubscribe"]], ["Paramount+"])
+
+    def test_free_service_is_never_flagged(self):
+        with db.db_session() as conn:
+            conn.execute(
+                "INSERT INTO services (name, status, monthly_cost, annual_cost, billing_cycle, billing_anchor_date) "
+                "VALUES ('Apple TV', 'subscribed', 0, 0, 'annual', ?)",
+                ((date.today() + timedelta(days=10)).isoformat(),))
+
+        results = analysis.run_analysis()
+
+        flagged = [r["name"] for key in ("suspend", "consider_non_renewal", "uncertain") for r in results[key]]
+        self.assertEqual(flagged, [])
+        self.assertEqual([r["name"] for r in results["keep"]], ["Apple TV"])
+
     def test_relink_fixes_stale_service_links(self):
         with db.db_session() as conn:
             conn.execute("INSERT INTO services (name, status, tmdb_provider_id) VALUES ('Amazon Prime', 'subscribed', 9)")
