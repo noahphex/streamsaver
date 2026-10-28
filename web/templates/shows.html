@@ -40,6 +40,7 @@
 {%- endmacro %}
 <section class="table-wrap">
   <table>
+    <colgroup><col class="col-title"><col class="col-state"><col class="col-score"><col class="col-service"><col class="col-provider"><col class="col-date"><col class="col-date"><col class="col-action"></colgroup>
     <thead>
       <tr>
         <th aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort == 'title' else 'none' }}">{{ sort_link('title', 'Title') }}</th>
@@ -58,7 +59,7 @@
           <td data-label="Title" class="title">{{ show.title }}</td>
           <td data-label="State"><span class="state {{ show.show_state }}">{{ show.show_state }}</span></td>
           <td data-label="Score"><span class="score" title="Score {{ show.interest_score }} of {{ score_max }}"><meter min="0" value="{{ show.interest_score }}" max="{{ score_max }}" aria-hidden="true"></meter><span aria-hidden="true">{{ show.interest_score }}</span><span class="visually-hidden">Score {{ show.interest_score }} of {{ score_max }}</span></span></td>
-          <td data-label="Service">{{ show.service_name or "—" }}<span class="mobile-next"> · {{ show.next_air_date|nice_date or "—" }}</span></td>
+          <td data-label="Service">{{ show.service_name or "—" }}{% if show.next_air_date %}<span class="mobile-next"> · {{ show.next_air_date|nice_date }}</span>{% endif %}</td>
           <td data-label="Provider">{{ show.primary_provider if show.primary_provider and show.primary_provider != show.service_name else "" }}</td>
           <td data-label="Last">{{ show.last_watch_date|nice_date }}</td>
           <td data-label="Next">{{ show.next_air_date|nice_date or "—" }}</td>

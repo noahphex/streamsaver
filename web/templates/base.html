@@ -15,9 +15,20 @@
     </a>
     {% if signed_in %}
       <nav class="nav" aria-label="Main">
-        {% for endpoint, label in [("dashboard", "Dashboard"), ("services", "Services"), ("shows", "Shows"), ("settings", "Settings"), ("credentials", "Credentials"), ("about", "About")] %}
+        {% for endpoint, label in [("dashboard", "Dashboard"), ("services", "Services"), ("shows", "Shows"), ("settings", "Settings")] %}
           <a href="{{ url_for(endpoint) }}" {% if request.endpoint == endpoint %}aria-current="page"{% endif %}>{{ label }}</a>
         {% endfor %}
+        {% for endpoint, label in [("credentials", "Credentials"), ("about", "About")] %}
+          <a class="nav-secondary" href="{{ url_for(endpoint) }}" {% if request.endpoint == endpoint %}aria-current="page"{% endif %}>{{ label }}</a>
+        {% endfor %}
+        <details class="nav-more">
+          <summary>More</summary>
+          <div class="nav-extra">
+            {% for endpoint, label in [("credentials", "Credentials"), ("about", "About")] %}
+              <a href="{{ url_for(endpoint) }}" {% if request.endpoint == endpoint %}aria-current="page"{% endif %}>{{ label }}</a>
+            {% endfor %}
+          </div>
+        </details>
       </nav>
       <form method="post" action="{{ url_for('lock') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="quiet">Sign out</button></form>
     {% endif %}
@@ -37,9 +48,6 @@
   <script>
     (() => {
       if (document.querySelector(".flash")) document.querySelector(".flash-stack").focus();
-      if (matchMedia("(max-width: 720px)").matches) {
-        document.querySelector('.nav [aria-current="page"]')?.scrollIntoView({inline: "nearest", block: "nearest"});
-      }
       const topbar = document.querySelector(".topbar");
       new ResizeObserver(() => {
         document.documentElement.style.setProperty("--topbar-height", `${topbar.getBoundingClientRect().height}px`);

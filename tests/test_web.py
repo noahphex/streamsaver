@@ -225,13 +225,13 @@ class WebTests(unittest.TestCase):
         self.assertIn('aria-label="Paused it: Max"', page)
         self.assertIn('aria-label="Not now: Max"', page)
         self.assertIn("1 change", page)
-        self.assertEqual(page.count("could save $10.00/mo"), 1)
+        self.assertEqual(page.count("Could save $10.00/mo"), 1)
         data = {"name": "Max", "action": "suspend"}
         page = self._post("/todo/snooze", data=data, follow_redirects=True).data.decode()
         self.assertNotIn('class="todo-link"', page)
         self.assertIn("Snoozed (1)", page)
         self.assertIn("Snoozed Max until", page)
-        self.assertIn('aria-label="Undo: Max"', page)
+        self.assertIn('aria-label="Undo snooze: Max"', page)
         self.assertNotIn("0 changes", page)
         page = self._post("/todo/unsnooze", data=data, follow_redirects=True).data.decode()
         self.assertIn('aria-label="Paused it: Max"', page)
@@ -443,13 +443,13 @@ class WebTests(unittest.TestCase):
             page = self.client.get("/").data.decode()
         for client in (trakt, tmdb, gmail):
             client.assert_not_called()
-        self.assertIn('<h1>To do</h1>', page)
+        self.assertIn('<h1>Your streaming</h1>', page)
         self.assertNotIn("Streaming Cost Control", page)
         self.assertIn("1 change", page)
-        self.assertEqual(page.count("could save $15.00/mo"), 1)
+        self.assertEqual(page.count("Could save $15.00/mo"), 1)
         self.assertIn("Synced never", page)
         self.assertIn('role="status" aria-label="Connections need attention"', page)
-        self.assertLess(page.index("Connections need attention"), page.index("<h1>To do</h1>"))
+        self.assertLess(page.index("Connections need attention"), page.index("<h1>Your streaming</h1>"))
         self.assertIn('href="/credentials#tmdb"', page)
         self.assertIn('href="/credentials#gmail"', page)
         self.assertIn("Fix Gmail →", page)
@@ -463,7 +463,7 @@ class WebTests(unittest.TestCase):
             page = self.client.get("/").data.decode()
         self.assertNotIn("Connections need attention", page)
         self.assertNotIn("0 changes", page)
-        self.assertIn("Nothing to change.</strong> 1 service worth keeping right now.", page)
+        self.assertIn("All 1 service is earning their keep.", page)
         self.assertIn("Why each service is kept", page)
 
 
@@ -559,7 +559,7 @@ class WebTests(unittest.TestCase):
             conn.execute("UPDATE services SET icon_path = ? WHERE id = ?", ("assets/logos/8.jpg", service_id))
         page = self.client.get("/").data.decode()
         self.assertIn('class="spend-total">$12.00', page)
-        self.assertIn("next 30 days · 1 bills", page)
+        self.assertIn("next 30 days · 1 bill", page)
         self.assertIn('src="/logos/8.jpg"', page)
         self.assertIn('width="32" height="32" alt="" loading="lazy"', page)
         self.assertIn('onerror="this.remove()"', page)
@@ -572,12 +572,73 @@ class WebTests(unittest.TestCase):
         self._post("/todo/snooze", data={"name": "Prime Video Amazon Channel", "action": "suspend"})
         page = self.client.get(f"/services/{service_id}/edit").data.decode()
         self.assertIn("Snoozed until", page)
-        self.assertIn('aria-label="Undo: Prime Video Amazon Channel"', page)
+        self.assertIn('aria-label="Undo snooze: Prime Video Amazon Channel"', page)
         with mock.patch.object(webapp, "run_analysis", return_value={"untracked": [{"name": "Untracked TV", "shows": ["A show"]}]}):
             page = self.client.get("/").data.decode()
         self.assertIn('aria-hidden="true">UT</span>', page)
         self.assertNotIn('src="/logos/8.jpg"', page)
-        self.assertNotIn("could save", page)
+        self.assertNotIn("Could save", page)
+
+    def test_money_band_distinguishes_monthly_and_due_spend(self):
+        from core.service_manager import add_service
+        self._sign_in()
+        add_service("Annual TV", status="subscribed", billing_cycle="annual",
+                                 annual_cost=120, billing_anchor_date=date.today().isoformat())
+        rec = {**webapp.get_all_services()[0], "billing_date": date.today().isoformat(),
+               "reason": "No recent viewing."}
+        for results, savings in [({"suspend": [rec]}, True), ({"keep": [rec]}, False), ({}, False)]:
+            with self.subTest(results=list(results)), mock.patch.object(webapp, "run_analysis", return_value=results):
+                page = self.client.get("/").data.decode()
+                self.assertEqual(page.count("<h1>"), 1)
+                self.assertIn('<h1>Your streaming</h1>', page)
+                self.assertIn('<h2>To do</h2>', page)
+                self.assertIn('class="spend-total">$10.00<small class="muted">/mo', page)
+                self.assertIn('$120.00/yr', page)
+                self.assertNotIn('class="metrics', page)
+                self.assertLess(page.index('class="panel money-band"'), page.index('<h2>To do</h2>'))
+                if savings:
+                    self.assertIn('$120.00 due in the next 30 days · 1 bill', page)
+                    self.assertIn('Could save $10.00/mo', page)
+                    self.assertIn('>Spending</p>', page)
+                else:
+                    self.assertNotIn('Could save', page)
+                    self.assertIn(f'All {1 if results else 0} service{"" if results else "s"} {"is" if results else "are"} earning their keep.', page)
+                    self.assertIn('Nothing to change.', page)
+
+    def test_keep_reason_footer_and_single_card_link(self):
+        from core.service_manager import add_service
+        self._sign_in()
+        service_id = add_service("Paramount+ Amazon Channel", status="subscribed", monthly_cost=10)
+        rec = {**webapp.get_all_services()[0], "reason": "1 active show(s). Viewer activity: High."}
+        with mock.patch.object(webapp, "run_analysis", return_value={"keep": [rec]}):
+            page = self.client.get('/services').data.decode()
+            self.assertIn('<p class="muted">1 active show. Viewer activity: High.</p>', page)
+            self.assertEqual(page.count(f'href="/services/{service_id}/edit"'), 1)
+            self.assertNotIn('card-edit', page)
+            page = self.client.get('/').data.decode()
+            kept = page[page.index('<ul class="kept">'):]
+            self.assertIn('service-mark-small', kept)
+            self.assertIn('<strong>Paramount+<span class="service-channel">Amazon Channel</span></strong>', kept)
+            page = self.client.get(f'/services/{service_id}/edit').data.decode()
+            heading = page[page.index('<h1>'):page.index('</h1>')]
+            self.assertNotIn('service-mark-small', heading)
+            self.assertIn('Paramount+<span class="service-channel">Amazon Channel</span>', heading)
+        rec.update(action="suspend", until=date.today().isoformat())
+        with mock.patch.object(webapp, "run_analysis", return_value={"snoozed": [rec]}):
+            page = self.client.get(f'/services/{service_id}/edit').data.decode()
+            self.assertIn('1 active show. Viewer activity: High.', page)
+            self.assertIn('>Undo snooze</button>', page)
+
+    def test_trakt_button_tier(self):
+        self._sign_in()
+        for saved, test_ok, secondary in [(True, True, True), (True, None, True),
+                                          (True, False, False), (False, True, False)]:
+            with self.subTest(saved=saved, test_ok=test_ok):
+                self.client.application.config['CREDS']['trakt_access_token'] = 'test-token' if saved else ''
+                with mock.patch.object(webapp, '_last_credential_test', return_value=(
+                        None if test_ok is None else {'ok': test_ok, 'at': '', 'message': ''})):
+                    page = self.client.get('/credentials').data.decode()
+                self.assertIn('<button type="submit"' + (' class="ghost"' if secondary else '') + '>Get Trakt code</button>', page)
 
     def test_show_scores_and_stale_dates(self):
         from datetime import timedelta
@@ -593,6 +654,8 @@ class WebTests(unittest.TestCase):
         self.assertIn('title="Score 14 of 28"', page)
         self.assertIn('value="14" max="28"', page)
         self.assertEqual(page.count('data-label="Next">—</td>'), 2)
+        self.assertEqual(page.count('class="mobile-next"'), 1)
+        self.assertNotIn('class="mobile-next"> · —', page)
         self.assertIn(webapp._nice_date(str(today + timedelta(days=2))), page)
         page = self.client.get("/shows?q=missing").data.decode()
         self.assertIn("0–0 of 0", page)
