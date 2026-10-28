@@ -113,14 +113,12 @@ class TraktClient:
                 if resp.status_code == 401 and not refreshed and self._refresh_access_token():
                     refreshed = True
                     continue
-                # Log full response detail to help diagnose auth failures
+                # Never log request headers: they carry the bearer token and API key.
                 logger.error(
                     "Trakt auth error %s — URL: %s\n"
-                    "  Request headers: %s\n"
                     "  Response headers: %s\n"
                     "  Response body: %s",
                     resp.status_code, url,
-                    dict(self._session.headers),
                     dict(resp.headers),
                     resp.text[:500],
                 )
@@ -169,10 +167,17 @@ class TraktClient:
             if not access_token:
                 logger.warning("Trakt token refresh response did not include an access token.")
                 return False
-            self.access_token = access_token
-            self.refresh_token = payload.get("refresh_token", self.refresh_token)
-            self._refresh_headers()
-            if self._token_refresh_callback:
+        except (requests.RequestException, ValueError) as exc:
+            logger.warning("Trakt token refresh failed: %s", exc)
+            return False
+
+        self.access_token = access_token
+        self.refresh_token = payload.get("refresh_token", self.refresh_token)
+        self._refresh_headers()
+        logger.info("Refreshed Trakt access token.")
+        if self._token_refresh_callback:
+            # The refresh itself worked, so a save failure must not fail this request.
+            try:
                 self._token_refresh_callback(
                     {
                         "access_token": self.access_token,
@@ -183,14 +188,9 @@ class TraktClient:
                         "token_type": payload.get("token_type"),
                     }
                 )
-            logger.info("Refreshed Trakt access token.")
-            return True
-        except requests.RequestException as exc:
-            logger.warning("Trakt token refresh failed: %s", exc)
-            return False
-        except Exception as exc:
-            logger.warning("Trakt token refresh persistence failed: %s", exc)
-            return False
+            except Exception as exc:
+                logger.error("Refreshed Trakt tokens could not be saved: %s", exc)
+        return True
 
     # ── Watch history ──────────────────────────────────────────────────────────
 
@@ -402,3 +402,47 @@ class TraktClient:
         params = {"query": query, "limit": limit, "extended": "full"}
         result = self._get(path, params=params)
         return result or []
+
+
+# ── Device-code login ──────────────────────────────────────────────────────────
+# Trakt's browser PIN page (urn:ietf:wg:oauth:2.0:oob) hangs on their new sign-in site;
+# device codes only need the user to type a short code at trakt.tv/activate.
+# https://trakt.docs.apiary.io/#reference/authentication-devices
+
+_DEVICE_HEADERS = {"User-Agent": "Streamsaver/2.5", "Content-Type": "application/json"}
+_DEVICE_ERRORS = {
+    404: "Invalid device code.",
+    409: "This code was already used.",
+    410: "The code expired. Start again.",
+    418: "Authorization was denied on Trakt.",
+}
+
+
+def request_device_code(client_id: str) -> dict:
+    """Start device login. Returns device_code, user_code, verification_url, expires_in, interval."""
+    resp = requests.post(f"{TRAKT_API_BASE}/oauth/device/code", json={"client_id": client_id},
+                         headers=_DEVICE_HEADERS, timeout=15)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def poll_device_token(client_id: str, client_secret: str, device_code: str) -> Optional[dict]:
+    """
+    Check once whether the user approved the device code.
+    Returns the token payload when approved, None while still pending.
+    Raises RuntimeError when the code can no longer succeed.
+    """
+    resp = requests.post(
+        f"{TRAKT_API_BASE}/oauth/device/token",
+        json={"code": device_code, "client_id": client_id, "client_secret": client_secret},
+        headers=_DEVICE_HEADERS,
+        timeout=15,
+    )
+    if resp.status_code == 200:
+        data = resp.json()
+        if not data.get("access_token"):
+            raise RuntimeError("Trakt did not return an access token.")
+        return data
+    if resp.status_code in (400, 429):  # pending / polling too fast
+        return None
+    raise RuntimeError(_DEVICE_ERRORS.get(resp.status_code, f"Trakt returned {resp.status_code}."))

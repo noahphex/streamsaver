@@ -302,3 +302,12 @@ th { color: var(--muted); font-weight: 600; }
   td { display: flex; justify-content: space-between; gap: 16px; border: 0; }
   td::before { content: attr(data-label); color: var(--muted); }
 }
+
+.device-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--accent);
+  margin: 0.5rem 0 1rem;
+}

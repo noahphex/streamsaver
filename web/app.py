@@ -42,7 +42,7 @@ from core.service_manager import (
 )
 from core.show_tracker import run_full_sync
 from core.tmdb_client import TMDbClient
-from core.trakt_client import TraktClient
+from core.trakt_client import TraktClient, poll_device_token, request_device_code
 from db import db_session, init_db
 from email_reports.mailer import send_report
 from email_reports.report_builder import build_report
@@ -285,7 +285,56 @@ def create_app():
             "credentials.html",
             creds=_credential_view(creds),
             trakt_auth_url=_trakt_auth_url(creds.get("trakt_client_id", "")),
+            trakt_device=_pending_trakt_device(),
         )
+
+    @app.post("/credentials/trakt/device/start")
+    def start_trakt_device_login():
+        try:
+            creds = _credentials()
+            code = request_device_code(creds["trakt_client_id"])
+            # Server-side only (single Gunicorn worker): the device code is a credential until it expires.
+            app.config["TRAKT_DEVICE"] = {
+                "device_code": code["device_code"],
+                "user_code": code["user_code"],
+                "verification_url": code["verification_url"],
+                "expires_at": datetime.now().timestamp() + int(code["expires_in"]),
+            }
+        except Exception as exc:
+            logger.exception("Trakt device login start failed")
+            flash(f"Could not start Trakt device login: {exc}", "error")
+        return redirect(url_for("credentials"))
+
+    @app.post("/credentials/trakt/device/finish")
+    def finish_trakt_device_login():
+        pending = _pending_trakt_device()
+        if not pending:
+            flash("No Trakt device login in progress, or the code expired. Start again.", "error")
+            return redirect(url_for("credentials"))
+        try:
+            creds = dict(_credentials())
+            tokens = poll_device_token(creds["trakt_client_id"], creds.get("trakt_client_secret", ""),
+                                       pending["device_code"])
+            if tokens is None:
+                flash(f"Not approved yet. Enter {pending['user_code']} at {pending['verification_url']}, then click Finish again.", "error")
+                return redirect(url_for("credentials"))
+            creds["trakt_access_token"] = tokens["access_token"]
+            creds["trakt_refresh_token"] = tokens.get("refresh_token", "")
+            _save_credentials(creds)
+            app.config.pop("TRAKT_DEVICE", None)
+            flash("Trakt authorization updated. The nightly job picks it up on its next run.", "success")
+        except Exception as exc:
+            app.config.pop("TRAKT_DEVICE", None)
+            logger.exception("Trakt device login failed")
+            flash(f"Trakt device login failed: {exc}", "error")
+        return redirect(url_for("credentials"))
+
+    def _pending_trakt_device():
+        pending = app.config.get("TRAKT_DEVICE")
+        if pending and pending["expires_at"] > datetime.now().timestamp():
+            return pending
+        app.config.pop("TRAKT_DEVICE", None)
+        return None
 
     @app.post("/credentials/trakt")
     def update_trakt_credentials():

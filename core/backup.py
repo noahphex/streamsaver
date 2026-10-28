@@ -185,4 +185,14 @@ def import_backup(path: str) -> tuple[int, int]:
     except Exception as exc:
         logger.warning("Post-restore icon backfill failed: %s", exc)
 
+    # Deleting services nulled every shows.service_id (ON DELETE SET NULL); re-link them now
+    # instead of waiting for the next successful sync, or every service looks unwatched.
+    try:
+        from core.show_tracker import backfill_service_ids
+
+        relinked = backfill_service_ids()
+        logger.info("Post-restore show relink updated %d show(s).", relinked)
+    except Exception as exc:
+        logger.warning("Post-restore show relink failed: %s", exc)
+
     return len(services), settings_count

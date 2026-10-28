@@ -16,6 +16,7 @@ attachments: dict[cid_str, MIMEImage] — deduplicated, ready to embed.
 
 import os
 from datetime import date
+from html import escape
 from email.mime.image import MIMEImage
 from typing import Literal
 
@@ -162,7 +163,7 @@ def _build_card(
         f'style="padding:0 16px 0 0;vertical-align:top;">'
         f'<p style="font-family:Arial,Helvetica,sans-serif;font-size:16px;'
         f'font-weight:700;color:{_FG};margin:0 0 10px;line-height:1.3;">'
-        f'{name}</p>'
+        f'{escape(name)}</p>'
         f'<p style="margin:0 0 8px;">{_badge(badge_label, badge_bg, badge_fg)}</p>'
         + (
             f'<p style="font-family:Arial,Helvetica,sans-serif;font-size:11px;'
@@ -232,7 +233,7 @@ def _build_card(
         f'text-transform:uppercase;margin:0 0 6px;">Analysis</p>'
         f'<p style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
         f'font-weight:400;color:{_FG_DIM};margin:0;line-height:20px;">'
-        f'{reason}</p>'
+        f'{escape(reason)}</p>'
     )
 
     # Left accent border if type has one
@@ -405,7 +406,7 @@ def _build_resubscribe_content(recommendations: list[dict]) -> tuple[str, str, A
             f'<tr>'
             f'<td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
             f'color:{_FG};padding:8px 0;border-top:1px solid {_ROW_SEP};">'
-            f'{s["title"]}</td>'
+            f'{escape(s["title"])}</td>'
             f'<td align="right" width="120" '
             f'style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
             f'color:{_ORANGE};padding:8px 0;white-space:nowrap;'
@@ -465,7 +466,7 @@ def build_report(
         attachments[header_cid] = header_mime
     html = _render(
         _load_template(),
-        TITLE=title, PREHEADER=preheader, CONTENT=content,
+        TITLE=title, PREHEADER=escape(preheader), CONTENT=content,
         YEAR=str(date.today().year), HEADER_IMG=header_img,
     )
     return html, attachments
@@ -586,7 +587,7 @@ def build_digest(analysis_results: dict) -> tuple[str, Attachments] | None:
     html = _render(
         _load_template(),
         TITLE="Streamsaver — Daily Subscription Digest",
-        PREHEADER=" · ".join(preview_parts),
+        PREHEADER=escape(" · ".join(preview_parts)),
         CONTENT=summary_metrics + "\n".join(sections),
         YEAR=str(date.today().year),
         HEADER_IMG=header_img,

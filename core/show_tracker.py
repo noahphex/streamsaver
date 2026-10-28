@@ -5,7 +5,8 @@ Author: Noah Lee
 
 Incremental sync strategy:
   - First sync: pulls last 1 year of episode history
-  - Subsequent syncs: pulls only activity since last_trakt_sync timestamp
+  - Subsequent syncs: pulls activity since last_trakt_sync, but never less than the
+    30-day scoring window, so scores stay current; unseen shows decay to dormant
   - Groups episodes by show, computes interest scores from timestamps
   - Looks up TMDb providers for automatic show→service matching
   - Caps at 200 shows (most recently watched first)
@@ -26,6 +27,9 @@ logger = logging.getLogger(__name__)
 # Interest scoring thresholds (from build_admin.txt spec)
 _SCORE_ACTIVE     = 15
 _SCORE_OCCASIONAL = 5
+
+# _compute_interest_score only rewards watches within this many days
+_SCORE_WINDOW_DAYS = 30
 
 # Maximum shows to keep in hot storage
 _MAX_SHOWS = 200
@@ -146,8 +150,11 @@ def sync_watched_shows(
             last_sync_str,
             start_at,
         )
-    elif last_sync_str:
-        start_at = last_sync_str
+    elif last_sync_dt:
+        # Scores only look back _SCORE_WINDOW_DAYS, so always re-read that window: every show
+        # watched inside it gets a full rescore, and any show outside it decays to dormant.
+        start_dt = min(last_sync_dt, now - timedelta(days=_SCORE_WINDOW_DAYS))
+        start_at = start_dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
         logger.info("Incremental sync since %s", start_at)
     else:
         start_at = (now - timedelta(days=365)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
@@ -157,7 +164,8 @@ def sync_watched_shows(
     history = client.get_all_show_history(start_at=start_at)
     logger.info("Fetched %d Trakt show history event(s).", len(history))
     if not history:
-        logger.info("No new watch history since last sync.")
+        logger.info("No watch history in the sync window.")
+        _decay_unseen_shows(set())
         _update_last_sync(now)
         return 0
 
@@ -214,6 +222,7 @@ def sync_watched_shows(
         except Exception as exc:
             logger.error("Error syncing show '%s': %s", show_data["title"], exc)
 
+    _decay_unseen_shows(set(show_map))
     _update_last_sync(now)
     backfill_service_ids()
     logger.info("Synced %d shows.", count)
@@ -245,8 +254,9 @@ def _upsert_show(
             trakt_status = summary.get("status")
             # Check for upcoming season/episode
             next_ep = client.get_next_episode(trakt_id)
-            if next_ep:
-                next_air_date = _to_date_str(next_ep.get("first_aired"))
+            # "" (not None) when Trakt confirms no next episode, so the UPDATE's COALESCE
+            # clears an old air date instead of keeping it forever.
+            next_air_date = (_to_date_str(next_ep.get("first_aired")) if next_ep else None) or ""
 
             # Completed: show is definitively over
             if trakt_status in ("ended", "canceled"):
@@ -409,6 +419,35 @@ def backfill_service_ids() -> int:
     if updated:
         logger.info("Backfilled service_id for %d shows.", updated)
     return updated
+
+
+def _decay_unseen_shows(seen_ids: set[str]) -> int:
+    """
+    Drop shows not watched in the scoring window to dormant (score 0).
+
+    Without this, a show's score froze at its last sync and it stayed "active" forever.
+    Anticipated shows only decay once their air date has passed.
+    """
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    with db_session() as conn:
+        rows = conn.execute(
+            """
+            SELECT trakt_id FROM shows
+            WHERE abandoned_override = 0
+              AND (show_state IN ('active', 'occasional')
+                   OR (show_state = 'anticipated'
+                       AND (next_air_date IS NULL OR next_air_date = '' OR next_air_date < ?)))
+            """,
+            (today,),
+        ).fetchall()
+        stale = [(r["trakt_id"],) for r in rows if r["trakt_id"] not in seen_ids]
+        conn.executemany(
+            "UPDATE shows SET interest_score = 0, show_state = 'dormant' WHERE trakt_id = ?",
+            stale,
+        )
+    if stale:
+        logger.info("Decayed %d show(s) not watched in the last %d days to dormant.", len(stale), _SCORE_WINDOW_DAYS)
+    return len(stale)
 
 
 def _update_last_sync(now: datetime) -> None:
