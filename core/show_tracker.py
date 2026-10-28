@@ -24,10 +24,6 @@ from core.tmdb_client import TMDbClient
 
 logger = logging.getLogger(__name__)
 
-# Maximum viewing activity (10 + 5 + 5) plus the returning-show boost (8).
-MAX_INTEREST_SCORE = 28
-
-
 # Interest scoring thresholds (from build_admin.txt spec)
 _SCORE_ACTIVE     = 15
 _SCORE_OCCASIONAL = 5
