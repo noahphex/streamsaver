@@ -37,8 +37,10 @@ class TMDbClient:
             resp.raise_for_status()
             return resp.json()
         except requests.RequestException as exc:
-            logger.error("TMDb GET %s failed: %s", path, exc)
-            raise
+            # The exception text contains the full URL, including ?api_key=… — never log or show it.
+            status = getattr(exc.response, "status_code", None)
+            logger.error("TMDb GET %s failed: %s", path, status or type(exc).__name__)
+            raise RuntimeError(f"TMDb request failed ({status or type(exc).__name__}).") from None
 
     def get_streaming_providers(self) -> list[dict]:
         """

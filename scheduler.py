@@ -201,6 +201,8 @@ def run_daily_job(creds: dict, passphrase: str | None = None) -> bool:
         subject_parts.append(f"Renew {len(email_results['renew_soon'])} soon")
     if email_results.get("resubscribe"):
         subject_parts.append(f"Resubscribe {len(email_results['resubscribe'])}")
+    if email_results.get("untracked"):
+        subject_parts.append(f"{len(email_results['untracked'])} untracked service(s)")
     subject = "Streamsaver Digest — " + " · ".join(subject_parts) if subject_parts else "Streamsaver Daily Digest"
 
     try:

@@ -170,6 +170,28 @@ class DbTests(unittest.TestCase):
 
         self.assertEqual([r["name"] for r in results["resubscribe"]], ["Paramount+"])
 
+    def test_untracked_providers_are_grouped_and_weekly(self):
+        from core.newsletter import filter_status_alerts_for_frequency, mark_status_alerts_sent
+        from email_reports.report_builder import build_digest
+
+        self._add_show("a", "active", 20, date.today().isoformat())
+        self._add_show("b", "anticipated", 15, date.today().isoformat(),
+                       next_air=(date.today() + timedelta(days=5)).isoformat())
+        self._add_show("c", "dormant", 0, "2025-01-01")  # not watching: ignored
+        with db.db_session() as conn:
+            conn.execute("UPDATE shows SET primary_provider = 'Crunchyroll'")
+
+        results = analysis.run_analysis()
+        self.assertEqual(results["untracked"], [{"name": "Crunchyroll", "shows": ["Show a", "Show b"]}])
+
+        html, _ = build_digest(results)
+        self.assertIn("Watching on Services You Don", html)
+        self.assertIn("Show a, Show b", html)
+
+        mark_status_alerts_sent()  # weekly default: held back until 7 days pass
+        held, _ = filter_status_alerts_for_frequency(results)
+        self.assertEqual(held["untracked"], [])
+
     def test_free_service_is_never_flagged(self):
         with db.db_session() as conn:
             conn.execute(

@@ -1,26 +1,17 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="hero">
-  <h1>Settings</h1>
-  <p>Notification settings, provider region, sync controls, and portable backups.</p>
+  <div class="hero-copy">
+    <h1>Settings</h1>
+    <p>Where reports go, how often, syncing, and backups.</p>
+  </div>
 </section>
 <section class="grid two">
   <form class="panel form-panel" method="post">
-    <h2>Configuration</h2>
-    <label>Report Email <input type="email" name="notification_email" value="{{ settings.notification_email }}"></label>
-    <label>Provider Country <input name="provider_country" maxlength="2" value="{{ settings.provider_country or 'US' }}"></label>
-    <label>Abandoned Mode
-      <select name="abandoned_mode">
-        <option value="manual" {% if settings.abandoned_mode == "manual" %}selected{% endif %}>Manual</option>
-        <option value="auto" {% if settings.abandoned_mode == "auto" %}selected{% endif %}>Automatic</option>
-      </select>
-    </label>
-    <label>Inactivity Threshold
-      <select name="abandoned_threshold_days">
-        {% for label, value in thresholds %}<option value="{{ value }}" {% if settings.abandoned_threshold_days == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
-      </select>
-    </label>
-    <label>Status Alert Frequency
+    <h2>Notifications</h2>
+    <label>Report email <input type="email" name="notification_email" value="{{ settings.notification_email }}"></label>
+    <label>Provider country <input name="provider_country" maxlength="2" value="{{ settings.provider_country or 'US' }}"></label>
+    <label>Status alerts
       <select name="status_alert_frequency">
         <option value="daily" {% if settings.status_alert_frequency == "daily" %}selected{% endif %}>Daily</option>
         <option value="weekly" {% if settings.status_alert_frequency in ("", "weekly") %}selected{% endif %}>Weekly</option>
@@ -28,37 +19,53 @@
         <option value="never" {% if settings.status_alert_frequency == "never" %}selected{% endif %}>Never</option>
       </select>
     </label>
-    <p class="muted">Last status alert: {{ settings.last_status_alert_sent or "never" }}</p>
-    <label>Discord Webhook URL
-      <input type="password" name="discord_webhook_url" autocomplete="off" placeholder="{% if settings.discord_webhook_configured %}Leave blank to keep current webhook{% else %}Paste Discord webhook URL{% endif %}">
+    <p class="muted">Last status alert: {{ settings.last_status_alert_sent|nice_date or "never" }}</p>
+    <label>Discord webhook URL
+      <input type="password" name="discord_webhook_url" autocomplete="off" placeholder="{% if settings.discord_webhook_configured %}Saved: blank keeps it{% else %}https://discord.com/api/webhooks/…{% endif %}">
     </label>
     <label class="check">
       <input type="checkbox" name="clear_discord_webhook" value="1">
       Remove saved Discord webhook
     </label>
-    <p class="muted">Discord alerts: {{ "configured" if settings.discord_webhook_configured else "not configured" }}</p>
-    <button>Save Settings</button>
+    <p class="muted">Discord alerts: {{ "on" if settings.discord_webhook_configured else "off" }}</p>
+    <button>Save settings</button>
   </form>
+
   <section class="panel">
-    <h2>Actions</h2>
-    <p class="muted">Last sync: {{ settings.last_trakt_sync or "never" }}</p>
-    <p class="muted">Provider cache: {{ settings.networks_fetched_at or "never" }}</p>
-    <div class="button-row vertical">
-      <form method="post" action="{{ url_for('action_sync') }}"><button>Sync Trakt Now</button></form>
-      <form method="post" action="{{ url_for('action_sync') }}"><input type="hidden" name="force_backfill" value="1"><button>Backfill Last Year</button></form>
-      <form method="post" action="{{ url_for('action_refresh_providers') }}"><button>Refresh Provider List</button></form>
-      <form method="post" action="{{ url_for('action_analyze') }}"><button>Run Analysis & Send Report</button></form>
-      <form method="post" action="{{ url_for('action_test_discord') }}"><button>Test Discord Alert</button></form>
-      <a class="button ghost" href="{{ url_for('credentials') }}">Update Credentials</a>
-      <a class="button ghost" href="{{ url_for('backup_export') }}">Export Backup</a>
+    <div class="settings-group">
+      <h3>Sync</h3>
+      <p class="muted">Last sync {{ settings.last_trakt_sync|local_time }} · provider list from {{ settings.networks_fetched_at|local_time }}</p>
+      <div class="button-row">
+        <form method="post" action="{{ url_for('action_sync') }}"><button>Sync now</button></form>
+        <form method="post" action="{{ url_for('action_sync') }}"><input type="hidden" name="force_backfill" value="1"><button class="ghost">Backfill last year</button></form>
+        <form method="post" action="{{ url_for('action_refresh_providers') }}"><button class="ghost">Refresh provider list</button></form>
+      </div>
+    </div>
+    <div class="settings-group">
+      <h3>Reports</h3>
+      <div class="button-row">
+        <form method="post" action="{{ url_for('action_analyze') }}"><button class="ghost">Analyze &amp; email report</button></form>
+        <form method="post" action="{{ url_for('action_test_discord') }}"><button class="ghost">Test Discord alert</button></form>
+      </div>
+    </div>
+    <div class="settings-group">
+      <h3>Credentials</h3>
+      <p class="muted">Trakt, TMDb and Gmail sign-ins, with a connection test for each.</p>
+      <a class="button ghost" href="{{ url_for('credentials') }}">Open credentials</a>
+    </div>
+    <div class="settings-group">
+      <h3>Data</h3>
+      <div class="button-row">
+        <a class="button ghost" href="{{ url_for('backup_export') }}">Export backup</a>
+      </div>
+      <form class="form-panel" method="post" action="{{ url_for('backup_restore') }}" enctype="multipart/form-data"
+            onsubmit="return confirm('Restore replaces all services and settings with the backup. Shows and credentials are not touched. Continue?')">
+        <label>Restore from a backup file
+          <input type="file" name="backup" accept="application/json,.json" required>
+        </label>
+        <button class="ghost danger-text">Restore backup</button>
+      </form>
     </div>
   </section>
-</section>
-<section class="panel form-panel">
-  <h2>Restore Backup</h2>
-  <form method="post" action="{{ url_for('backup_restore') }}" enctype="multipart/form-data" onsubmit="return confirm('Restore will replace services and settings. Continue?')">
-    <input type="file" name="backup" accept="application/json,.json" required>
-    <button class="danger">Restore Backup</button>
-  </form>
 </section>
 {% endblock %}

@@ -187,6 +187,7 @@ def run_analysis() -> dict:
             "renew_soon":           [...],
             "resubscribe":          [...],
             "uncertain":            [...],
+            "untracked":            [{"name": provider, "shows": [titles]}],
         }
     """
     result: dict[str, list] = {
@@ -196,6 +197,7 @@ def run_analysis() -> dict:
         "renew_soon":           [],
         "resubscribe":          [],
         "uncertain":            [],
+        "untracked":            [],
     }
 
     today = date.today()
@@ -311,6 +313,8 @@ def run_analysis() -> dict:
                         "shows": resubscribe_shows,
                     })
 
+        result["untracked"] = _untracked_providers(conn)
+
     _log_summary(result)
     return result
 
@@ -335,14 +339,35 @@ def _build_summary(svc: dict, billing_date: date, signals: dict, cycle: str, day
     }
 
 
+def _untracked_providers(conn) -> list[dict]:
+    """
+    Providers you're watching on that match no configured service, with their shows.
+    Catches gaps like Apple TV going unnoticed because no service existed for it.
+    """
+    rows = conn.execute(
+        """
+        SELECT primary_provider, title FROM shows
+        WHERE service_id IS NULL
+          AND COALESCE(primary_provider, '') <> ''
+          AND show_state IN ('active', 'occasional', 'anticipated')
+        ORDER BY primary_provider, interest_score DESC, title
+        """
+    ).fetchall()
+    grouped: dict[str, list[str]] = {}
+    for row in rows:
+        grouped.setdefault(row["primary_provider"], []).append(row["title"])
+    return [{"name": provider, "shows": titles} for provider, titles in grouped.items()]
+
+
 def _log_summary(result: dict) -> None:
     logger.info(
         "Analysis — keep: %d, suspend: %d, consider_non_renewal: %d, "
-        "renew_soon: %d, resubscribe: %d, uncertain: %d",
+        "renew_soon: %d, resubscribe: %d, uncertain: %d, untracked: %d",
         len(result["keep"]),
         len(result["suspend"]),
         len(result["consider_non_renewal"]),
         len(result["renew_soon"]),
         len(result["resubscribe"]),
         len(result["uncertain"]),
+        len(result["untracked"]),
     )

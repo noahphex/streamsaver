@@ -3,43 +3,66 @@
 <section class="hero">
   <div class="hero-copy">
     <h1>Streaming Cost Control</h1>
-    <p>Subscribed spend, watch signals, renewal decisions, and Trakt sync status.</p>
+    <p>What to change, what you spend, and what you're watching.</p>
   </div>
-  <img class="hero-logo" src="{{ url_for('logos', filename='streamsaver_header_transparent.png') }}" alt="Streamsaver">
 </section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>To do</h2>
+    <span class="muted">Synced {{ settings.last_trakt_sync|local_time }}</span>
+  </div>
+  {% if todo %}
+    <ul class="todo">
+      {% for item in todo %}
+        <li>
+          <span class="tone tone-{{ item.tone }}">{{ item.label }}</span>
+          <span class="name">{{ item.name }}</span>
+          <span class="when">{{ item.when|nice_date }}</span>
+          {% if item.why %}<span class="why">{{ item.why }}</span>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="all-clear">
+      <p><strong>Nothing to change.</strong> {{ kept|length }} service{{ "" if kept|length == 1 else "s" }} worth keeping right now.</p>
+    </div>
+  {% endif %}
+  {% if kept %}
+    <details>
+      <summary>Why each service is kept</summary>
+      <ul class="kept">
+        {% for rec in kept %}<li><strong>{{ rec.name }}</strong>: {{ rec.reason }}</li>{% endfor %}
+      </ul>
+    </details>
+  {% endif %}
+</section>
+
 <section class="metrics">
-  <div><span>${{ "%.2f"|format(totals.monthly_total) }}</span><small>Monthly</small></div>
-  <div><span>${{ "%.2f"|format(totals.annual_total) }}</span><small>Annualized</small></div>
+  <div><span>{{ totals.monthly_total|money }}</span><small>Monthly</small></div>
+  <div><span>{{ totals.annual_total|money }}</span><small>Annualized</small></div>
   <div><span>{{ services|selectattr("status", "equalto", "subscribed")|list|length }}</span><small>Subscribed</small></div>
-  <div><span>{{ settings.last_trakt_sync[:10] if settings.last_trakt_sync else "Never" }}</span><small>Last Sync</small></div>
+  <div><span>{{ todo|length }}</span><small>To do</small></div>
 </section>
+
 <section class="grid two">
   <div class="panel">
     <h2>Actions</h2>
     <div class="button-row">
-      <form method="post" action="{{ url_for('action_sync') }}"><button>Sync Trakt</button></form>
-      <form method="post" action="{{ url_for('action_sync') }}"><input type="hidden" name="force_backfill" value="1"><button>Backfill Trakt</button></form>
-      <form method="post" action="{{ url_for('action_refresh_providers') }}"><button>Refresh Providers</button></form>
-      <form method="post" action="{{ url_for('action_analyze') }}"><button>Analyze & Email</button></form>
+      <form method="post" action="{{ url_for('action_sync') }}"><button>Sync now</button></form>
+      <form method="post" action="{{ url_for('action_analyze') }}"><button class="ghost">Analyze &amp; email report</button></form>
+      <a class="button ghost" href="{{ url_for('settings') }}">More in Settings</a>
     </div>
   </div>
   <div class="panel">
-    <h2>Recommendations</h2>
-    <ul class="compact-list">
-      {% for key, count in recommendations.items() %}
-        <li><span>{{ key.replace("_", " ").title() }}</span><strong>{{ count }}</strong></li>
+    <h2>Show states</h2>
+    <div class="chips">
+      {% for key, count in counts.items() %}
+        <a class="chip state {{ key }}" href="{{ url_for('shows', state=key.title()) }}">{{ key.title() }} <strong>{{ count }}</strong></a>
+      {% else %}
+        <span class="muted">No shows synced yet.</span>
       {% endfor %}
-    </ul>
-  </div>
-</section>
-<section class="panel">
-  <h2>Show States</h2>
-  <div class="chips">
-    {% for key, count in counts.items() %}
-      <a class="chip" href="{{ url_for('shows', state=key.title()) }}">{{ key.title() }} <strong>{{ count }}</strong></a>
-    {% else %}
-      <span class="muted">No shows synced yet.</span>
-    {% endfor %}
+    </div>
   </div>
 </section>
 {% endblock %}
