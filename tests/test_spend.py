@@ -35,3 +35,13 @@ def test_potential_savings_monthly_and_annual():
 def test_duplicate_analysis_entries_are_only_one_bill():
     rec = dict(id=1, name="A", status="subscribed", monthly_cost=0.1, billing_date="2026-10-28")
     assert spend.next_30_days_spend({"keep": [rec], "snoozed": [rec]}, date(2026, 10, 28)) == {"total": 0.1, "count": 1}
+
+
+def test_headline_links_action_count_and_uses_first_tone():
+    for count in (1, 3):
+        todo = [{"color": "cyan"}] * count
+        result = spend.spend_headline({"monthly_total": 0}, {"bills": []}, 0, 0, todo)
+        assert result["sub_parts"][-1] == {
+            "text": f"{count} {'thing' if count == 1 else 'things'} to change.",
+            "tone": "cyan", "emphasis": True, "href": "#todo"}
+        assert "days, and " in "".join(p["text"] for p in result["sub_parts"])

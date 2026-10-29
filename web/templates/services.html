@@ -2,7 +2,7 @@
 {% block title %}Services - Streamsaver{% endblock %}
 {% from "_service_mark.html" import service_mark, service_title with context %}
 {% from "_icons.html" import icon %}
-{% macro price(svc) %}{% if not (svc.monthly_cost or svc.annual_cost) %}Free{% elif svc.billing_cycle == 'annual' %}<span class="num">{{ svc.annual_cost|money }}</span><small>/yr</small>{% else %}<span class="num">{{ svc.monthly_cost|money }}</span><small>/mo</small>{% endif %}{% endmacro %}
+{% macro price(svc) %}{% if not (svc.monthly_cost or svc.annual_cost) %}Free{% elif svc.billing_cycle == 'annual' %}<span class="price-amount">{{ svc.annual_cost|money }}</span><small>/yr</small>{% else %}<span class="price-amount">{{ svc.monthly_cost|money }}</span><small>/mo</small>{% endif %}{% endmacro %}
 {% block content %}
 <section class="hero"><div class="hero-copy"><h1>Services <a class="button ghost small" href="{{ url_for('service_new') }}">{{ icon('plus') }} Add</a></h1></div></section>
 {% set paying = services|selectattr('status', 'equalto', 'subscribed')|list %}
@@ -14,7 +14,7 @@
 <div class="ledger-row">
   {{ service_mark(svc.name, svc.icon_path) }}
   <div class="service-identity"><strong><a class="card-link" aria-label="Edit {{ svc.name }}" href="{{ url_for('service_edit', service_id=svc.id) }}">{{ service_title(svc.name) }}</a></strong></div>
-  <div class="ledger-detail"><span class="muted">{% if renews %}{{ 'Prepaid through' if svc.billing_cycle == 'annual' else 'Renews' }} {{ renews|nice_date }}{% else %}No billing date{% endif %}</span>
+  <div class="ledger-detail"><span class="muted">{% if not (svc.monthly_cost or svc.annual_cost) %}Free{% elif renews %}{{ 'Prepaid through' if svc.billing_cycle == 'annual' else 'Renews' }} {{ renews|nice_date }}{% else %}No billing date{% endif %}</span>
     {% if tip %}<span class="pill {{ {'pause': 'yellow', 'review': 'yellow', 'renew': 'green', 'keep': 'green', 'resubscribe': 'cyan', 'untracked': 'pink'}.get(tip.tone, 'quiet') }}">{{ tip.label }}</span>{% endif %}
   </div>
   <strong class="ledger-price">{{ price(svc) }}</strong>
@@ -30,8 +30,8 @@
 {% set returning = off_returns.get(svc.id) %}
 <article class="off-tile">
 {{ service_mark(svc.name, svc.icon_path, 28) }}
-<div class="service-identity"><strong><a class="card-link" aria-label="Edit {{ svc.name }}" href="{{ url_for('service_edit', service_id=svc.id) }}">{{ service_title(svc.name) }}</a></strong><small class="muted">{{ price(svc) }}, not paying</small></div>
-{% if returning %}<div class="off-return"><span>{{ returning.title }} returns {{ returning.date|nice_date }}</span><a class="resubscribe-link" href="{{ url_for('dashboard') + '#todo' if returning.resubscribe_todo else url_for('service_edit', service_id=svc.id) }}">Resubscribe {{ icon('chevron-right') }}</a></div>{% endif %}
+<div class="service-identity"><strong><a class="card-link" aria-label="Edit {{ svc.name }}" href="{{ url_for('service_edit', service_id=svc.id) }}">{{ service_title(svc.name) }}</a></strong><small class="muted">{{ price(svc) }} · not paying</small></div>
+{% if returning %}<div class="off-return"><span>{{ returning.title }} returns {{ returning.date|nice_date }}</span>{% if returning.snoozed_until %}<span class="muted">Snoozed until {{ returning.snoozed_until|nice_date }}</span>{% else %}<a class="resubscribe-link" href="{{ url_for('dashboard') + '#todo' if returning.resubscribe_todo else url_for('service_edit', service_id=svc.id) }}">Resubscribe {{ icon('chevron-right') }}</a>{% endif %}</div>{% endif %}
 </article>
 {% else %}<p class="muted">No services off.</p>{% endfor %}
 </div>

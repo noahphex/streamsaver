@@ -120,6 +120,10 @@ def build_timeline(results, today=None, days=60):
                 events.append(dict(type="return", date=air_date.isoformat(), title=row["title"],
                                    show_state=row["show_state"], service_id=row["service_id"],
                                    service_status=status, context=context,
+                                   snoozed_until=next((r["until"] for r in results.get("snoozed", [])
+                                                       if r.get("action") == "resubscribe"
+                                                       and (r.get("id") == row["service_id"] if r.get("id") is not None
+                                                            else r.get("name") == row["service_name"])), None),
                                    resubscribe_todo=any(r.get("id") == row["service_id"]
                                                        for r in results.get("resubscribe", [])),
                                    service_name=row["service_name"] or row["primary_provider"] or "Unknown service",
@@ -198,3 +202,25 @@ def group_periods(timeline, today=None):
                              by=periods[-1]["window_end"] if periods else None,
                              nothing_new=len(periods) - len(worth), bills=len(bills),
                              returns=len(returns), elsewhere=len(elsewhere)))
+
+
+def service_story(timeline, service_id, today=None):
+    """First billing window for the edit page, including prepaid annual bills."""
+    today = today or date.today()
+    grouped = group_periods(timeline, today)
+    bills = sorted((e for week in timeline for e in week["events"]
+                    if e["type"] == "bill" and e.get("service_id") == service_id),
+                   key=lambda e: e["date"])
+    if not bills:
+        return None
+    bill = bills[0]
+    period = next((p for p in grouped["periods"] if p["bill"] == bill), None)
+    if period:
+        return period
+    span = max(1, (date.fromisoformat(bill["date"]) - today).days)
+    returns = [dict(event, pos=round((date.fromisoformat(event["date"]) - today).days / span * 100, 2))
+               for week in timeline for event in week["events"]
+               if event["type"] == "return" and event.get("service_id") == service_id
+               and today.isoformat() <= event["date"] <= bill["date"]]
+    return dict(bill=bill, window_start=today.isoformat(), window_end=bill["date"],
+                returns=returns, fill_pct=max((event["pos"] for event in returns), default=0))

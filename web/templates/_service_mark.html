@@ -16,5 +16,5 @@
 {%- endmacro %}
 
 {% macro service_title(name) -%}
-  {% set display = name|service_name %}{{ display.base }}{% if display.channel %}<span class="service-channel">Amazon Channel</span>{% endif %}
+  {% set display = name|service_name %}{{ display.base }}{% if display.channel %} <span class="service-channel">Amazon Channel</span>{% endif %}
 {%- endmacro %}

@@ -109,3 +109,13 @@ def test_return_today_belongs_to_first_window_not_later_ones():
     assert 'Returns on bill day' in [e['title'] for e in first['returns']]
     assert 'Returns on bill day' not in [e['title'] for e in second['returns']]
     assert 'Returns today' not in [e.get('title') for e in grouped['elsewhere']]
+
+
+def test_service_story_first_window_and_prepaid():
+    source = fixture()
+    assert timeline.service_story(source, 1, date(2026, 10, 29))["window_end"] == "2026-11-04"
+    annual = timeline.service_story(source, 2, date(2026, 10, 29))
+    assert annual["window_end"] == "2026-12-20"
+    assert annual["returns"][0]["context"] == "annual · prepaid"
+    assert 0 < annual["fill_pct"] < 100
+    assert timeline.service_story(source, 999, date(2026, 10, 29)) is None

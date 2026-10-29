@@ -14,15 +14,20 @@
     {% for arc in rail.arcs %}
       <path class="arc" d="{{ arc.path }}" pathLength="1" style="--sequence: {{ arc.sequence }}"/>
     {% endfor %}
-    {% for item in rail.returns %}
-      <circle class="return-dot {{ item.kind }}" cx="{{ item.x }}" cy="{{ item.y }}" r="3.5"><title>{{ item.title }} · {{ item.date }}</title></circle>
+    {% for item in rail.clusters %}
+      <circle class="return-dot {{ item.kind }}" cx="{{ item.x }}" cy="{{ item.y }}" r="3.5"><title>{{ item.titles|join(", ") }}</title></circle>
+      {% if item.count > 1 %}<text class="cluster-count" x="{{ item.x + 7 }}" y="{{ item.y + 4 }}">×{{ item.count }}</text>{% endif %}
+    {% endfor %}
+    {# Paint expanded targets first so they never cover another bill's visible tile. #}
+    {% for bill in rail.bills %}
+    <a href="{{ url_for('shows') }}#bill-{{ bill.service_id }}-{{ bill.date }}" tabindex="-1"><rect class="bill-hit" x="{{ bill.hit_x }}" y="{{ bill.hit_y }}" width="48" height="{{ bill.hit_height }}"/></a>
     {% endfor %}
     {% for bill in rail.bills %}
     <a href="{{ url_for('shows') }}#bill-{{ bill.service_id }}-{{ bill.date }}" tabindex="-1">
       <g class="bill rail-tone-{{ bill.tone }}" style="--sequence: {{ bill.sequence }}">
         <title>{{ bill.service_name }} · {{ bill.amount|money }} · {{ bill.verdict }}</title>
-        <circle class="bill-hit" cx="{{ bill.initials_x }}" cy="{{ bill.initials_y }}" r="{{ bill.hit_radius }}"/>
         <line class="stem" x1="{{ bill.x }}" y1="{{ bill.tile_bottom }}" x2="{{ bill.x }}" y2="{{ rail.track_y }}"/>
+        {% if bill.show_label %}<text class="show-label" x="{{ bill.label_x }}" y="{{ bill.label_y }}" text-anchor="middle">{{ bill.show_label }}</text>{% endif %}
         <text class="amount" x="{{ bill.amount_x }}" y="{{ bill.amount_y }}" text-anchor="middle">{{ bill.amount|money }}</text>
         <clipPath id="rail-clip-{{ bill.sequence }}"><rect x="{{ bill.tile_x }}" y="{{ bill.tile_y }}" width="{{ bill.size }}" height="{{ bill.size }}" rx="8"/></clipPath>
         <rect class="mark-{{ bill.mark.accent }} rail-mark" x="{{ bill.tile_x }}" y="{{ bill.tile_y }}" width="{{ bill.size }}" height="{{ bill.size }}" rx="8"/>
@@ -34,7 +39,7 @@
     {% endfor %}
   </svg>
   <ul class="sr-only">
-    {% for bill in rail.bills %}<li><a href="{{ url_for('shows') }}#bill-{{ bill.service_id }}-{{ bill.date }}">{{ bill.date|nice_date }}, {{ bill.service_name }}, {{ bill.amount|money }}: {{ bill.verdict }}</a></li>{% endfor %}
+    {% for bill in rail.bills %}<li>{{ bill.date|nice_date }}, {{ bill.service_name }}, {{ bill.amount|money }}: {{ bill.verdict }}</li>{% endfor %}
   </ul>
   <figcaption class="rail-legend"><span><i aria-hidden="true"></i>Counts toward a bill</span><span><i class="elsewhere" aria-hidden="true"></i>Prepaid or not subscribed</span></figcaption>
   {% endif %}

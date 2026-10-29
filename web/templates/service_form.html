@@ -2,13 +2,24 @@
 {% block title %}{{ "Edit service" if editable else "Add service" }} - Streamsaver{% endblock %}
 {% from "_service_mark.html" import service_mark, snooze_undo, service_title with context %}
 {% from "_icons.html" import icon %}
+{% from "_window.html" import billing_window %}
 {% block content %}
 <section class="hero compact">
   <div class="hero-copy">
-    <h1>{% if editable %}{{ service_mark(editable.name, editable.icon_path) }} {% endif %}<span>{{ service_title(editable.name) if editable else "Add service" }}</span></h1>
+    <h1>{% if editable %}{{ service_mark(editable.name, editable.icon_path) }} {% endif %}<span>{{ service_title(editable.name) if editable else "Add service" }}</span>{% if editable %}<span class="pill quiet">{{ status_labels.get(editable.status, editable.status) }}</span>{% endif %}</h1>
   </div>
   <a class="back-link" href="{{ url_for('services') }}">{{ icon("chevron-left") }} Services</a>
 </section>
+
+{% if editable %}
+<section class="service-story">
+  {% if next_renewal %}<p>Next bill {{ next_renewal|nice_date }} · {{ (period.bill.amount if period else editable.annual_cost if editable.billing_cycle == 'annual' else editable.monthly_cost)|money }}</p>{% endif %}
+  {% if period %}
+    {{ billing_window(period, 'green' if period.returns else 'yellow', today_iso) }}
+  {% endif %}
+  {% if period and period.returns %}<ul class="period-returns">{% for show in period.returns %}<li><span>{{ show.title }}</span><time datetime="{{ show.date }}">{{ show.date|nice_date }}</time></li>{% endfor %}</ul>{% elif period %}<p class="muted">Nothing returns before this bill</p>{% elif editable.status == 'subscribed' %}<p class="muted">No bill in the next 60 days.</p>{% else %}<p class="muted">Not currently paying.</p>{% endif %}
+</section>
+{% endif %}
 
 {% for rec in snoozed %}
 <section class="section snooze-panel">
@@ -28,6 +39,7 @@
 {% set cycle = editable.billing_cycle if editable else "monthly" %}
 {% set bundles = bundle_map[editable.id] if editable else [] %}
 <section class="section form-panel">
+  <h2>Details</h2>
   <form method="post" action="{{ url_for('service_save') }}" class="stack" data-cycle="{{ cycle }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {% if editable %}<input type="hidden" name="service_id" value="{{ editable.id }}">{% endif %}
@@ -58,7 +70,7 @@
 
     <div class="bundles">
       <span class="muted">Counts shows from:</span>
-      {% for b in bundles %}<span class="pill quiet">{{ b.provider_name }}</span>{% else %}<span class="muted">only its own TMDb provider</span>{% endfor %}
+      {% for b in bundles %}<span class="provider-tag">{{ b.provider_name }}</span>{% else %}<span class="muted">only its own TMDb provider</span>{% endfor %}
     </div>
     <details class="more">
       <summary>Provider matching (TMDb IDs)</summary>

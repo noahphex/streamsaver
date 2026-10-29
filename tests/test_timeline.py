@@ -211,3 +211,17 @@ def test_later_verdict_excludes_stale_watched_return(database):
 def test_only_first_bill_can_be_nothing_new(database):
     bills = [e for e in events({"keep": [rec()]}) if e["type"] == "bill"]
     assert [b["verdict"]["kind"] for b in bills] == ["nothing_new", "unknown"]
+
+
+def test_snoozed_resubscribe_is_carried_to_return(database):
+    show("Off return")
+    with db.db_session() as conn:
+        conn.execute("UPDATE services SET status = 'unsubscribed' WHERE id = 1")
+    results = {"snoozed": [{"id": 1, "name": "Service 1", "action": "resubscribe", "until": "2026-11-27"}]}
+    event = events(results)[0]
+    assert event["snoozed_until"] == "2026-11-27"
+    assert event["resubscribe_todo"] is False
+    results["snoozed"][0]["action"] = "suspend"
+    assert events(results)[0]["snoozed_until"] is None
+    results["snoozed"][0].update(action="resubscribe", id=None)
+    assert events(results)[0]["snoozed_until"] == "2026-11-27"
