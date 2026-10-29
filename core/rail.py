@@ -67,7 +67,8 @@ def build_rail(timeline, today=None, days=30, width=350):
         if event["type"] != "return":
             continue
         x = x_for(date.fromisoformat(event["date"]))
-        cluster = next((group for group in clusters if x - group["x"] <= 6), None)
+        # Dots closer than 12 units blur together on a phone, so they share one numbered dot.
+        cluster = next((group for group in clusters if x - group["x"] <= 12), None)
         if cluster is None:
             cluster = {"x": x, "y": track_y + 9, "count": 0, "titles": [], "kind": "elsewhere"}
             clusters.append(cluster)
@@ -94,16 +95,18 @@ def build_rail(timeline, today=None, days=30, width=350):
             arcs.append({"path": f"M {x} {y} Q {control_x} {control_y} {bill['x']} {track_y}",
                          "sequence": len(arcs), "depth": depth, "bottom": round(bottom, 2)})
     label_ends = [0, 0]
+    label_rows = [index % 2 if any(abs(bill["x"] - other["x"]) < 90 for other in bills if other is not bill)
+                  else 0 for index, bill in enumerate(bills)]
     for index, bill in enumerate(bills):
         titles = bill.get("show_titles", [])
+        row = label_rows[index]
+        # Labels are centred on their bill, so each gets the gap to its nearest same-row neighbour.
+        gap = min((abs(bill["x"] - other["x"]) for j, other in enumerate(bills)
+                   if j != index and label_rows[j] == row), default=width)
         suffix = f" +{len(titles) - 1}" if len(titles) > 1 else ""
-        limit = 14 - len(suffix)
+        limit = max(6, min(18, int((gap - 6) / 5.6))) - len(suffix)
         lead = titles[0] if titles else ""
         bill["show_label"] = (lead if len(lead) <= limit else lead[:limit - 1].rstrip() + "…") + suffix
-        near = any(abs(bill["x"] - other["x"]) < 90 for other in bills if other is not bill)
-        if titles and (near or len(bill["show_label"]) * 5.6 > width - 8):
-            bill["show_label"] = f"{len(titles)} {'show' if len(titles) == 1 else 'shows'}"
-        row = index % 2 if near else 0
         half_width = len(bill["show_label"]) * 2.8
         while True:
             if row == len(label_ends):
@@ -125,7 +128,7 @@ def build_rail(timeline, today=None, days=30, width=350):
     ticks = [{"x": x_for(today + timedelta(days=offset)),
               "label": "Today" if offset == 0 else
               f"{today + timedelta(days=offset):%b} {(today + timedelta(days=offset)).day}",
-              "today": offset == 0, "label_y": track_y + 19 if offset == 0 else bottom + 16,
+              "today": offset == 0, "label_y": bottom + 16,
               "anchor": "start" if offset == 0 else "end" if offset == days else "middle"}
              for offset in range(0, days + 1, 7)]
     return {"bills": bills, "returns": returns, "clusters": clusters, "arcs": arcs, "ticks": ticks,

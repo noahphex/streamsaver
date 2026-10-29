@@ -37,7 +37,8 @@ def test_nearby_bills_stagger_and_returns_cluster():
     assert [first["row"], second["row"]] == [0, 1]
     assert first["tile_y"] - second["tile_y"] >= 30
     assert second["tile_bottom"] + 10 <= first["amount_y"]
-    assert [c["count"] for c in data["clusters"]] == [2, 1]
+    # Day 1 and day 2 are about 11 units apart, close enough to share one numbered dot.
+    assert [c["count"] for c in data["clusters"]] == [3]
     assert data["returns"][1]["y"] == data["returns"][0]["y"]
 
 
@@ -87,8 +88,8 @@ def test_large_staggered_tiles_and_amount_labels_do_not_collide():
 
 def test_show_label_truncation_and_more_count():
     data = rail(bill(15), dict(returning(1), title="Love is Blind"), returning(2))
-    assert data["bills"][0]["show_label"] == "Love is Bl… +1"
-    assert len(data["bills"][0]["show_label"]) == 14
+    # A lone bill has the whole width, so the name is not cut.
+    assert data["bills"][0]["show_label"] == "Love is Blind +1"
     assert rail(bill(15), dict(returning(1), title="Short"))["bills"][0]["show_label"] == "Short"
     assert rail(bill(15), returning(1), returning(2))["bills"][0]["show_label"] == "Sample show +1"
 
@@ -101,7 +102,19 @@ def test_cluster_threshold_and_arcs_start_at_shared_dot():
     assert len(data["arcs"]) == 4
     assert len({arc["path"].split(" Q ")[0] for arc in data["arcs"]}) == 1
     assert len(rail(returning(1), returning(2), width=100)["clusters"]) == 1
-    assert len(rail(returning(1), returning(4), width=100)["clusters"]) == 2
+    assert len(rail(returning(1), returning(7), width=100)["clusters"]) == 2
+
+
+def test_crowded_bills_keep_truncated_names_not_counts():
+    # Three bills 3 days apart share rows, so names shrink to the gap but stay names.
+    data = rail(bill(10), bill(13, service=2), bill(16, service=3),
+                dict(returning(1), title="The Celebrity Traitors"),
+                dict(returning(2, service=2), title="Abbott Elementary"),
+                dict(returning(3, service=3), title="Love is Blind"))
+    labels = [b["show_label"] for b in data["bills"]]
+    assert all("show" not in label for label in labels)
+    assert all(len(label) >= 6 for label in labels)
+    assert labels[0].startswith("The Ce") and labels[0].endswith("…")
 
 
 def test_axis_and_height_follow_actual_geometry():
@@ -109,7 +122,7 @@ def test_axis_and_height_follow_actual_geometry():
     deep = rail(bill(29), returning(2))
     assert deep["ticks"][1]["label_y"] > shallow["ticks"][1]["label_y"]
     for data in (shallow, deep, rail(bill(7, 100), bill(8, 100, service=2))):
-        assert data["ticks"][0]["label_y"] == data["track_y"] + 19
+        assert data["ticks"][0]["label_y"] == data["ticks"][1]["label_y"]  # Today sits on the date axis
         assert data["height"] == max(t["label_y"] for t in data["ticks"]) + 12
         assert min(b["amount_y"] for b in data["bills"]) == 16
         assert data["track_y"] == max(b["tile_bottom"] for b in data["bills"]) + 36

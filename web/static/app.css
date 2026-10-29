@@ -457,7 +457,8 @@ form[data-cycle="monthly"] .cost-annual, form[data-cycle="annual"] .cost-monthly
 .off-tile .service-identity > strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* 2. Rail labels stay sans; data stays mono. */
-.rail .show-label, .rail .cluster-count { fill: var(--muted); font: 11px ui-sans-serif, system-ui, sans-serif; }
+.rail .show-label { fill: var(--muted); font: 11px ui-sans-serif, system-ui, sans-serif; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }
+.rail .cluster-count { fill: var(--text); font: 700 9px ui-sans-serif, system-ui, sans-serif; }
 
 /* 3. Actionable advice precedes the rail in reading and visual order. */
 .dashboard-top:has(.todo-panel) { display: block; }

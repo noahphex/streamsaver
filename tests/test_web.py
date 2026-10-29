@@ -828,7 +828,9 @@ class WebTests(unittest.TestCase):
         self.assertIn('class="rail"', page)
         self.assertIn('8 shows return before this bill', page)
         self.assertEqual(page.count('class="arc"'), 8)
-        self.assertEqual(page.count('class="return-dot counts"'), 8)
+        # 8 returns on consecutive days share 4 numbered dots; every return keeps its arc.
+        self.assertEqual(page.count('class="return-dot counts"'), 4)
+        self.assertEqual(page.count('class="cluster-count"'), 4)
         self.assertIn('aria-hidden="true" focusable="false"', page)
         self.assertIn('<ul class="sr-only">', page)
         self.assertIn('Counts toward a bill', page)
