@@ -13,7 +13,7 @@
       <text class="tick-label{{ ' today' if tick.today else '' }}" x="{{ tick.x }}" y="{{ tick.label_y }}" text-anchor="{{ tick.anchor }}">{{ tick.label }}</text>
     {% endfor %}
     {% for item in rail.clusters %}
-    <a href="{{ url_for('shows') }}#{{ item.anchor }}" tabindex="-1"><rect class="bill-hit" x="{{ item.hit_x }}" y="{{ item.hit_y }}" width="56" height="56"/></a>
+    <a href="{{ url_for('shows') }}#{{ item.anchor }}" tabindex="-1"><rect class="bill-hit" x="{{ item.hit_x }}" y="{{ item.hit_y }}" width="44" height="44"/></a>
     {% endfor %}
     {% for item in rail.clusters %}
     <a href="{{ url_for('shows') }}#{{ item.anchor }}" tabindex="-1">
@@ -29,10 +29,11 @@
     <a href="{{ url_for('shows') }}#bill-{{ bill.service_id }}-{{ bill.date }}" tabindex="-1">
       <g class="bill rail-tone-{{ bill.tone }}" style="--sequence: {{ bill.sequence }}">
         <title>{{ bill.service_name }} · {{ bill.amount|money }} · {{ bill.verdict }}</title>
-        {% for stem in bill.stems %}<line class="stem" x1="{{ bill.x }}" y1="{{ stem.start }}" x2="{{ bill.x }}" y2="{{ stem.end }}"/>{% endfor %}
-        <rect class="verdict-badge" x="{{ bill.badge_x }}" y="{{ bill.badge_y }}" width="{{ bill.badge_width }}" height="24" rx="12"/>
-        <text class="badge-text" x="{{ bill.badge_center }}" y="{{ bill.badge_text_y }}" dominant-baseline="central" text-anchor="middle">{{ bill.badge }}</text>
-        <text class="amount" x="{{ bill.amount_x }}" y="{{ bill.amount_y }}" text-anchor="middle">{{ bill.amount|money }}</text>
+        {% for stem in bill.stems %}<line class="stem" x1="{{ stem.start_x }}" y1="{{ stem.start }}" x2="{{ stem.end_x }}" y2="{{ stem.end }}"/>{% endfor %}
+        <rect class="verdict-badge" x="{{ bill.badge_x }}" y="{{ bill.badge_y }}" width="{{ bill.badge_width }}" height="22" rx="11"/>
+        {% if bill.badge_dot %}<circle class="badge-dot" cx="{{ bill.badge_x + 10 }}" cy="{{ bill.badge_text_y }}" r="2.5"/>{% endif %}
+        <text class="badge-text" x="{{ bill.badge_center + (5 if bill.badge_dot else 0) }}" y="{{ bill.badge_text_y }}" dominant-baseline="central" text-anchor="middle">{{ bill.badge }}</text>
+        <text class="amount" textLength="{{ bill.amount_width }}" lengthAdjust="spacingAndGlyphs" x="{{ bill.amount_x }}" y="{{ bill.amount_y }}" text-anchor="middle">{{ bill.amount|money }}</text>
         <clipPath id="rail-clip-{{ bill.sequence }}"><rect x="{{ bill.tile_x }}" y="{{ bill.tile_y }}" width="{{ bill.size }}" height="{{ bill.size }}" rx="8"/></clipPath>
         <rect class="mark-{{ bill.mark.accent }} rail-mark" x="{{ bill.tile_x }}" y="{{ bill.tile_y }}" width="{{ bill.size }}" height="{{ bill.size }}" rx="8"/>
         <text class="rail-initials" x="{{ bill.initials_x }}" y="{{ bill.initials_y }}" text-anchor="middle" dominant-baseline="central">{{ bill.mark.initials }}</text>
@@ -44,9 +45,8 @@
   </svg>
   <ul class="rail-accessible">
     {% for bill in rail.bills %}<li><a class="sr-only rail-focus-link" href="{{ url_for('shows') }}#{{ bill.anchor }}">{{ bill.date|nice_date }}, {{ bill.service_name }}, {{ bill.amount|money }}: {% if bill.verdict_kind == 'returns' %}{{ bill.show_titles|length }} {{ 'show returns' if bill.show_titles|length == 1 else 'shows return' }} first: {{ bill.show_titles|join(', ') }}{% else %}{{ bill.badge }}{% endif %}</a></li>{% endfor %}
-    {% for item in rail.clusters %}<li><a class="sr-only rail-focus-link" href="{{ url_for('shows') }}#{{ item.anchor }}">{{ 'Elsewhere returns' if item.kind == 'elsewhere' else 'Returns before this bill' }}: {{ item.titles|join(', ') }}</a></li>{% endfor %}
+    {% for item in rail.clusters %}<li><a class="sr-only rail-focus-link" href="{{ url_for('shows') }}#{{ item.anchor }}">Returns before this bill: {{ item.titles|join(', ') }}</a></li>{% endfor %}
   </ul>
-  <figcaption class="rail-legend"><span><i aria-hidden="true"></i>Counts toward a bill</span><span><i class="elsewhere" aria-hidden="true"></i>Prepaid or not subscribed</span></figcaption>
   {% endif %}
   <a class="rail-link" href="{{ url_for('shows') }}">See all coming up {{ icon('chevron-right') }}</a>
 </figure>
