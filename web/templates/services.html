@@ -1,20 +1,19 @@
 {% extends "base.html" %}
 {% block title %}Services - Streamsaver{% endblock %}
 {% from "_service_mark.html" import service_mark with context %}
+{% from "_icons.html" import icon %}
 {% block content %}
 <section class="hero">
   <div class="hero-copy">
-    <h1>Services</h1>
-    <p>Subscribed first, soonest renewal first. Each card shows what Streamsaver recommends.</p>
+    <h1>Services <a class="button ghost small" href="{{ url_for('service_new') }}">{{ icon("plus") }} Add</a></h1>
   </div>
-  <a class="button" href="{{ url_for('service_new') }}">Add service</a>
 </section>
 
 <section class="metrics">
-  <div><span>{{ totals.monthly_total|money }}</span><small>Monthly subscribed spend</small></div>
-  <div><span>{{ totals.annual_total|money }}</span><small>Annualized spend</small></div>
-  <div><span>{{ services|selectattr("status", "equalto", "subscribed")|list|length }}</span><small>Subscribed</small></div>
-  <div><span>{{ services|length }}</span><small>Total services</small></div>
+  <div><span class="num">{{ totals.monthly_total|money }}</span><small>Monthly subscribed spend</small></div>
+  <div><span class="num">{{ totals.annual_total|money }}</span><small>Annualized spend</small></div>
+  <div><span class="num">{{ services|selectattr("status", "equalto", "subscribed")|list|length }}</span><small>Subscribed</small></div>
+  <div><span class="num">{{ services|length }}</span><small>Total services</small></div>
 </section>
 
 <section class="cards services-list">
@@ -29,18 +28,18 @@
           <h2><a class="card-link" aria-label="Edit {{ svc.name }}" href="{{ url_for('service_edit', service_id=svc.id) }}">{{ display.base }}</a></h2>
           {% if display.channel %}<span class="service-channel">Amazon Channel</span>{% endif %}
           <p class="service-price">
-            {% if not (svc.monthly_cost or svc.annual_cost) %}Free{% elif svc.billing_cycle == "annual" %}{{ svc.annual_cost|money }}<small>/yr</small>{% else %}{{ svc.monthly_cost|money }}<small>/mo</small>{% endif %}
+            {% if not (svc.monthly_cost or svc.annual_cost) %}Free{% elif svc.billing_cycle == "annual" %}<span class="num">{{ svc.annual_cost|money }}</span><small>/yr</small>{% else %}<span class="num">{{ svc.monthly_cost|money }}</span><small>/mo</small>{% endif %}
           </p>
         </div>
-        <span class="service-status">{{ status_labels.get(svc.status, svc.status) }}</span>
+        <span class="pill {{ {'subscribed': 'green', 'suspended': 'yellow'}.get(svc.status, 'quiet') }}">{{ status_labels.get(svc.status, svc.status) }}</span>
       </div>
       <p class="muted">
         {% set renews = next_bill.get(svc.name) %}
-        {% if svc.status != "subscribed" %}Not billing{% elif renews %}Renews {{ renews|nice_date }}{% else %}No billing date{% endif %}
+        {% if svc.status != "subscribed" %}Not billing{% elif renews %}Renews <span class="num">{{ renews|nice_date }}</span>{% else %}No billing date{% endif %}
         {% if bundles %}· {{ bundles|length }} bundled provider{{ "" if bundles|length == 1 else "s" }}{% endif %}
       </p>
       <footer class="card-footer">
-        {% if tip %}<div class="meta"><span class="tone tone-{{ tip.tone }}">{{ tip.label }}</span></div>{% endif %}
+        {% if tip %}<div class="meta"><span class="pill {{ {'pause': 'yellow', 'review': 'yellow', 'renew': 'green', 'keep': 'green', 'resubscribe': 'cyan', 'untracked': 'pink'}.get(tip.tone, 'quiet') }}">{{ tip.label }}</span></div>{% endif %}
         {% if tip %}<p class="muted">{{ tip.why }}</p>{% elif keep_reasons.get(svc.name) %}<p class="muted">{{ keep_reasons[svc.name]|recommendation_reason }}</p>{% endif %}
       </footer>
     </article>
