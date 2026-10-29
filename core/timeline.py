@@ -106,7 +106,7 @@ def build_timeline(results, today=None, days=60):
                                if e["type"] == "bill" and e["service_id"] == row["service_id"])
                 next_bill = next((d for d in bills if d >= air_date.isoformat()), None)
                 status = row["service_status"]
-                if status in ("unsubscribed", "not_subscribed"):
+                if status in ("unsubscribed", "not_subscribed", "suspended"):
                     context = "not subscribed"
                 elif next_bill:
                     bill_day = date.fromisoformat(next_bill)
@@ -148,3 +148,50 @@ def timeline_summary(timeline):
     amount = sum((Decimal(str(event["amount"])) for event in bills), Decimal("0"))
     return {"bills": len(bills), "amount": float(amount.quantize(Decimal("0.01"))),
             "returns": len(events) - len(bills)}
+
+
+def group_periods(timeline, today=None):
+    """Group existing verdicts into service billing windows without changing advice."""
+    today = today or date.today()
+    events = sorted((event for week in timeline for event in week["events"]),
+                    key=lambda event: (event["date"], event.get("title", "")))
+    bills = [event for event in events if event["type"] == "bill"]
+    returns = [event for event in events if event["type"] == "return"]
+    periods, later, previous, assigned = [], [], {}, set()
+    outside = {"annual · prepaid", "not subscribed", "after your last bill in this window"}
+    for bill in bills:
+        identity = bill.get("service_id") or bill["service_name"]
+        start = previous.get(identity, today.isoformat())
+        end = bill["date"]
+        previous[identity] = end
+        if bill["verdict"]["kind"] in ("unknown", "prepaid"):
+            later.append(bill)
+            continue
+        window = []
+        span = (date.fromisoformat(end) - date.fromisoformat(start)).days
+        for index, event in enumerate(returns):
+            if (event.get("service_id") is not None and event["service_id"] == bill.get("service_id")
+                    and event.get("context") not in outside and start < event["date"] <= end):
+                pos = (date.fromisoformat(event["date"]) - date.fromisoformat(start)).days / max(1, span) * 100
+                window.append(dict(event, pos=round(max(0, min(100, pos)), 2)))
+                assigned.add(index)
+        periods.append(dict(bill=bill, window_start=start, window_end=end, returns=window,
+                            fill_pct=max((event["pos"] for event in window), default=0),
+                            anchor_id=f"bill-{bill.get('service_id')}-{end}"))
+    elsewhere = [event for index, event in enumerate(returns) if index not in assigned]
+    off_returns = {}
+    for event in elsewhere:
+        if event.get("service_status") in ("unsubscribed", "not_subscribed", "suspended"):
+            off_returns.setdefault(event["service_id"], event)
+
+    def total(items):
+        return float(sum((Decimal(str(item["amount"])) for item in items), Decimal("0")).quantize(Decimal("0.01")))
+
+    worth = [period["bill"] for period in periods if period["bill"]["verdict"]["kind"] == "returns"]
+    return dict(periods=periods, later=dict(count=len(later), dates=[bill["date"] for bill in later], total=total(later),
+                                         anchors=[f"bill-{bill.get('service_id')}-{bill['date']}" for bill in later]),
+                elsewhere=elsewhere, off_returns=off_returns,
+                summary=dict(worth_paying=len(worth), total=total(worth),
+                             by=periods[-1]["window_end"] if periods else None,
+                             nothing_new=len(periods) - len(worth), bills=len(bills),
+                             returns=len(returns), elsewhere=len(elsewhere)))

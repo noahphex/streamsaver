@@ -55,7 +55,7 @@ from core.service_manager import (
     update_service,
 )
 from core.show_tracker import backfill_service_ids, run_full_sync, visible_next_air_date
-from core.timeline import build_timeline, timeline_summary
+from core.timeline import build_timeline, group_periods
 from core.tmdb_client import TMDbClient
 from core.trakt_client import TraktAuthError, TraktClient, poll_device_token, request_device_code
 from db import db_session, init_db
@@ -339,7 +339,6 @@ def create_app():
     @app.get("/services")
     def services():
         all_services = get_all_services()
-        bundle_map = {svc["id"]: get_bundle_providers(svc["id"]) for svc in all_services}
         results = run_analysis()
         advice = {item["name"]: item for item in _todo_items(results, all_services)}
         # Next bill per service, from analysis (the stored anchor may be months in the past).
@@ -349,7 +348,7 @@ def create_app():
             "services.html",
             services=sorted(all_services, key=lambda s: _service_sort_key(s, next_bill)),
             next_bill=next_bill,
-            bundle_map=bundle_map,
+            off_returns=group_periods(build_timeline(results))["off_returns"],
             totals=get_cost_totals(status_filter="subscribed"),
             advice=advice,
             keep_reasons={rec["name"]: rec.get("reason", "") for rec in results.get("keep", [])},
@@ -407,7 +406,7 @@ def create_app():
         if request.args.get("view") != "all":
             timeline = build_timeline(run_analysis())
             return render_template("shows.html", view="upcoming", timeline=timeline,
-                                   summary=timeline_summary(timeline), all_params=all_params)
+                                   grouped=group_periods(timeline), today_iso=date.today().isoformat(), all_params=all_params)
         q = request.args.get("q", "").strip()
         state = request.args.get("state", "All")
         sort, direction = _show_sort(request.args.get("sort", "state"), request.args.get("dir", "desc"))
