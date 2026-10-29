@@ -31,7 +31,7 @@ from flask import (
 from core.analysis import run_analysis
 from core.spend import potential_monthly_savings, spend_headline
 from core.rail import build_rail
-from core.presentation import service_mark as _service_mark
+from core.presentation import service_mark as _service_mark, ledger_reason, library_states
 from core.todo import ACTIONABLE_KEYS, DONE_LABELS, default_until, mark_done, snooze, undo_done, unsnooze
 from core.backup import export_backup, import_backup
 from core.newsletter import (
@@ -55,7 +55,7 @@ from core.service_manager import (
     update_service,
 )
 from core.show_tracker import backfill_service_ids, run_full_sync, visible_next_air_date
-from core.timeline import build_timeline, group_periods
+from core.timeline import build_timeline, group_periods, service_story
 from core.tmdb_client import TMDbClient
 from core.trakt_client import TraktAuthError, TraktClient, poll_device_token, request_device_code
 from db import db_session, init_db
@@ -258,8 +258,9 @@ def create_app():
         timeline = build_timeline(results)
         rail = build_rail(timeline)
         savings = potential_monthly_savings(results)
+        todo = _todo_items(results, services)
         headline = spend_headline(totals, rail, savings,
-                                  sum(svc["status"] == "subscribed" for svc in services))
+                                  sum(svc["status"] == "subscribed" for svc in services), todo)
         return render_template(
             "dashboard.html",
             services=services,
@@ -269,7 +270,7 @@ def create_app():
             todo_undo=session.get("todo_undo"),
             done_messages={"suspend": "as paused", "resubscribe": "as resubscribed",
                            "consider_non_renewal": "as having renewal turned off"},
-            todo=_todo_items(results, services),
+            todo=todo,
             rail=rail,
             headline=headline,
             issues=_connection_issues(),
@@ -351,7 +352,7 @@ def create_app():
             off_returns=group_periods(build_timeline(results))["off_returns"],
             totals=get_cost_totals(status_filter="subscribed"),
             advice=advice,
-            keep_reasons={rec["name"]: rec.get("reason", "") for rec in results.get("keep", [])},
+            keep_reasons={rec["name"]: ledger_reason(rec.get("reason", "")) for rec in results.get("keep", [])},
         )
 
     @app.get("/services/new")
@@ -401,7 +402,7 @@ def create_app():
 
     @app.get("/shows")
     def shows():
-        all_params = {key: request.args[key] for key in ("q", "state", "sort", "dir", "page")
+        all_params = {key: request.args[key] for key in ("q", "state", "group", "sort", "dir", "order", "page")
                       if key in request.args}
         if request.args.get("view") != "all":
             timeline = build_timeline(run_analysis())
@@ -409,10 +410,13 @@ def create_app():
                                    grouped=group_periods(timeline), today_iso=date.today().isoformat(), all_params=all_params)
         q = request.args.get("q", "").strip()
         state = request.args.get("state", "All")
-        sort, direction = _show_sort(request.args.get("sort", "state"), request.args.get("dir", "desc"))
+        group = request.args.get("group", "All")
+        order = request.args.get("order", "").split(":")
+        sort, direction = _show_sort(*(order if len(order) == 2 else
+                                      (request.args.get("sort", "state"), request.args.get("dir", "desc"))))
         page = max(1, min(request.args.get("page", 1, type=int) or 1, 1000000))
-        rows, total = _shows(q, state, sort, direction, page=page)
-        return render_template("shows.html", view="all", all_params=all_params, shows=rows, q=q, state=state, sort=sort,
+        rows, total = _shows(q, state, sort, direction, page=page, group=group)
+        return render_template("shows.html", view="all", all_params=all_params, shows=rows, q=q, state=state, group=group, sort=sort,
                                direction=direction, page=page, has_next=page * 50 < total,
                                total=total, range_start=(page - 1) * 50 + 1 if rows else 0,
                                range_end=(page - 1) * 50 + len(rows) if rows else 0)
@@ -779,9 +783,11 @@ def _service_form(editable=None):
     next_renewal = None
     advice = None
     snoozed = []
+    period = None
     if editable:
         bundle_map[editable["id"]] = get_bundle_providers(editable["id"])
         results = run_analysis()
+        period = service_story(build_timeline(results), editable["id"])
         snoozed = [rec for rec in _snoozed_items(results) if rec.get("id") == editable["id"]]
         advice = next((item for item in _todo_items(results) if item["service_id"] == editable["id"]), None)
         next_renewal = next((rec.get("billing_date") for recs in results.values() for rec in recs
@@ -789,6 +795,7 @@ def _service_form(editable=None):
     return render_template(
         "service_form.html",
         editable=editable,
+        period=period, today_iso=date.today().isoformat(),
         bundle_map=bundle_map,
         next_renewal=next_renewal,
         advice=advice,
@@ -1111,7 +1118,7 @@ def _show_sort(sort, direction):
     return sort, direction
 
 
-def _shows(q, state, sort="state", direction="desc", page=None):
+def _shows(q, state, sort="state", direction="desc", page=None, group="All"):
     sort, direction = _show_sort(sort, direction)
     query = """
         SELECT s.trakt_id, s.title, s.show_state, s.interest_score,
@@ -1125,9 +1132,10 @@ def _shows(q, state, sort="state", direction="desc", page=None):
     if q:
         query += " AND LOWER(s.title) LIKE ?"
         params.append(f"%{q.lower()}%")
-    if state and state != "All":
-        query += " AND LOWER(s.show_state) = ?"
-        params.append(state.lower())
+    states = library_states(state, group)
+    if states:
+        query += " AND LOWER(s.show_state) IN (" + ",".join("?" for _ in states) + ")"
+        params.extend(states)
     count_query = "SELECT COUNT(*) FROM (" + query + ")"
     query += f" ORDER BY {SHOW_SORT_COLUMNS[sort]} {direction.upper()}, LOWER(s.title) ASC"
     with db_session() as conn:

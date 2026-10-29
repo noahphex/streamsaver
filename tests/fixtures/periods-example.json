@@ -34,7 +34,8 @@
           "resubscribe_todo": false,
           "service_name": "Monthly Example",
           "icon_path": null,
-          "pos": 16.67
+          "pos": 16.67,
+          "snoozed_until": null
         }
       ],
       "fill_pct": 16.67,
@@ -74,7 +75,8 @@
           "resubscribe_todo": false,
           "service_name": "Monthly Example",
           "icon_path": null,
-          "pos": 20.0
+          "pos": 20.0,
+          "snoozed_until": null
         }
       ],
       "fill_pct": 20.0,
@@ -98,7 +100,8 @@
       "context": "not subscribed",
       "resubscribe_todo": true,
       "service_name": "Off Example",
-      "icon_path": null
+      "icon_path": null,
+      "snoozed_until": null
     },
     {
       "type": "return",
@@ -110,7 +113,8 @@
       "context": "annual \u00b7 prepaid",
       "resubscribe_todo": false,
       "service_name": "Annual Example",
-      "icon_path": null
+      "icon_path": null,
+      "snoozed_until": null
     }
   ],
   "off_returns": {
@@ -124,7 +128,8 @@
       "context": "not subscribed",
       "resubscribe_todo": true,
       "service_name": "Off Example",
-      "icon_path": null
+      "icon_path": null,
+      "snoozed_until": null
     }
   },
   "summary": {

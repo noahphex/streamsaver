@@ -23,10 +23,10 @@
       </nav>
       <form class="sync-form" method="post" action="{{ url_for('action_sync') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="sync" title="Sync now" aria-label="Sync now{% if settings.last_trakt_sync %}. Last synced {{ settings.last_trakt_sync|local_time }}{% endif %}">{{ icon('refresh') }}{% if settings.last_trakt_sync %}<span class="sync-prefix">Synced </span><span class="num">{{ settings.last_trakt_sync|local_time(compact=True) }}</span>{% else %}<span>Sync now</span>{% endif %}</button>
+        <button class="sync" title="Sync now" aria-label="Sync now{% if settings.last_trakt_sync %}. Last synced {{ settings.last_trakt_sync|local_time }}{% endif %}">{{ icon('refresh') }}{% if settings.last_trakt_sync %}<span class="sync-prefix">Synced </span><span class="figure">{{ settings.last_trakt_sync|local_time(compact=True) }}</span>{% else %}<span>Sync now</span>{% endif %}</button>
       </form>
       <details class="menu">
-        <summary aria-label="More">{{ icon('more') }}</summary>
+        <summary aria-label="More"{% if request.endpoint in ('settings', 'credentials', 'about') or (request.endpoint == 'shows' and request.args.get('view') == 'all') %} class="active"{% endif %}>{{ icon('more') }}</summary>
         <div class="menu-panel">
           <a href="{{ url_for('shows', view='all') }}"{% if request.endpoint == 'shows' and request.args.get('view') == 'all' %} aria-current="page"{% endif %}>Shows library</a>
           {% for endpoint, label in [("settings", "Settings"), ("credentials", "Credentials"), ("about", "About")] %}

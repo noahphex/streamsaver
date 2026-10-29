@@ -1,8 +1,9 @@
+{% from "_window.html" import billing_window %}
 {% from "_service_mark.html" import service_mark, service_title with context %}
 {% from "_icons.html" import icon %}
 {% set summary = grouped.summary %}
 {% if summary.bills or summary.returns %}
-<p class="muted period-summary"><strong class="num">{{ summary.worth_paying }}</strong> bills worth paying · <strong class="num">{{ summary.total|money }}</strong>{% if summary.by %} by <span class="num">{{ summary.by|nice_date }}</span>{% endif %}{% if summary.nothing_new %}<span class="text-yellow"> · <strong class="num">{{ summary.nothing_new }}</strong> with nothing new</span>{% endif %}</p>
+<p class="muted period-summary"><strong class="figure">{{ summary.worth_paying }}</strong> bills worth paying · <strong class="figure">{{ summary.total|money }}</strong>{% if summary.by %} by <span class="figure">{{ summary.by|nice_date }}</span>{% endif %}{% if summary.nothing_new %}<span class="text-yellow"> · <strong class="figure">{{ summary.nothing_new }}</strong> with nothing new</span>{% endif %}</p>
 {% for period in grouped.periods %}
 {% set bill = period.bill %}
 {% set tone = 'green' if bill.verdict.kind == 'returns' else 'yellow' %}
@@ -15,32 +16,27 @@
     </div>
     <strong class="period-amount num">{{ bill.amount|money }}</strong>
   </div>
-  <div class="window" aria-hidden="true">
-    <span class="window-track"></span><span class="window-fill" style="width:{{ period.fill_pct }}%"></span>
-    {% for event in period.returns %}<span class="window-return" style="left:{{ event.pos }}%"></span>{% endfor %}
-    <span class="window-end {{ tone }}"></span>
-    <span class="window-from">{{ 'Today' if period.window_start == today_iso else period.window_start|nice_date }}</span><span class="window-to">{{ period.window_end|nice_date }}</span>
-  </div>
+  {{ billing_window(period, tone, today_iso) }}
   <div class="period-verdict">
     <span class="pill {{ tone }}">{% if tone == 'green' %}{{ bill.verdict.shows|length }} {{ 'show returns' if bill.verdict.shows|length == 1 else 'shows return' }} first{% else %}Nothing new before this bill{% endif %}</span>
     {% if tone == 'yellow' and bill.todo is defined %}<a class="pause-link" href="{{ url_for('dashboard') }}#todo">{{ bill.todo.label }} {{ icon('chevron-right') }}</a>{% endif %}
   </div>
   {% if tone == 'yellow' and period.returns %}<p class="muted period-note">Other tracked shows return below; this advice is based on your anticipated shows.</p>{% endif %}
-  <ul class="period-returns" aria-label="Tracked returns in this billing window">{% for event in period.returns %}<li><span>{{ event.title }}</span><time class="num muted" datetime="{{ event.date }}">{{ event.date|timeline_date }}</time></li>{% endfor %}</ul>
+  <ul class="period-returns" aria-label="Tracked returns in this billing window">{% for event in period.returns %}<li><span>{{ event.title }}</span><time class="figure muted" datetime="{{ event.date }}">{{ event.date|timeline_date }}</time></li>{% endfor %}</ul>
 </article>
 {% endfor %}
 {% if grouped.later.count %}
-<div class="later">{% for anchor in grouped.later.anchors %}<span id="{{ anchor }}" class="later-anchor"></span>{% endfor %}<span>{{ grouped.later.count }} later {{ 'bill' if grouped.later.count == 1 else 'bills' }} · {% for day in grouped.later.dates %}<span class="num">{{ (day|nice_date).split(' ')[1] if not loop.first and day[:7] == grouped.later.dates[loop.index0 - 1][:7] else day|nice_date }}</span>{{ ', ' if not loop.last }}{% endfor %}</span><strong class="num">{{ grouped.later.total|money }}</strong></div>
+<div class="later">{% for anchor in grouped.later.anchors %}<span id="{{ anchor }}" class="later-anchor"></span>{% endfor %}<span>{{ grouped.later.count }} later {{ 'bill' if grouped.later.count == 1 else 'bills' }} · {% for day in grouped.later.dates %}<span class="figure">{{ (day|nice_date).split(' ')[1] if not loop.first and day[:7] == grouped.later.dates[loop.index0 - 1][:7] else day|nice_date }}</span>{{ ', ' if not loop.last }}{% endfor %}</span><strong class="figure">· {{ grouped.later.total|money }} total</strong></div>
 <p class="muted later-note">Too early to tell. Trakt only knows the next episode.</p>
 {% endif %}
 {% if grouped.elsewhere %}
 <section class="elsewhere-section">
-<h2>Elsewhere <span class="num muted">{{ grouped.elsewhere|length }}</span></h2>
+<h2>Elsewhere <span class="figure muted">{{ grouped.elsewhere|length }}</span></h2>
 <ul class="elsewhere">
 {% for event in grouped.elsewhere %}
 <li>{{ service_mark(event.service_name, event.icon_path, 28) }}
   <div><strong>{{ event.title }}</strong><small class="muted">{{ event.date|timeline_date }} · {{ service_title(event.service_name) }}, {{ 'prepaid' if event.context == 'annual · prepaid' else event.context }}</small></div>
-  {% if event.service_status in ('unsubscribed', 'not_subscribed', 'suspended') %}<a class="resubscribe-link" href="{{ url_for('dashboard') + '#todo' if event.resubscribe_todo else url_for('service_edit', service_id=event.service_id) }}">Resubscribe</a>{% elif event.context == 'annual · prepaid' %}<span class="pill quiet">Annual</span>{% endif %}
+  {% if event.snoozed_until %}<span class="muted">Snoozed until {{ event.snoozed_until|nice_date }}</span>{% elif event.service_status in ('unsubscribed', 'not_subscribed', 'suspended') %}<a class="resubscribe-link" href="{{ url_for('dashboard') + '#todo' if event.resubscribe_todo else url_for('service_edit', service_id=event.service_id) }}">Resubscribe</a>{% elif event.context == 'annual · prepaid' %}<span class="pill quiet">Annual</span>{% endif %}
 </li>
 {% endfor %}
 </ul>

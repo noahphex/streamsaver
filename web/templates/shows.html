@@ -33,26 +33,23 @@
       <option value="{{ item }}" {% if state == item %}selected{% endif %}>{{ item }}</option>
     {% endfor %}
   </select>
-  <div class="mobile-sort-row">
-    <label class="mobile-sort">Sort by
-      <select name="sort" onchange="this.form.submit()">
-        {% for key, label in [("title", "Title"), ("state", "State"), ("service", "Service"), ("provider", "Provider"), ("last", "Last"), ("next", "Next")] %}
-          <option value="{{ key }}" {% if sort == key %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label class="mobile-sort">Direction
-      <select name="dir" onchange="this.form.submit()">
-        <option value="asc" {% if direction == 'asc' %}selected{% endif %}>Ascending</option>
-        <option value="desc" {% if direction == 'desc' %}selected{% endif %}>Descending</option>
-      </select>
-    </label>
+  <label class="library-sort">Sort
+    <select name="order" onchange="this.form.submit()">
+      {% for key, label in [("next", "Next date"), ("title", "Title"), ("state", "State"), ("service", "Service"), ("provider", "Provider"), ("last", "Last watched")] %}
+      {% for dir, suffix in [("asc", "soonest" if key in ('next', 'last') else "A–Z"), ("desc", "latest" if key in ('next', 'last') else "Z–A")] %}
+      <option value="{{ key }}:{{ dir }}"{% if sort == key and direction == dir %} selected{% endif %}>{{ label }}, {{ suffix }}</option>
+      {% endfor %}{% endfor %}
+    </select>
+  </label>
+  <div class="segments" role="group" aria-label="Show group">
+    {% for label in ['All', 'Watching', 'Waiting', 'Done'] %}<a href="{{ url_for('shows', view='all', q=q, group=label, sort=sort, dir=direction) }}"{% if group == label %} aria-current="true"{% endif %}>{{ label }}</a>{% endfor %}
   </div>
+  <input type="hidden" name="group" value="{{ group }}">
 </form>
 {% macro sort_link(key, label) -%}
   {% set active = sort == key %}
   {% set next_dir = 'asc' if not active or direction == 'desc' else 'desc' %}
-  <a class="sort-link {{ 'active' if active else '' }}" href="{{ url_for('shows', view='all', q=q, state=state, sort=key, dir=next_dir) }}">
+  <a class="sort-link {{ 'active' if active else '' }}" href="{{ url_for('shows', view='all', q=q, state=state, group=group, sort=key, dir=next_dir) }}">
     <span>{{ label }}</span>
     {% if active %}<span class="sort-arrow {{ direction }}" aria-hidden="true">{{ icon("chevron-left") }}</span>{% endif %}
   </a>
@@ -75,18 +72,20 @@
       {% for show in shows %}
         <tr>
           <td data-label="Title" class="title">{{ show.title }}</td>
-          <td data-label="State"><span class="pill {{ {'active': 'green', 'anticipated': 'cyan', 'occasional': 'pink', 'abandoned': 'pink'}.get(show.show_state, 'quiet') }}">{{ show.show_state }}</span></td>
+          <td data-label="State"><span class="pill {{ {'active': 'green', 'anticipated': 'cyan', 'occasional': 'pink', 'abandoned': 'pink'}.get(show.show_state, 'quiet') }}">{{ show.show_state|capitalize }}</span></td>
           <td data-label="Service">{{ show.service_name or "—" }}{% if show.next_air_date %}<span class="mobile-next"> · {{ show.next_air_date|nice_date }}</span>{% endif %}</td>
           <td data-label="Provider"><span class="provider-name" title="{{ show.primary_provider or '' }}">{{ show.primary_provider if show.primary_provider and show.primary_provider != show.service_name else "" }}</span></td>
           <td data-label="Last">{{ show.last_watch_date|nice_date }}</td>
           <td data-label="Next">{{ show.next_air_date|nice_date or "—" }}</td>
           <td>
             {% if show.show_state not in ("completed", "archived") %}
+            <details class="row-menu"><summary aria-label="Actions for {{ show.title }}">{{ icon('more') }}</summary>
             <form method="post" action="{{ url_for('set_show_state', trakt_id=show.trakt_id) }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="state" value="{{ 'restore' if show.show_state == 'abandoned' else 'abandoned' }}">
               <button class="quiet small show-action" aria-label="{{ ('Unmark ' if show.show_state == 'abandoned' else 'Abandon ') ~ show.title }}">{{ "Unmark" if show.show_state == "abandoned" else "Abandon" }}</button>
             </form>
+            </details>
             {% endif %}
           </td>
         </tr>
@@ -97,9 +96,9 @@
   </table>
 </section>
 <nav class="pagination button-row" aria-label="Shows pages">
-  {% if page > 1 %}<a class="button ghost" rel="prev" href="{{ url_for('shows', view='all', q=q, state=state, sort=sort, dir=direction, page=page-1) }}">Previous page</a>{% endif %}
+  {% if page > 1 %}<a class="button ghost" rel="prev" href="{{ url_for('shows', view='all', q=q, state=state, group=group, sort=sort, dir=direction, page=page-1) }}">Previous page</a>{% endif %}
   <span class="muted">{{ range_start }}–{{ range_end }} of {{ total }}</span>
-  {% if has_next %}<a class="button ghost" rel="next" href="{{ url_for('shows', view='all', q=q, state=state, sort=sort, dir=direction, page=page+1) }}">Next page</a>{% endif %}
+  {% if has_next %}<a class="button ghost" rel="next" href="{{ url_for('shows', view='all', q=q, state=state, group=group, sort=sort, dir=direction, page=page+1) }}">Next page</a>{% endif %}
 </nav>
 {% endif %}
 {% endblock %}

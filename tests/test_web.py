@@ -224,7 +224,7 @@ class WebTests(unittest.TestCase):
         page = self.client.get("/").data.decode()
         self.assertIn('aria-label="Did it: Paused it: Max"', page)
         self.assertIn('aria-label="Not now: Max"', page)
-        self.assertIn('class="todo-count">1</span>', page)
+        self.assertIn('class="todo-count" aria-hidden="true">1</span>', page)
         self.assertEqual(page.count("Could save $10.00/mo"), 1)
         data = {"name": "Max", "action": "suspend"}
         page = self._post("/todo/snooze", data=data, follow_redirects=True).data.decode()
@@ -445,7 +445,7 @@ class WebTests(unittest.TestCase):
             client.assert_not_called()
         self.assertIn('<section class="spend-headline">', page)
         self.assertNotIn("Streaming Cost Control", page)
-        self.assertIn('class="todo-count">1</span>', page)
+        self.assertIn('class="todo-count" aria-hidden="true">1</span>', page)
         self.assertEqual(page.count("Could save $15.00/mo"), 1)
         self.assertNotIn("Synced never", page)
         self.assertIn('role="status" aria-label="Connections need attention"', page)
@@ -542,7 +542,7 @@ class WebTests(unittest.TestCase):
 
     def test_service_mark_and_channel_display_helpers(self):
         self.assertEqual(webapp._service_mark("  Prime Video Channel ")["initials"], "PV")
-        self.assertEqual(webapp._service_mark("hulu")["initials"], "H")
+        self.assertEqual(webapp._service_mark("hulu")["initials"], "HU")
         self.assertEqual(webapp._service_mark("")["initials"], "")
         self.assertEqual(webapp._service_mark("Prime Video"), webapp._service_mark("Prime Video"))
         self.assertIn(webapp._service_mark("Prime Video")["accent"],
@@ -566,7 +566,7 @@ class WebTests(unittest.TestCase):
         self.assertIn('aria-hidden="true">PV</span>', page)
         page = self.client.get("/services").data.decode()
         self.assertIn('class="card-link"', page)
-        self.assertIn('>Prime Video<span class="service-channel">Amazon Channel</span></a>', page)
+        self.assertIn('>Prime Video <span class="service-channel">Amazon Channel</span></a>', page)
         self.assertIn('class="service-channel">Amazon Channel', page)
         self.assertIn('aria-label="Edit Prime Video Amazon Channel"', page)
         self._post("/todo/snooze", data={"name": "Prime Video Amazon Channel", "action": "suspend"})
@@ -593,7 +593,7 @@ class WebTests(unittest.TestCase):
                 self.assertIn('class="spend-amount">$10.00</span> a month for 1 service.', page)
                 self.assertNotIn('money-band', page)
                 self.assertNotIn('class="metrics', page)
-                self.assertIn('class="todo-count"', page)
+                self.assertEqual('class="todo-count"' in page, savings)
                 self.assertLess(page.index('class="spend-headline"'), page.index('id="todo"'))
                 if results:
                     self.assertIn('class="text-mono">$120.00</span>', page)
@@ -611,17 +611,17 @@ class WebTests(unittest.TestCase):
         rec = {**webapp.get_all_services()[0], "reason": "1 active show(s). Viewer activity: High."}
         with mock.patch.object(webapp, "run_analysis", return_value={"keep": [rec]}):
             page = self.client.get('/services').data.decode()
-            self.assertIn('class="keep-reason muted" title="1 active show. Viewer activity: High."', page)
+            self.assertIn('class="keep-reason muted" title="1 active show. You watch it a lot."', page)
             self.assertEqual(page.count(f'href="/services/{service_id}/edit"'), 1)
             self.assertNotIn('card-edit', page)
             page = self.client.get('/').data.decode()
             kept = page[page.index('<ul class="kept">'):]
             self.assertIn('service-mark-24', kept)
-            self.assertIn('<strong>Paramount+<span class="service-channel">Amazon Channel</span></strong>', kept)
+            self.assertIn('<strong>Paramount+ <span class="service-channel">Amazon Channel</span></strong>', kept)
             page = self.client.get(f'/services/{service_id}/edit').data.decode()
             heading = page[page.index('<h1>'):page.index('</h1>')]
             self.assertNotIn('service-mark-24', heading)
-            self.assertIn('Paramount+<span class="service-channel">Amazon Channel</span>', heading)
+            self.assertIn('Paramount+ <span class="service-channel">Amazon Channel</span>', heading)
         rec.update(action="suspend", until=date.today().isoformat())
         with mock.patch.object(webapp, "run_analysis", return_value={"snoozed": [rec]}):
             page = self.client.get(f'/services/{service_id}/edit').data.decode()
@@ -675,9 +675,9 @@ class WebTests(unittest.TestCase):
         self.assertNotIn(b"Series 050", page)
         self.assertIn(b'aria-sort="ascending"', page)
         self.assertIn(b'<span class="sort-arrow asc" aria-hidden="true"><svg', page)
-        self.assertIn(b'name="sort"', page)
-        self.assertIn(b'name="dir"', page)
-        self.assertIn(b'q=Series&amp;state=Active&amp;sort=title&amp;dir=asc&amp;page=2', page)
+        self.assertIn(b'name="order"', page)
+        self.assertIn(b'value="title:asc" selected', page)
+        self.assertIn(b'q=Series&amp;state=Active&amp;group=All&amp;sort=title&amp;dir=asc&amp;page=2', page)
         page = self.client.get(url + "&page=3").data
         self.assertIn("101–106 of 106", page.decode())
         self.assertIn(b"Previous page", page)
@@ -708,8 +708,8 @@ class WebTests(unittest.TestCase):
                  for i, title in enumerate(["Love is Blind", "Bake Off", "Third show"])])
         page = self.client.get("/shows").data.decode()
         self.assertIn('href="/shows" aria-current="page"', page)
-        self.assertIn('class="num">1</strong> bills worth paying', page)
-        self.assertIn('class="num">$40.03</strong>', page)
+        self.assertIn('class="figure">1</strong> bills worth paying', page)
+        self.assertIn('class="figure">$40.03</strong>', page)
         self.assertIn("1 later bill", page)
         self.assertIn("3 shows return first", page)
         self.assertIn("Third show", page)
@@ -759,7 +759,7 @@ class WebTests(unittest.TestCase):
                 self.assertNotIn('nav-secondary', page)
         page = self.client.get("/shows?view=all&q=Silo&state=Active&sort=title&dir=asc&page=2&endpoint=bad").data.decode()
         self.assertIn('<h1>Shows library</h1>', page)
-        self.assertIn('href="/shows?view=all&amp;q=Silo&amp;state=Active&amp;sort=title&amp;dir=asc&amp;page=1"', page)
+        self.assertIn('href="/shows?view=all&amp;q=Silo&amp;state=Active&amp;group=All&amp;sort=title&amp;dir=asc&amp;page=1"', page)
         self.assertNotIn("endpoint=bad", page)
         dashboard = self.client.get("/").data.decode()
         self.assertNotIn('<h2>Actions</h2>', dashboard)
@@ -786,7 +786,7 @@ class WebTests(unittest.TestCase):
             else:
                 self.assertIn('<span>Sync now</span>', sync)
             menu = re.search(r'<details class="menu">.*?</details>', page, re.S).group()
-            self.assertIn('<summary aria-label="More"><svg', menu)
+            self.assertIn('<summary aria-label="More" class="active"><svg', menu)
             for label in ("Shows library", "Settings", "Credentials", "About"):
                 self.assertIn(label, menu)
             sign_out = re.search(r'<form.*?</form>', menu, re.S).group()
@@ -811,7 +811,7 @@ class WebTests(unittest.TestCase):
                              [("z", "Zulu", "active"), ("a", "Alpha", "active"), ("d", "Dormant", "dormant")])
         page = self.client.get("/shows?view=all&sort=score").data.decode()
         self.assertLess(page.index('class="title">Alpha'), page.index('class="title">Zulu'))
-        self.assertIn('value="state" selected', page)
+        self.assertIn('value="state:desc" selected', page)
 
     def test_rail_bill_anchor_all_returns_and_accessible_fallback(self):
         from datetime import timedelta
@@ -868,7 +868,7 @@ class WebTests(unittest.TestCase):
                 mock.patch.object(webapp, "build_timeline", return_value=[{"events": events}]):
             page = self.client.get("/").data.decode()
         self.assertIn('class="spend-amount">$30.00</span> a month for 3 services.', page)
-        self.assertIn('class="text-yellow">1 bill has nothing coming back first.', page)
+        self.assertIn('class="text-yellow">1 bill has nothing coming back first</strong>', page)
         for tone in ("green", "yellow", "quiet"):
             self.assertIn(f'class="bill rail-tone-{tone}"', page)
         for tone in ("yellow", "cyan", "green", "pink"):
@@ -877,7 +877,7 @@ class WebTests(unittest.TestCase):
         self.assertIn('class="rail-initials"', page)
         self.assertIn('&lt;Sample &amp; show&gt;', page)
         self.assertIn('class="todo-done"', page)
-        self.assertIn('>Did it</button>', page)
+        self.assertIn('>Paused it</button>', page)
         self.assertNotIn('Synced', page[page.index('id="todo"'):])
 
         class PostForms(HTMLParser):
@@ -902,6 +902,89 @@ class WebTests(unittest.TestCase):
         forms.feed(page)
         self.assertGreater(len(forms.tokens), 3)
         self.assertTrue(all(count == 1 for count in forms.tokens))
+
+    def test_polish_dashboard_order_filters_and_story(self):
+        from core.service_manager import add_service
+        from datetime import timedelta
+        self._sign_in()
+        sid = add_service("Example", status="subscribed", monthly_cost=10,
+                          billing_anchor_date=str(date.today() + timedelta(days=7)))
+        with mock.patch.object(webapp, "_connection_issues", return_value=[]):
+            page = self.client.get("/").data.decode()
+        self.assertLess(page.index('id="todo"'), page.index('class="rail"'))
+        self.assertIn('aria-label="To do, 1 item"', page)
+        self.assertIn('href="#todo">1 thing to change.', page)
+        self.assertIn('>Paused it</button>', page)
+        with mock.patch.object(webapp, "run_analysis", return_value={}):
+            page = self.client.get("/").data.decode()
+        self.assertLess(page.index('class="rail"'), page.index('id="todo"'))
+        self.assertNotIn('class="todo-count"', page)
+        with db.db_session() as conn:
+            conn.executemany("INSERT INTO shows (trakt_id,title,show_state,service_id,next_air_date) VALUES (?,?,?,?,?)",
+                             [(state, state.title() + " example", state, sid, str(date.today() + timedelta(days=2)))
+                              for state in ('active', 'occasional', 'anticipated', 'abandoned')])
+        page = self.client.get('/shows?view=all&group=Watching&order=title:asc').data.decode()
+        self.assertIn('Active example', page)
+        self.assertIn('Occasional example', page)
+        self.assertNotIn('Anticipated example', page)
+        self.assertIn('<details class="row-menu">', page)
+        self.assertIn('class="pill green">Active</span>', page)
+        page = self.client.get('/shows?view=all&group=Done&state=Anticipated&order=next:asc').data.decode()
+        self.assertIn('Anticipated example', page)
+        self.assertNotIn('Abandoned example', page)
+        page = self.client.get(f'/services/{sid}/edit').data.decode()
+        self.assertIn('<section class="service-story">', page)
+        self.assertIn('class="window"', page)
+        self.assertIn('Anticipated example', page)
+        self.assertIn('<h2>Details</h2>', page)
+
+    def test_polish_snoozed_return_and_free_ledger(self):
+        from core.service_manager import add_service
+        from core.todo import snooze
+        from datetime import timedelta
+        self._sign_in()
+        sid = add_service('Paramount+ Amazon Channel', status='unsubscribed', monthly_cost=10)
+        with db.db_session() as conn:
+            conn.execute("INSERT INTO shows (trakt_id,title,show_state,service_id,next_air_date) VALUES ('return','Example return','anticipated',?,?)",
+                         (sid, str(date.today() + timedelta(days=2))))
+        with db.db_session() as conn:
+            conn.execute("UPDATE shows SET interest_score = 80 WHERE trakt_id = 'return'")
+        until = str(date.today() + timedelta(days=29))
+        snooze('Paramount+ Amazon Channel', 'resubscribe', until)
+        for path in ('/shows', '/services'):
+            page = self.client.get(path).data.decode()
+            self.assertIn('Snoozed until ' + webapp._nice_date(until), page)
+            self.assertNotIn('class="resubscribe-link"', page)
+        add_service('Free annual', status='subscribed', billing_cycle='annual', annual_cost=0,
+                    billing_anchor_date=str(date.today() + timedelta(days=50)))
+        page = self.client.get('/services').data.decode()
+        self.assertIn('<div class="ledger-detail"><span class="muted">Free</span>', page)
+        self.assertNotIn('Annual plan prepaid through', page)
+        page = self.client.get(f'/services/{sid}/edit').data.decode()
+        self.assertIn('Not currently paying.', page)
+        self.assertNotIn('Nothing returns before this bill', page)
+        annual = add_service('Distant annual', status='subscribed', billing_cycle='annual', annual_cost=120,
+                             billing_anchor_date=str(date.today() + timedelta(days=180)))
+        page = self.client.get(f'/services/{annual}/edit').data.decode()
+        self.assertIn('No bill in the next 60 days.', page)
+        self.assertNotIn('Nothing returns before this bill', page)
+
+    def test_polish_provider_sections_and_maintenance_forms(self):
+        import re
+        self._sign_in()
+        page = self.client.get('/credentials').data.decode()
+        for label in ('Trakt', 'TMDb', 'Gmail'):
+            self.assertEqual(page.count(f'<h2>{label}</h2>'), 1)
+            self.assertNotIn(f'class="summary-heading">{label}', page)
+        self.assertEqual(page.count('class="provider-section"'), 3)
+        page = self.client.get('/settings').data.decode()
+        self.assertEqual(page.count('class="maintenance-row"'), 6)
+        self.assertIn('Discord webhook URL <span class="muted">Discord alerts: off', page)
+        for path in ('/', '/services', '/services/new', '/shows?view=all', '/settings', '/credentials', '/about'):
+            page = self.client.get(path).data.decode()
+            forms = re.findall(r'<form\b[^>]*method="post".*?</form>', page, re.S)
+            self.assertTrue(forms)
+            self.assertTrue(all(form.count('name="csrf_token"') == 1 for form in forms))
 
     def test_state_sort_orders_by_meaning(self):
         states = ["active", "anticipated", "occasional", "abandoned", "completed", "dormant", "ignored", "archived"]
@@ -983,7 +1066,7 @@ class WebTests(unittest.TestCase):
             page = self.client.get("/shows").data.decode()
         self.assertIn('href="/#todo">Resubscribe</a>', page)
         self.assertIn('href="/services/2/edit">Resubscribe</a>', page)
-        self.assertIn('Paramount+<span class="service-channel">Amazon Channel</span>, not subscribed', page)
+        self.assertIn('Paramount+ <span class="service-channel">Amazon Channel</span>, not subscribed', page)
         self.assertEqual(page.count('class="resubscribe-link"'), 2)
 
 

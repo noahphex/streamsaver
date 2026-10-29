@@ -43,7 +43,6 @@ def build_rail(timeline, today=None, days=30, width=350):
             "amount_x": round(tile_x + size / 2, 2), "amount_y": tile_y - 8,
             "initials_x": round(tile_x + size / 2, 2),
             "initials_y": round(tile_y + size / 2, 2), "sequence": len(bills),
-            "hit_radius": 1,
         })
 
     # A 30px stagger alone overlaps larger tiles and the lower amount label.
@@ -56,43 +55,80 @@ def build_rail(timeline, today=None, days=30, width=350):
                 bill[key] += extra
     track_y += extra
 
-    returns, arcs = [], []
-    stacks = []
+    # Trim the viewBox to the amount text, including its ascenders.
+    top = min((bill["amount_y"] - 12 for bill in bills), default=0) - 4
+    for bill in bills:
+        for key in ("tile_y", "tile_bottom", "amount_y", "initials_y"):
+            bill[key] -= top
+    track_y = max((bill["tile_bottom"] for bill in bills), default=track_y - top - 36) + 36
+
+    returns, arcs, clusters = [], [], []
     for event in events:
         if event["type"] != "return":
             continue
         x = x_for(date.fromisoformat(event["date"]))
-        group = next((group for group in stacks if abs(group["x"] - x) <= 6), None)
-        if group is None:
-            group = {"x": x, "count": 0}
-            stacks.append(group)
-        stack = group["count"]
-        group["count"] += 1
+        cluster = next((group for group in clusters if x - group["x"] <= 6), None)
+        if cluster is None:
+            cluster = {"x": x, "y": track_y + 9, "count": 0, "titles": [], "kind": "elsewhere"}
+            clusters.append(cluster)
+        cluster["count"] += 1
+        cluster["titles"].append(f"{event['title']} · {event['date']}")
         kind = "counts" if event.get("context", "").startswith("counts toward") else "elsewhere"
+        if kind == "counts":
+            cluster["kind"] = "counts"
         bill = next((bill for bill in bills if kind == "counts"
                      and event.get("service_id") is not None
                      and bill["service_id"] == event["service_id"]
                      and bill["date"] >= event["date"]), None)
-        y = track_y + 9 + stack * 9
-        returns.append({"x": x, "y": y, "stack": stack, "kind": kind,
+        x, y = cluster["x"], cluster["y"]
+        returns.append({"x": x, "y": y, "kind": kind,
                         "title": event["title"], "date": event["date"],
                         "bill_x": bill["x"] if bill else None})
         if bill:
+            bill.setdefault("show_titles", []).append(event["title"])
             depth = round(min(70, 14 + abs(bill["x"] - x) * .32), 2)
             control_x = round((x + bill["x"]) / 2, 2)
-            control_y = round(max(track_y, y) + depth, 2)
+            control_y = round(y + depth, 2)
+            t = (y - control_y) / (y - 2 * control_y + track_y)
+            bottom = (1 - t) ** 2 * y + 2 * (1 - t) * t * control_y + t ** 2 * track_y
             arcs.append({"path": f"M {x} {y} Q {control_x} {control_y} {bill['x']} {track_y}",
-                         "sequence": len(arcs), "depth": depth, "bottom": control_y})
-    # Put labels below dots and curves so dense same-day returns remain legible.
-    bottom = max([track_y + 42] + [r["y"] + 8 for r in returns]
-                 + [arc["bottom"] for arc in arcs])
+                         "sequence": len(arcs), "depth": depth, "bottom": round(bottom, 2)})
+    label_ends = [0, 0]
+    for index, bill in enumerate(bills):
+        titles = bill.get("show_titles", [])
+        suffix = f" +{len(titles) - 1}" if len(titles) > 1 else ""
+        limit = 14 - len(suffix)
+        lead = titles[0] if titles else ""
+        bill["show_label"] = (lead if len(lead) <= limit else lead[:limit - 1].rstrip() + "…") + suffix
+        near = any(abs(bill["x"] - other["x"]) < 90 for other in bills if other is not bill)
+        if titles and (near or len(bill["show_label"]) * 5.6 > width - 8):
+            bill["show_label"] = f"{len(titles)} {'show' if len(titles) == 1 else 'shows'}"
+        row = index % 2 if near else 0
+        half_width = len(bill["show_label"]) * 2.8
+        while True:
+            if row == len(label_ends):
+                label_ends.append(0)
+            label_x = max(half_width + 2, min(width - half_width - 2, bill["x"]))
+            label_x = max(label_x, label_ends[row] + half_width + 6)
+            if label_x + half_width <= width - 2:
+                break
+            row += 1
+        bill["label_y"] = track_y - 12 if row == 0 else track_y + 29 + (row - 1) * 16
+        bill["label_x"] = round(label_x, 2)
+        if bill["show_label"]:
+            label_ends[row] = bill["label_x"] + half_width
+        bill["hit_x"] = max(0, min(width - 48, bill["amount_x"] - 24))
+        bill["hit_y"] = bill["initials_y"] - 24
+        bill["hit_height"] = 48
+    bottom = max([track_y + 9] + [arc["bottom"] for arc in arcs]
+                 + [bill["label_y"] + 3 for bill in bills if bill["show_label"]])
     ticks = [{"x": x_for(today + timedelta(days=offset)),
               "label": "Today" if offset == 0 else
               f"{today + timedelta(days=offset):%b} {(today + timedelta(days=offset)).day}",
-              "today": offset == 0, "label_y": bottom + 16,
+              "today": offset == 0, "label_y": track_y + 19 if offset == 0 else bottom + 16,
               "anchor": "start" if offset == 0 else "end" if offset == days else "middle"}
              for offset in range(0, days + 1, 7)]
-    return {"bills": bills, "returns": returns, "arcs": arcs, "ticks": ticks,
-            "height": bottom + 28, "empty": not bills, "width": width,
+    return {"bills": bills, "returns": returns, "clusters": clusters, "arcs": arcs, "ticks": ticks,
+            "height": max(tick["label_y"] for tick in ticks) + 12, "empty": not bills, "width": width,
             "track_y": track_y, "track_start": 14, "track_end": width - 14,
             "tick_bottom": track_y + 5}

@@ -36,7 +36,7 @@ def potential_monthly_savings(results):
     )
 
 
-def spend_headline(totals, timeline_or_rail, savings, subscribed_count):
+def spend_headline(totals, timeline_or_rail, savings, subscribed_count, todo=()):
     """Spoken spend copy derived from actual bills, including annual charges."""
     from core.rail import build_rail
 
@@ -60,6 +60,11 @@ def spend_headline(totals, timeline_or_rail, savings, subscribed_count):
         parts.append({"text": ", and " if clause else ".", "tone": "quiet"})
         if clause:
             parts.append(clause)
+    if todo:
+        parts[-1]["text"] = parts[-1]["text"].rstrip(".")
+        parts.extend([{"text": ", and ", "tone": "quiet"},
+                      {"text": f"{len(todo)} {'thing' if len(todo) == 1 else 'things'} to change.",
+                       "tone": todo[0]["color"], "emphasis": True, "href": "#todo"}])
     return {"lead": "You pay" if subscribed_count else "You're not paying for any streaming right now.",
             "amount": f"${totals['monthly_total']:,.2f}" if subscribed_count else "",
             "tail": f"a month for {subscribed_count} {'service' if subscribed_count == 1 else 'services'}." if subscribed_count else "",

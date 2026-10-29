@@ -1,0 +1,225 @@
+{
+  "bills": [
+    {
+      "amount": 10,
+      "service_name": "Service 1",
+      "icon_path": null,
+      "service_id": 1,
+      "date": "2026-11-05",
+      "x": 89.13,
+      "size": 30.5,
+      "row": 0,
+      "mark": {
+        "initials": "S1",
+        "accent": "yellow"
+      },
+      "tone": "green",
+      "verdict": "1 show returns before this bill",
+      "verdict_kind": "returns",
+      "tile_x": 73.88,
+      "tile_y": 24,
+      "tile_bottom": 54.5,
+      "amount_x": 89.13,
+      "amount_y": 16,
+      "initials_x": 89.13,
+      "initials_y": 39.25,
+      "sequence": 0,
+      "show_titles": [
+        "Example one",
+        "Example four"
+      ],
+      "show_label": "Example one +1",
+      "label_y": 83.0,
+      "label_x": 89.13,
+      "hit_x": 65.13,
+      "hit_y": 15.25,
+      "hit_height": 48
+    },
+    {
+      "amount": 15,
+      "service_name": "Service 2",
+      "icon_path": null,
+      "service_id": 2,
+      "date": "2026-11-15",
+      "x": 196.47,
+      "size": 32.75,
+      "row": 0,
+      "mark": {
+        "initials": "S2",
+        "accent": "purple"
+      },
+      "tone": "green",
+      "verdict": "1 show returns before this bill",
+      "verdict_kind": "returns",
+      "tile_x": 180.09,
+      "tile_y": 24,
+      "tile_bottom": 56.75,
+      "amount_x": 196.47,
+      "amount_y": 16,
+      "initials_x": 196.47,
+      "initials_y": 40.379999999999995,
+      "sequence": 1,
+      "show_titles": [
+        "Example two"
+      ],
+      "show_label": "Example two",
+      "label_y": 83.0,
+      "label_x": 196.47,
+      "hit_x": 172.47,
+      "hit_y": 16.379999999999995,
+      "hit_height": 48
+    },
+    {
+      "amount": 20,
+      "service_name": "Service 3",
+      "icon_path": null,
+      "service_id": 3,
+      "date": "2026-11-25",
+      "x": 303.8,
+      "size": 35.0,
+      "row": 0,
+      "mark": {
+        "initials": "S3",
+        "accent": "orange"
+      },
+      "tone": "green",
+      "verdict": "1 show returns before this bill",
+      "verdict_kind": "returns",
+      "tile_x": 286.3,
+      "tile_y": 24,
+      "tile_bottom": 59.0,
+      "amount_x": 303.8,
+      "amount_y": 16,
+      "initials_x": 303.8,
+      "initials_y": 41.5,
+      "sequence": 2,
+      "show_titles": [
+        "Example three"
+      ],
+      "show_label": "Example three",
+      "label_y": 83.0,
+      "label_x": 303.8,
+      "hit_x": 279.8,
+      "hit_y": 17.5,
+      "hit_height": 48
+    }
+  ],
+  "returns": [
+    {
+      "x": 35.47,
+      "y": 104.0,
+      "kind": "counts",
+      "title": "Example one",
+      "date": "2026-10-31",
+      "bill_x": 89.13
+    },
+    {
+      "x": 35.47,
+      "y": 104.0,
+      "kind": "counts",
+      "title": "Example two",
+      "date": "2026-10-31",
+      "bill_x": 196.47
+    },
+    {
+      "x": 35.47,
+      "y": 104.0,
+      "kind": "counts",
+      "title": "Example three",
+      "date": "2026-10-31",
+      "bill_x": 303.8
+    },
+    {
+      "x": 35.47,
+      "y": 104.0,
+      "kind": "counts",
+      "title": "Example four",
+      "date": "2026-10-31",
+      "bill_x": 89.13
+    }
+  ],
+  "clusters": [
+    {
+      "x": 35.47,
+      "y": 104.0,
+      "count": 4,
+      "titles": [
+        "Example one \u00b7 2026-10-31",
+        "Example two \u00b7 2026-10-31",
+        "Example three \u00b7 2026-10-31",
+        "Example four \u00b7 2026-10-31"
+      ],
+      "kind": "counts"
+    }
+  ],
+  "arcs": [
+    {
+      "path": "M 35.47 104.0 Q 62.3 135.17 89.13 95.0",
+      "sequence": 0,
+      "depth": 31.17,
+      "bottom": 117.62
+    },
+    {
+      "path": "M 35.47 104.0 Q 115.97 169.52 196.47 95.0",
+      "sequence": 1,
+      "depth": 65.52,
+      "bottom": 134.65
+    },
+    {
+      "path": "M 35.47 104.0 Q 169.63 174.0 303.8 95.0",
+      "sequence": 2,
+      "depth": 70,
+      "bottom": 136.89
+    },
+    {
+      "path": "M 35.47 104.0 Q 62.3 135.17 89.13 95.0",
+      "sequence": 3,
+      "depth": 31.17,
+      "bottom": 117.62
+    }
+  ],
+  "ticks": [
+    {
+      "x": 14.0,
+      "label": "Today",
+      "today": true,
+      "label_y": 114.0,
+      "anchor": "start"
+    },
+    {
+      "x": 89.13,
+      "label": "Nov 5",
+      "today": false,
+      "label_y": 152.89,
+      "anchor": "middle"
+    },
+    {
+      "x": 164.27,
+      "label": "Nov 12",
+      "today": false,
+      "label_y": 152.89,
+      "anchor": "middle"
+    },
+    {
+      "x": 239.4,
+      "label": "Nov 19",
+      "today": false,
+      "label_y": 152.89,
+      "anchor": "middle"
+    },
+    {
+      "x": 314.53,
+      "label": "Nov 26",
+      "today": false,
+      "label_y": 152.89,
+      "anchor": "middle"
+    }
+  ],
+  "height": 164.89,
+  "empty": false,
+  "width": 350,
+  "track_y": 95.0,
+  "track_start": 14,
+  "track_end": 336,
+  "tick_bottom": 100.0
+}

@@ -2,23 +2,7 @@
 {% block title %}Dashboard - Streamsaver{% endblock %}
 {% from "_service_mark.html" import service_mark, snooze_undo, service_title with context %}
 {% from "_rail.html" import billing_rail with context %}
-{% block content %}
-{% if issues %}
-<section class="panel connection-issues" role="status" aria-label="Connections need attention">
-  {% for issue in issues %}
-    <p><strong>{{ issue.name }}</strong>: {{ issue.message }} {{ issue.impact }} <a class="inline-link" href="{{ issue.href }}">Fix {{ issue.name }}</a></p>
-  {% endfor %}
-</section>
-{% endif %}
-
-<div class="dashboard-top">
-<section class="spend-headline">
-  <h1>{{ headline.lead }}{% if headline.amount %} <span class="spend-amount">{{ headline.amount }}</span> {{ headline.tail }}{% endif %}</h1>
-  <p class="spend-sub">{% for part in headline.sub_parts %}{% if part.emphasis %}<strong class="text-{{ part.tone }}">{{ part.text }}</strong>{% else %}<span class="text-{{ part.tone }}">{{ part.text }}</span>{% endif %}{% endfor %}</p>
-  {% if headline.savings %}<p class="spend-savings">{{ headline.savings }}</p>{% endif %}
-</section>
-{{ billing_rail(rail) }}
-</div>
+{% macro todo_section() %}
 {% if todo_undo %}
 <section class="flash-stack" tabindex="-1">
   <div class="undo-notice button-row" role="status">
@@ -32,7 +16,7 @@
 </section>
 {% endif %}
 <section class="todo-panel" id="todo">
-  <h2>To do <span class="todo-count">{{ todo|length }}</span></h2>
+  <h2{% if todo %} aria-label="To do, {{ todo|length }} {{ 'item' if todo|length == 1 else 'items' }}"{% endif %}>To do{% if todo %} <span class="todo-count" aria-hidden="true">{{ todo|length }}</span>{% endif %}</h2>
   {% if todo %}
     <ul class="todo">
       {% for item in todo %}
@@ -48,7 +32,7 @@
             {% if item.has_done %}
               <form method="post" action="{{ url_for('todo_done', service_id=item.service_id, action=item.key) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="todo-done" aria-label="Did it: {{ item.done_label }}: {{ item.name }}">Did it</button>
+                <button class="todo-done" aria-label="Did it: {{ item.done_label }}: {{ item.name }}">{{ item.done_label }}</button>
               </form>
             {% endif %}
             <form method="post" action="{{ url_for('todo_snooze') }}">
@@ -91,4 +75,24 @@
   {% endif %}
 </section>
 
+{% endmacro %}
+{% block content %}
+{% if issues %}
+<section class="panel connection-issues" role="status" aria-label="Connections need attention">
+  {% for issue in issues %}
+    <p><strong>{{ issue.name }}</strong>: {{ issue.message }} {{ issue.impact }} <a class="inline-link" href="{{ issue.href }}">Fix {{ issue.name }}</a></p>
+  {% endfor %}
+</section>
+{% endif %}
+
+<div class="dashboard-top">
+<section class="spend-headline">
+  <h1>{{ headline.lead }}{% if headline.amount %} <span class="spend-amount">{{ headline.amount }}</span> {{ headline.tail }}{% endif %}</h1>
+  <p class="spend-sub">{% for part in headline.sub_parts %}{% if part.emphasis %}<strong class="text-{{ part.tone }}">{% if part.href %}<a href="{{ part.href }}">{{ part.text }}</a>{% else %}{{ part.text }}{% endif %}</strong>{% else %}<span class="text-{{ part.tone }}">{{ part.text }}</span>{% endif %}{% endfor %}</p>
+  {% if headline.savings %}<p class="spend-savings">{{ headline.savings }}</p>{% endif %}
+</section>
+{% if todo %}{{ todo_section() }}{% endif %}
+{{ billing_rail(rail) }}
+</div>
+{% if not todo %}{{ todo_section() }}{% endif %}
 {% endblock %}

@@ -1,0 +1,8 @@
+{% macro billing_window(period, tone, today_iso) %}
+  <div class="window" aria-hidden="true">
+    <span class="window-track"></span><span class="window-fill" style="width:{{ period.fill_pct }}%"></span>
+    {% for event in period.returns %}<span class="window-return" style="left:{{ event.pos }}%"></span>{% endfor %}
+    <span class="window-end {{ tone }}"></span>
+    <span class="window-from">{{ 'Today' if period.window_start == today_iso else period.window_start|nice_date }}</span><span class="window-to">{{ period.window_end|nice_date }}</span>
+  </div>
+{% endmacro %}
