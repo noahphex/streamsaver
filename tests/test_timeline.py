@@ -215,7 +215,7 @@ def test_return_contexts(database):
 def test_later_bill_empty_interval_and_annual_single_occurrence(database):
     show("On first bill", 7)
     bills = [e for e in events({"suspend": [rec()]}) if e["type"] == "bill"]
-    assert bills[1]["verdict"] == {"kind": "nothing_new", "text": "Nothing new since the last bill"}
+    assert bills[1]["verdict"] == {"kind": "unknown", "text": "Too early to tell"}
     assert len(events({"keep": [rec(billing_cycle="annual", annual_cost=100)]})) == 2  # one return, one bill
 
 
@@ -238,4 +238,9 @@ def test_next_bill_already_clamped_uses_stored_anchor(database):
 def test_later_verdict_excludes_stale_watched_return(database):
     show("Already watched", 20, last_watch_date="2026-11-23")
     bills = [e for e in events({"keep": [rec()]}) if e["type"] == "bill"]
-    assert bills[1]["verdict"]["kind"] == "nothing_new"
+    assert bills[1]["verdict"]["kind"] == "unknown"
+
+
+def test_only_first_bill_can_be_nothing_new(database):
+    bills = [e for e in events({"keep": [rec()]}) if e["type"] == "bill"]
+    assert [b["verdict"]["kind"] for b in bills] == ["nothing_new", "unknown"]

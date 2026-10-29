@@ -70,8 +70,11 @@ def build_timeline(results, today=None, days=60):
                             {"kind": "returns", "shows": shows,
                              "text": f"{len(shows)} {'show returns' if len(shows) == 1 else 'shows return'} before this bill"}
                             if shows else
-                            {"kind": "nothing_new", "text": "Nothing new since the last bill"
-                             if previous else "Nothing new before this bill"}
+                            {"kind": "nothing_new", "text": "Nothing new before this bill"}
+                            if previous is None else
+                            # Trakt rarely knows premieres beyond the next few weeks, so a later
+                            # empty interval is unknown rather than a reason to pause.
+                            {"kind": "unknown", "text": "Too early to tell"}
                         )
                     event = dict(type="bill", date=billing.isoformat(), service_name=rec["name"],
                                  service_id=rec.get("id"), icon_path=rec.get("icon_path"),

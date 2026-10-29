@@ -19,7 +19,7 @@
         <strong class="bill-amount">{{ event.amount|money }}</strong>
       </div>
       <div class="timeline-verdict verdict-{{ event.verdict.kind }}">
-        {% if event.verdict.kind != 'prepaid' %}<span class="verdict-dot" aria-hidden="true"></span>{% endif %}
+        {% if event.verdict.kind not in ('prepaid', 'unknown') %}<span class="verdict-dot" aria-hidden="true"></span>{% endif %}
         {{ event.verdict.text }}{% if event.verdict.kind == 'returns' %}: {{ titles(event.verdict.shows[:6]) }}{% if event.verdict.shows|length > 6 %}<details><summary>+{{ event.verdict.shows|length - 6 }} more</summary>{{ titles(event.verdict.shows[6:]) }}</details>{% endif %}{% endif %}
         {% if event.verdict.kind == 'nothing_new' and event.todo is defined %}
           <a class="inline-link timeline-todo" href="{{ url_for('dashboard') }}#todo">{{ event.todo.label }} →</a>
