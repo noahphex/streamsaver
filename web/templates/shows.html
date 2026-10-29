@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Shows - Streamsaver{% endblock %}
-{% from "_timeline.html" import event_row with context %}
+
 {% from "_icons.html" import icon %}
 {% block content %}
 <section class="hero">
@@ -10,21 +10,7 @@
 </section>
 {% set all_query = dict(all_params, view='all') %}
 {% if view != 'all' %}
-<p class="muted">{{ summary.bills }} bills · {{ summary.amount|money }} · {{ summary.returns }} shows returning in the next 60 days</p>
-<p class="muted">A bill is worth paying when something you watch comes back before it.</p>
-{% for week in timeline %}
-<section class="timeline-week">
-  <h2>{{ week.label }}</h2>
-  <ul class="timeline-list">
-    {% for event in week.events %}{{ event_row(event) }}{% endfor %}
-  </ul>
-</section>
-{% else %}
-<section class="panel">
-  <p>Nothing billing or returning in the next 60 days.</p>
-  <a class="button ghost" href="{{ url_for('shows', **all_query) }}">All shows</a>
-</section>
-{% endfor %}
+{% include "_timeline.html" %}
 {% else %}
 <details class="state-help">
   <summary>What do the states mean?</summary>

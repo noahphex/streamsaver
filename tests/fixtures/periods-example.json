@@ -1,0 +1,139 @@
+{
+  "periods": [
+    {
+      "bill": {
+        "type": "bill",
+        "date": "2026-11-04",
+        "service_name": "Monthly Example",
+        "service_id": 1,
+        "icon_path": null,
+        "amount": 10,
+        "cycle": "monthly",
+        "verdict": {
+          "kind": "returns",
+          "shows": [
+            {
+              "title": "First return",
+              "date": "2026-10-30"
+            }
+          ],
+          "text": "1 show returns before this bill"
+        }
+      },
+      "window_start": "2026-10-29",
+      "window_end": "2026-11-04",
+      "returns": [
+        {
+          "type": "return",
+          "date": "2026-10-30",
+          "title": "First return",
+          "show_state": "anticipated",
+          "service_id": 1,
+          "service_status": "subscribed",
+          "context": "counts toward the Nov 4 bill",
+          "resubscribe_todo": false,
+          "service_name": "Monthly Example",
+          "icon_path": null,
+          "pos": 16.67
+        }
+      ],
+      "fill_pct": 16.67,
+      "anchor_id": "bill-1-2026-11-04"
+    },
+    {
+      "bill": {
+        "type": "bill",
+        "date": "2026-12-04",
+        "service_name": "Monthly Example",
+        "service_id": 1,
+        "icon_path": null,
+        "amount": 10,
+        "cycle": "monthly",
+        "verdict": {
+          "kind": "returns",
+          "shows": [
+            {
+              "title": "Second return",
+              "date": "2026-11-10"
+            }
+          ],
+          "text": "1 show returns before this bill"
+        }
+      },
+      "window_start": "2026-11-04",
+      "window_end": "2026-12-04",
+      "returns": [
+        {
+          "type": "return",
+          "date": "2026-11-10",
+          "title": "Second return",
+          "show_state": "anticipated",
+          "service_id": 1,
+          "service_status": "subscribed",
+          "context": "counts toward the Dec 4 bill",
+          "resubscribe_todo": false,
+          "service_name": "Monthly Example",
+          "icon_path": null,
+          "pos": 20.0
+        }
+      ],
+      "fill_pct": 20.0,
+      "anchor_id": "bill-1-2026-12-04"
+    }
+  ],
+  "later": {
+    "count": 0,
+    "dates": [],
+    "total": 0.0,
+    "anchors": []
+  },
+  "elsewhere": [
+    {
+      "type": "return",
+      "date": "2026-10-30",
+      "title": "Off return",
+      "show_state": "anticipated",
+      "service_id": 3,
+      "service_status": "unsubscribed",
+      "context": "not subscribed",
+      "resubscribe_todo": true,
+      "service_name": "Off Example",
+      "icon_path": null
+    },
+    {
+      "type": "return",
+      "date": "2026-11-01",
+      "title": "Annual return",
+      "show_state": "anticipated",
+      "service_id": 2,
+      "service_status": "subscribed",
+      "context": "annual \u00b7 prepaid",
+      "resubscribe_todo": false,
+      "service_name": "Annual Example",
+      "icon_path": null
+    }
+  ],
+  "off_returns": {
+    "3": {
+      "type": "return",
+      "date": "2026-10-30",
+      "title": "Off return",
+      "show_state": "anticipated",
+      "service_id": 3,
+      "service_status": "unsubscribed",
+      "context": "not subscribed",
+      "resubscribe_todo": true,
+      "service_name": "Off Example",
+      "icon_path": null
+    }
+  },
+  "summary": {
+    "worth_paying": 2,
+    "total": 20.0,
+    "by": "2026-12-04",
+    "nothing_new": 0,
+    "bills": 2,
+    "returns": 4,
+    "elsewhere": 2
+  }
+}
