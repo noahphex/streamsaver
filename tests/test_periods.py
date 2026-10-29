@@ -55,15 +55,15 @@ def test_empty_and_same_day_bounds():
 
 def test_period_boundaries_and_previous_unlisted_bill():
     events = fixture()[0]['events']
-    # The return on the first bill belongs only to that window; today is excluded.
+    # Returns today and on the first bill belong only to the first window.
     base = next(e for e in events if e['type'] == 'return')
     events.extend([dict(base, date='2026-11-04'), dict(base, date='2026-10-29')])
     grouped = timeline.group_periods([{'events': list(reversed(events))}], date(2026, 10, 29))
     first, second = grouped['periods']
     assert first['fill_pct'] == 100
-    assert [e['date'] for e in first['returns']] == ['2026-11-01', '2026-11-04']
+    assert [e['date'] for e in first['returns']] == ['2026-10-29', '2026-11-01', '2026-11-04']
     assert [e['date'] for e in second['returns']] == ['2026-11-10']
-    assert grouped['elsewhere'][0]['date'] == '2026-10-29'
+    assert '2026-10-29' not in [e['date'] for e in grouped['elsewhere']]
     first['bill']['verdict']['kind'] = 'unknown'
     grouped = timeline.group_periods([{'events': events}], date(2026, 10, 29))
     assert grouped['periods'][0]['window_start'] == '2026-11-04'
@@ -97,3 +97,15 @@ def test_synthetic_example_matches_review_json(tmp_path, monkeypatch):
     result = timeline.group_periods(example_timeline(), date(2026, 10, 29))
     expected = json.loads((Path(__file__).parent / 'fixtures' / 'periods-example.json').read_text())
     assert json.loads(json.dumps(result)) == expected
+
+
+def test_return_today_belongs_to_first_window_not_later_ones():
+    events = fixture()[0]['events']
+    events.append(dict(events[4], date='2026-10-29', title='Returns today'))
+    events.append(dict(events[4], date='2026-11-04', title='Returns on bill day'))
+    grouped = timeline.group_periods([{'events': events}], date(2026, 10, 29))
+    first, second = grouped['periods']
+    assert 'Returns today' in [e['title'] for e in first['returns']]
+    assert 'Returns on bill day' in [e['title'] for e in first['returns']]
+    assert 'Returns on bill day' not in [e['title'] for e in second['returns']]
+    assert 'Returns today' not in [e.get('title') for e in grouped['elsewhere']]

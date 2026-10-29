@@ -839,7 +839,9 @@ class WebTests(unittest.TestCase):
         shows_page = self.client.get("/shows").data.decode()
         self.assertIn(f'id="{anchor}"', shows_page)
         self.assertNotIn("<summary>+2 more</summary>", shows_page)
-        self.assertIn("Elsewhere", shows_page)
+        # The return today counts toward the first bill, so nothing lands in Elsewhere.
+        self.assertNotIn("Elsewhere", shows_page)
+        self.assertIn("Return 0", shows_page)
         self.assertIn("Return 7", shows_page)
 
     def test_dashboard_synthetic_rail_tones_escaping_and_post_csrf(self):
