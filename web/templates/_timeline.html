@@ -3,7 +3,7 @@
   {% set display = name|service_name %}{{ display.base }}{% if display.channel %} (Amazon Channel){% endif %}
 {%- endmacro %}
 {% macro titles(shows) -%}
-  {% for show in shows %}{{ show.title }} {{ show.date|nice_date }}{% if not loop.last %} · {% endif %}{% endfor %}
+  {% for show in shows %}{{ show.title }} <span class="num">{{ show.date|nice_date }}</span>{% if not loop.last %} · {% endif %}{% endfor %}
 {%- endmacro %}
 {% macro inline_date(event) -%}
   <time class="timeline-date timeline-date-inline" datetime="{{ event.date }}">{{ event.date|nice_date }} · </time>
@@ -22,12 +22,12 @@
         {% if event.verdict.kind not in ('prepaid', 'unknown') %}<span class="verdict-dot" aria-hidden="true"></span>{% endif %}
         {{ event.verdict.text }}{% if event.verdict.kind == 'returns' %}: {{ titles(event.verdict.shows[:6]) }}{% if event.verdict.shows|length > 6 %}<details><summary>+{{ event.verdict.shows|length - 6 }} more</summary>{{ titles(event.verdict.shows[6:]) }}</details>{% endif %}{% endif %}
         {% if event.verdict.kind == 'nothing_new' and event.todo is defined %}
-          <a class="inline-link timeline-todo" href="{{ url_for('dashboard') }}#todo">{{ event.todo.label }} →</a>
+          <a class="inline-link timeline-todo" href="{{ url_for('dashboard') }}#todo">{{ event.todo.label }}</a>
         {% endif %}
       </div>
     {% else %}
       <span>{{ inline_date(event) }}<strong>{{ event.title }}</strong> returns <span class="muted return-context">on {{ timeline_service(event.service_name) }}{% if event.context %} · {{ event.context }}{% endif %}</span></span>
-      {% if event.service_status in ('unsubscribed', 'not_subscribed') %}<a class="inline-link tone-resubscribe" href="{{ url_for('dashboard') + '#todo' if event.resubscribe_todo else url_for('service_edit', service_id=event.service_id) }}">Resubscribe?</a>{% endif %}
+      {% if event.service_status in ('unsubscribed', 'not_subscribed') %}<a class="inline-link resubscribe-link" href="{{ url_for('dashboard') + '#todo' if event.resubscribe_todo else url_for('service_edit', service_id=event.service_id) }}">Resubscribe?</a>{% endif %}
     {% endif %}
   </div>
 </li>

@@ -1,17 +1,17 @@
 {% extends "base.html" %}
 {% block title %}{{ "Edit service" if editable else "Add service" }} - Streamsaver{% endblock %}
 {% from "_service_mark.html" import service_mark, snooze_undo, service_title with context %}
+{% from "_icons.html" import icon %}
 {% block content %}
 <section class="hero compact">
   <div class="hero-copy">
     <h1>{% if editable %}{{ service_mark(editable.name, editable.icon_path) }} {% endif %}<span>{{ service_title(editable.name) if editable else "Add service" }}</span></h1>
-    <p>{{ "Billing, status, and which TMDb providers count toward this service." if editable else "Add a streaming service to track cost and watch activity." }}</p>
   </div>
-  <a class="button ghost" href="{{ url_for('services') }}">All services</a>
+  <a class="back-link" href="{{ url_for('services') }}">{{ icon("chevron-left") }} Services</a>
 </section>
 
 {% for rec in snoozed %}
-<section class="panel snooze-panel">
+<section class="section snooze-panel">
   <p>Snoozed until {{ rec.until|nice_date }}: {{ rec.label }}</p>
   {% if rec.reason %}<p class="muted">{{ rec.reason|recommendation_reason }}</p>{% endif %}
   {{ snooze_undo(rec) }}
@@ -19,7 +19,7 @@
 {% endfor %}
 
 {% if advice %}
-<section class="panel">
+<section class="section">
   <h2>{{ advice.label }}</h2>
   <p class="muted">{{ advice.why }}</p>
 </section>
@@ -27,7 +27,7 @@
 
 {% set cycle = editable.billing_cycle if editable else "monthly" %}
 {% set bundles = bundle_map[editable.id] if editable else [] %}
-<section class="panel form-panel">
+<section class="section form-panel">
   <form method="post" action="{{ url_for('service_save') }}" class="stack" data-cycle="{{ cycle }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {% if editable %}<input type="hidden" name="service_id" value="{{ editable.id }}">{% endif %}
@@ -58,7 +58,7 @@
 
     <div class="bundles">
       <span class="muted">Counts shows from:</span>
-      {% for b in bundles %}<span class="chip">{{ b.provider_name }}</span>{% else %}<span class="muted">only its own TMDb provider</span>{% endfor %}
+      {% for b in bundles %}<span class="pill quiet">{{ b.provider_name }}</span>{% else %}<span class="muted">only its own TMDb provider</span>{% endfor %}
     </div>
     <details class="more">
       <summary>Provider matching (TMDb IDs)</summary>
@@ -76,7 +76,7 @@
   </form>
 </section>
 {% if editable %}
-<section class="panel">
+<section class="panel danger-section">
   <h2>Delete service</h2>
   <p class="muted">Removes {{ editable.name }} and its bundles. Shows linked to it become unlinked; nothing on the streaming service changes.</p>
   <form method="post" action="{{ url_for('delete_service_route', service_id=editable.id) }}" onsubmit="return confirm('Delete {{ editable.name }}? This cannot be undone.')">

@@ -116,6 +116,7 @@ def create_app():
         return {
             "is_unlocked": bool(_credentials(optional=True)),
             "signed_in": bool(session.get("signed_in")),
+            "settings": {"last_trakt_sync": _get_setting("last_trakt_sync")},
             "csrf_token": csrf_token,
             "status_labels": {
                 "subscribed": "Subscribed",
@@ -1080,7 +1081,7 @@ def _nice_date(value):
     return f"{d:%b} {d.day}" + ("" if d.year == datetime.now().year else f", {d.year}")
 
 
-def _local_time(value):
+def _local_time(value, compact=False):
     """Trakt/UTC ISO timestamp → local 12-hour time, e.g. 'Oct 28, 12:20 PM'."""
     if not value:
         return "never"
@@ -1091,6 +1092,10 @@ def _local_time(value):
     if dt.tzinfo is None:
         return _nice_date(value)  # date-only values (e.g. provider cache) have no time
     dt = dt.astimezone()
+    if compact:
+        if dt.date() == datetime.now().astimezone().date():
+            return dt.strftime("%I:%M %p").lstrip("0")
+        return f"{dt:%b} {dt.day}"
     return f"{_nice_date(dt.date().isoformat())}, {dt:%I:%M %p}".replace(", 0", ", ")
 
 

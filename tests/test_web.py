@@ -250,7 +250,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         with db.db_session() as conn:
             self.assertEqual(conn.execute("SELECT until FROM todo_snoozes").fetchone()[0], billing)
-        self.assertNotIn('tone-pause', self.client.get("/services").data.decode())
+        self.assertNotIn('class="pill yellow">Pause', self.client.get("/services").data.decode())
         self.assertNotIn('<h2>Pause</h2>', self.client.get(f"/services/{service_id}/edit").data.decode())
 
     def test_untracked_todo_has_ignore_without_done(self):
@@ -452,7 +452,7 @@ class WebTests(unittest.TestCase):
         self.assertLess(page.index("Connections need attention"), page.index("<h1>Your streaming</h1>"))
         self.assertIn('href="/credentials#tmdb"', page)
         self.assertIn('href="/credentials#gmail"', page)
-        self.assertIn("Fix Gmail →", page)
+        self.assertIn("Fix Gmail", page)
         self.assertIn("Could not connect. Check your network and try again.", page)
         self.assertIn('href="/services/7/edit"', page)
         self.assertIn("No recent viewing.", page)
@@ -675,7 +675,7 @@ class WebTests(unittest.TestCase):
         self.assertIn(b"Series 049", page)
         self.assertNotIn(b"Series 050", page)
         self.assertIn(b'aria-sort="ascending"', page)
-        self.assertIn(b'<span class="sort-arrow" aria-hidden="true">', page)
+        self.assertIn(b'<span class="sort-arrow asc" aria-hidden="true"><svg', page)
         self.assertIn(b'name="sort"', page)
         self.assertIn(b'name="dir"', page)
         self.assertIn(b'q=Series&amp;state=Active&amp;sort=title&amp;dir=asc&amp;page=2', page)
@@ -708,7 +708,7 @@ class WebTests(unittest.TestCase):
                 [(str(i), title, sid, str(today + timedelta(days=2)))
                  for i, title in enumerate(["Love is Blind", "Bake Off", "Third show"])])
         page = self.client.get("/shows").data.decode()
-        self.assertIn('aria-current="page">Coming up', page)
+        self.assertIn('href="/shows" aria-current="page"', page)
         self.assertIn("2 bills · $80.06 · 3 shows returning", page)
         self.assertIn("3 shows return before this bill", page)
         self.assertIn("Third show", page)
@@ -719,7 +719,7 @@ class WebTests(unittest.TestCase):
         self.assertIn("Next 14 days", dashboard)
         self.assertIn("See all coming up", dashboard)
         self.assertIn('id="todo"', dashboard)
-        self.assertIn("/shows?view=all", dashboard)  # state chips
+        self.assertIn("/shows?view=all", dashboard)  # Shows library menu link
         with db.db_session() as conn:
             conn.execute("DELETE FROM shows")
         page = self.client.get("/shows").data.decode()
@@ -741,13 +741,67 @@ class WebTests(unittest.TestCase):
         self.assertEqual(page.count('class="timeline-row timeline-return"'), 5)
         self.assertNotIn("Return 5", page)
 
-    def test_timeline_tab_keeps_table_params_and_ignores_unknown_params(self):
+    def test_frame_navigation_and_library(self):
         self._sign_in()
-        page = self.client.get("/shows?q=Silo&state=Active&sort=title&dir=asc&page=2&endpoint=bad").data.decode()
-        self.assertIn('href="/shows?q=Silo&amp;state=Active&amp;sort=title&amp;dir=asc&amp;page=2&amp;view=all"', page)
+        for path, current in (("/", "/"), ("/shows", "/shows"),
+                              ("/shows?view=all", "/shows?view=all"),
+                              ("/services", "/services"), ("/settings", "/settings")):
+            with self.subTest(path=path):
+                page = self.client.get(path).data.decode()
+                self.assertIn(f'href="{current}" aria-current="page"', page)
+                nav = page.split('<nav class="nav"', 1)[1].split('</nav>', 1)[0]
+                for href, label in (("/", "Dashboard"), ("/shows", "Coming up"), ("/services", "Services")):
+                    self.assertIn(f'href="{href}"', nav)
+                    self.assertIn(f'<span>{label}</span>', nav)
+                self.assertEqual(nav.count('aria-current="page"'), int(current in ("/", "/shows", "/services")))
+                self.assertNotIn('class="view-tabs"', page)
+                self.assertNotIn('nav-secondary', page)
+        page = self.client.get("/shows?view=all&q=Silo&state=Active&sort=title&dir=asc&page=2&endpoint=bad").data.decode()
+        self.assertIn('<h1>Shows library</h1>', page)
+        self.assertIn('href="/shows?view=all&amp;q=Silo&amp;state=Active&amp;sort=title&amp;dir=asc&amp;page=1"', page)
         self.assertNotIn("endpoint=bad", page)
-        page = self.client.get("/shows?view=all&q=Silo&state=Active&sort=title&dir=asc&page=2").data.decode()
-        self.assertIn('href="/shows?q=Silo&amp;state=Active&amp;sort=title&amp;dir=asc&amp;page=2&amp;view=upcoming"', page)
+        dashboard = self.client.get("/").data.decode()
+        self.assertNotIn('<h2>Actions</h2>', dashboard)
+        self.assertNotIn('<h2>Show states</h2>', dashboard)
+
+    def test_frame_sync_and_sign_out_forms(self):
+        from datetime import datetime, timedelta
+        import re
+        self._sign_in()
+        for stamp in ("", datetime.now().astimezone().replace(hour=2, minute=0).isoformat(),
+                      (datetime.now().astimezone() - timedelta(days=1)).isoformat()):
+            with db.db_session() as conn:
+                conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_trakt_sync', ?)", (stamp,))
+            # About has no route-specific settings, so this also exercises context injection.
+            page = self.client.get("/about").data.decode()
+            sync = re.search(r'<form class="sync-form".*?</form>', page, re.S).group()
+            self.assertIn('method="post" action="/actions/sync"', sync)
+            self.assertIn('name="csrf_token"', sync)
+            self.assertIn('title="Sync now"', sync)
+            if stamp:
+                self.assertIn('Last synced ' + webapp._local_time(stamp), sync)
+                self.assertIn(webapp._local_time(stamp, compact=True), sync)
+                self.assertIn('Synced </span>', sync)
+            else:
+                self.assertIn('<span>Sync now</span>', sync)
+            menu = re.search(r'<details class="menu">.*?</details>', page, re.S).group()
+            self.assertIn('<summary aria-label="More"><svg', menu)
+            for label in ("Shows library", "Settings", "Credentials", "About"):
+                self.assertIn(label, menu)
+            sign_out = re.search(r'<form.*?</form>', menu, re.S).group()
+            self.assertIn('method="post" action="/lock"', sign_out)
+            self.assertIn('name="csrf_token"', sign_out)
+            self.assertIn('Sign out</button>', sign_out)
+
+    def test_local_time_compact(self):
+        from datetime import datetime, timedelta
+        now = datetime.now().astimezone().replace(hour=2, minute=0)
+        self.assertEqual(webapp._local_time(now.isoformat(), compact=True), "2:00 AM")
+        yesterday = now - timedelta(days=1)
+        self.assertEqual(webapp._local_time(yesterday.isoformat(), compact=True),
+                         f"{yesterday:%b} {yesterday.day}")
+        self.assertEqual(webapp._local_time("", compact=True), "never")
+        self.assertEqual(webapp._local_time("invalid", compact=True), "invalid")
 
     def test_legacy_score_sort_maps_to_state_and_title(self):
         self._sign_in()
@@ -813,7 +867,7 @@ class WebTests(unittest.TestCase):
         self.assertIn('href="/#todo">Resubscribe?</a>', page)
         self.assertIn('href="/services/2/edit">Resubscribe?</a>', page)
         self.assertIn("on Paramount+ (Amazon Channel)", page)
-        self.assertEqual(page.count('class="inline-link tone-resubscribe"'), 2)
+        self.assertEqual(page.count('class="inline-link resubscribe-link"'), 2)
 
 
 if __name__ == "__main__":

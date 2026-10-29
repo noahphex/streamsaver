@@ -18,7 +18,7 @@
 {% if issues %}
 <section class="panel connection-issues" role="status" aria-label="Connections need attention">
   {% for issue in issues %}
-    <p><strong>{{ issue.name }}</strong>: {{ issue.message }} {{ issue.impact }} <a class="inline-link" href="{{ issue.href }}">Fix {{ issue.name }} →</a></p>
+    <p><strong>{{ issue.name }}</strong>: {{ issue.message }} {{ issue.impact }} <a class="inline-link" href="{{ issue.href }}">Fix {{ issue.name }}</a></p>
   {% endfor %}
 </section>
 {% endif %}
@@ -43,7 +43,7 @@
         <li>
           <a class="todo-link" href="{{ href }}">
             {{ service_mark(item.name, item.icon_path) }}
-            <span class="todo-name"><span class="name">{{ service_title(item.name) }}</span> <span class="tone tone-{{ item.tone }}">{{ item.label }}</span></span>
+            <span class="todo-name"><span class="name">{{ service_title(item.name) }}</span> <span class="pill {{ {'pause': 'yellow', 'review': 'yellow', 'renew': 'green', 'keep': 'green', 'resubscribe': 'cyan', 'untracked': 'pink'}.get(item.tone, 'quiet') }}">{{ item.label }}</span></span>
             <span class="when">{% if item.cost %}{{ item.cost }}{% endif %}{% if item.cost and item.when %} · {% endif %}{% if item.when %}bills {{ item.when|nice_date }}{% endif %}</span>
             {% if item.why %}<span class="why">{{ item.why }}</span>{% endif %}
           </a>
@@ -102,28 +102,8 @@
     {% for event in upcoming %}{{ event_row(event) }}{% endfor %}
   </ul>
   {% if hidden_returns %}<p class="muted">+{{ hidden_returns }} more returns</p>{% endif %}
-  <a class="button quiet" href="{{ url_for('shows') }}">See all coming up →</a>
+  <a class="button quiet" href="{{ url_for('shows') }}">See all coming up</a>
 </section>
 {% endif %}
 
-<section class="grid two">
-  <div class="panel">
-    <h2>Actions</h2>
-    <div class="button-row">
-      <form method="post" action="{{ url_for('action_sync') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button>Sync now</button></form>
-      <form method="post" action="{{ url_for('action_analyze') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="ghost">Analyze &amp; email report</button></form>
-      <a class="button ghost" href="{{ url_for('settings') }}">More in Settings</a>
-    </div>
-  </div>
-  <div class="panel">
-    <h2>Show states</h2>
-    <div class="chips">
-      {% for key, count in counts.items() %}
-        <a class="chip state {{ key }}" href="{{ url_for('shows', view='all', state=key.title()) }}">{{ key.title() }} <strong>{{ count }}</strong> <span aria-hidden="true">›</span></a>
-      {% else %}
-        <span class="muted">No shows synced yet.</span>
-      {% endfor %}
-    </div>
-  </div>
-</section>
 {% endblock %}

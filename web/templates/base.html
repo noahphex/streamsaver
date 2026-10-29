@@ -1,8 +1,10 @@
+{% from "_icons.html" import icon %}
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1e1f29">
   <title>{% block title %}Streamsaver{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
@@ -15,22 +17,25 @@
     </a>
     {% if signed_in %}
       <nav class="nav" aria-label="Main">
-        {% for endpoint, label in [("dashboard", "Dashboard"), ("services", "Services"), ("shows", "Shows"), ("settings", "Settings")] %}
-          <a href="{{ url_for(endpoint) }}" {% if request.endpoint == endpoint %}aria-current="page"{% endif %}>{{ label }}</a>
+        {% for endpoint, label, symbol in [("dashboard", "Dashboard", "home"), ("shows", "Coming up", "calendar"), ("services", "Services", "list")] %}
+          <a href="{{ url_for(endpoint) }}"{% if (request.endpoint == endpoint and (endpoint != 'shows' or request.args.get('view') != 'all')) or (endpoint == 'services' and request.endpoint in ('service_edit', 'service_new')) %} aria-current="page"{% endif %}>{{ icon(symbol) }}<span>{{ label }}</span></a>
         {% endfor %}
-        {% for endpoint, label in [("credentials", "Credentials"), ("about", "About")] %}
-          <a class="nav-secondary" href="{{ url_for(endpoint) }}" {% if request.endpoint == endpoint %}aria-current="page"{% endif %}>{{ label }}</a>
-        {% endfor %}
-        <details class="nav-more">
-          <summary>More</summary>
-          <div class="nav-extra">
-            {% for endpoint, label in [("credentials", "Credentials"), ("about", "About")] %}
-              <a href="{{ url_for(endpoint) }}" {% if request.endpoint == endpoint %}aria-current="page"{% endif %}>{{ label }}</a>
-            {% endfor %}
-          </div>
-        </details>
       </nav>
-      <form method="post" action="{{ url_for('lock') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="quiet">Sign out</button></form>
+      <form class="sync-form" method="post" action="{{ url_for('action_sync') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="sync" title="Sync now" aria-label="Sync now{% if settings.last_trakt_sync %}. Last synced {{ settings.last_trakt_sync|local_time }}{% endif %}">{{ icon('refresh') }}{% if settings.last_trakt_sync %}<span class="sync-prefix">Synced </span><span class="num">{{ settings.last_trakt_sync|local_time(compact=True) }}</span>{% else %}<span>Sync now</span>{% endif %}</button>
+      </form>
+      <details class="menu">
+        <summary aria-label="More">{{ icon('more') }}</summary>
+        <div class="menu-panel">
+          <a href="{{ url_for('shows', view='all') }}"{% if request.endpoint == 'shows' and request.args.get('view') == 'all' %} aria-current="page"{% endif %}>Shows library</a>
+          {% for endpoint, label in [("settings", "Settings"), ("credentials", "Credentials"), ("about", "About")] %}
+            <a href="{{ url_for(endpoint) }}"{% if request.endpoint == endpoint %} aria-current="page"{% endif %}>{{ label }}</a>
+          {% endfor %}
+          <hr>
+          <form method="post" action="{{ url_for('lock') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="quiet">Sign out</button></form>
+        </div>
+      </details>
     {% endif %}
   </header>
   <main class="page" id="main" tabindex="-1">
@@ -48,6 +53,16 @@
   <script>
     (() => {
       if (document.querySelector(".flash")) document.querySelector(".flash-stack").focus();
+      const menu = document.querySelector(".menu");
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && menu?.open) {
+          menu.open = false;
+          menu.querySelector("summary").focus();
+        }
+      });
+      document.addEventListener("click", (event) => {
+        if (menu?.open && !menu.contains(event.target)) menu.open = false;
+      });
       const topbar = document.querySelector(".topbar");
       new ResizeObserver(() => {
         document.documentElement.style.setProperty("--topbar-height", `${topbar.getBoundingClientRect().height}px`);
@@ -76,7 +91,7 @@
         button.style.width = `${button.getBoundingClientRect().width}px`;
         button.style.height = `${button.getBoundingClientRect().height}px`;
         button.dataset.originalText = button.textContent.trim();
-        button.innerHTML = `<span class="button-spinner" aria-hidden="true"></span><span class="visually-hidden">${loadingLabel(button.dataset.originalText)}</span>`;
+        button.innerHTML = `<span class="button-spinner" aria-hidden="true"></span><span class="visually-hidden">${loadingLabel(button.getAttribute("aria-label") || button.dataset.originalText)}</span>`;
         button.classList.add("is-loading");
         button.setAttribute("aria-busy", "true");
         button.disabled = true;
