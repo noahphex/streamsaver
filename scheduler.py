@@ -69,6 +69,34 @@ def _get_passphrase(args) -> str:
     return getpass.getpass("Streamsaver passphrase: ").strip()
 
 
+CREDENTIAL_RETRY_SECONDS = 300
+
+
+def _wait_for_credentials(args) -> tuple[str, dict]:
+    """Retry until credentials unlock, so a fresh install idles instead of crash-looping."""
+    notified = False
+    while True:
+        passphrase = os.environ.get("STREAMSAVER_PASSPHRASE") or getattr(args, "passphrase", None)
+        if not passphrase and sys.stdin.isatty():
+            passphrase = getpass.getpass("Streamsaver passphrase: ").strip()
+        if passphrase:
+            try:
+                return passphrase, load_credentials(passphrase)
+            except Exception as exc:
+                reason = f"Could not load credentials: {exc}"
+        else:
+            reason = "No passphrase: finish setup in the web app, then set STREAMSAVER_PASSPHRASE."
+        if not notified:
+            logger.warning("%s Retrying every %d minutes.", reason, CREDENTIAL_RETRY_SECONDS // 60)
+            if passphrase:
+                try:
+                    _notify_discord("Streamsaver scheduler is waiting for credentials", reason)
+                except Exception:
+                    logger.debug("Could not send Discord credential-wait notification.", exc_info=True)
+            notified = True
+        time.sleep(CREDENTIAL_RETRY_SECONDS)
+
+
 def _get_setting(key: str) -> str:
     with db_session() as conn:
         row = conn.execute(
@@ -249,7 +277,13 @@ def main() -> None:
     # Ensure DB tables exist
     init_db()
 
-    # Load credentials once at startup
+    if not args.run_once:
+        passphrase, creds = _wait_for_credentials(args)
+        logger.info("Credentials loaded. Scheduler starting.")
+        _run_loop(args, creds, passphrase)
+        return
+
+    # --run-once is for cron-style use: fail fast instead of waiting.
     passphrase = _get_passphrase(args)
     try:
         creds = load_credentials(passphrase)
@@ -264,13 +298,12 @@ def main() -> None:
             logger.debug("Could not send Discord credential-load failure notification.", exc_info=True)
         sys.exit(1)
 
-    logger.info("Credentials loaded. Scheduler starting.")
+    logger.info("Credentials loaded. Running once.")
+    ok = run_daily_job(creds, passphrase)
+    sys.exit(0 if ok else 1)
 
-    if args.run_once:
-        ok = run_daily_job(creds, passphrase)
-        sys.exit(0 if ok else 1)
-        return
 
+def _run_loop(args, creds: dict, passphrase: str) -> None:
     def _nightly() -> None:
         # Re-read credentials each run so a re-auth in the web UI is picked up without a restart.
         nonlocal creds
