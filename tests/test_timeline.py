@@ -6,7 +6,7 @@ import pytest
 
 import db
 from core import analysis
-from core.timeline import build_timeline, preview, timeline_summary
+from core.timeline import build_timeline, timeline_summary
 
 TODAY = date(2026, 11, 2)
 
@@ -111,17 +111,12 @@ def test_returns_exclusions_stale_dates_and_mapped_service(database):
     assert next(e for e in found if e["title"] == "Fallback")["service_name"] == "Independent"
 
 
-def test_week_labels_day_order_and_preview(database):
+def test_week_labels_day_order(database):
     show("Same day", 0)
     timeline = build_timeline({"keep": [rec(offset=0, billing_cycle="annual"), rec(2, 7, billing_cycle="annual"),
                                                  rec(3, 15, billing_cycle="annual"), rec(4, 60, billing_cycle="annual")]}, TODAY)
     assert [w["label"] for w in timeline] == ["This week", "Next week", "Week of Nov 16", "Week of Dec 28"]
     assert [e["type"] for e in timeline[0]["events"]] == ["bill", "return"]
-    with mock.patch("core.timeline.date") as clock:
-        clock.today.return_value = TODAY
-        clock.fromisoformat.side_effect = date.fromisoformat
-        assert [e["date"] for e in preview(timeline)] == ["2026-11-02", "2026-11-02", "2026-11-09"]
-        assert len(preview(timeline, days=60)) == 5
     assert build_timeline({}, TODAY)  # return only
 
 
@@ -140,14 +135,8 @@ def test_timeline_only_reads_database(database):
     assert found[1]["verdict"]["text"] == "1 show returns before this bill"
 
 
-def test_preview_includes_day_14_and_week_boundary_from_sunday(database):
-    show("Day fourteen", 14)
-    show("Day fifteen", 15)
-    timeline = build_timeline({}, TODAY)
-    with mock.patch("core.timeline.date") as clock:
-        clock.today.return_value = TODAY
-        clock.fromisoformat.side_effect = date.fromisoformat
-        assert [e["title"] for e in preview(timeline)] == ["Day fourteen"]
+def test_week_boundary_from_sunday(database):
+    show("Following Monday", 14)
     sunday = date(2026, 11, 1)
     grouped = build_timeline({"keep": [rec(offset=-1, billing_cycle="annual"), rec(2, 0, billing_cycle="annual"),
                                      rec(3, 7, billing_cycle="annual")]}, sunday)
@@ -174,20 +163,6 @@ def test_month_end_preserves_anchor(database, year, feb):
     timeline = build_timeline({"keep": [rec(billing_date=str(start))]}, start, 60)
     assert [e["date"] for w in timeline for e in w["events"]] == [
         str(start), str(date(year, 2, feb)), str(date(year, 3, 31))]
-
-
-def test_preview_keeps_bill_and_reports_full_window(database):
-    for i in range(8):
-        show(f"Return {i}", i)
-    timeline = build_timeline({"keep": [rec(offset=12)]}, TODAY)
-    with mock.patch("core.timeline.date") as clock:
-        clock.today.return_value = TODAY
-        clock.fromisoformat.side_effect = date.fromisoformat
-        selected = preview(timeline)
-        assert len(selected) == 5
-        assert len([e for e in selected if e["type"] == "bill"]) == 1
-        full = preview(timeline, limit=None)
-    assert timeline_summary([{"events": full}]) == {"bills": 1, "amount": 12.34, "returns": 8}
 
 
 def test_return_contexts(database):
@@ -217,14 +192,6 @@ def test_later_bill_empty_interval_and_annual_single_occurrence(database):
     bills = [e for e in events({"suspend": [rec()]}) if e["type"] == "bill"]
     assert bills[1]["verdict"] == {"kind": "unknown", "text": "Too early to tell"}
     assert len(events({"keep": [rec(billing_cycle="annual", annual_cost=100)]})) == 2  # one return, one bill
-
-
-def test_preview_keeps_all_bills_even_over_limit(database):
-    timeline = build_timeline({"keep": [rec(i, i) for i in range(1, 8)]}, TODAY)
-    with mock.patch("core.timeline.date") as clock:
-        clock.today.return_value = TODAY
-        clock.fromisoformat.side_effect = date.fromisoformat
-        assert len(preview(timeline)) == 7
 
 
 def test_next_bill_already_clamped_uses_stored_anchor(database):

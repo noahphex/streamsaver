@@ -1,4 +1,3 @@
-import hashlib
 import hmac
 import json
 import os
@@ -30,7 +29,9 @@ from flask import (
 )
 
 from core.analysis import run_analysis
-from core.spend import next_30_days_spend, potential_monthly_savings
+from core.spend import potential_monthly_savings, spend_headline
+from core.rail import build_rail
+from core.presentation import service_mark as _service_mark
 from core.todo import ACTIONABLE_KEYS, DONE_LABELS, default_until, mark_done, snooze, undo_done, unsnooze
 from core.backup import export_backup, import_backup
 from core.newsletter import (
@@ -54,7 +55,7 @@ from core.service_manager import (
     update_service,
 )
 from core.show_tracker import backfill_service_ids, run_full_sync, visible_next_air_date
-from core.timeline import build_timeline, preview, timeline_summary
+from core.timeline import build_timeline, timeline_summary
 from core.tmdb_client import TMDbClient
 from core.trakt_client import TraktAuthError, TraktClient, poll_device_token, request_device_code
 from db import db_session, init_db
@@ -255,8 +256,10 @@ def create_app():
         settings = _settings()
         results = run_analysis()
         timeline = build_timeline(results)
-        upcoming = preview(timeline)
-        upcoming_summary = timeline_summary([{"events": preview(timeline, limit=None)}])
+        rail = build_rail(timeline)
+        savings = potential_monthly_savings(results)
+        headline = spend_headline(totals, rail, savings,
+                                  sum(svc["status"] == "subscribed" for svc in services))
         return render_template(
             "dashboard.html",
             services=services,
@@ -267,12 +270,8 @@ def create_app():
             done_messages={"suspend": "as paused", "resubscribe": "as resubscribed",
                            "consider_non_renewal": "as having renewal turned off"},
             todo=_todo_items(results, services),
-            spend=next_30_days_spend(results),
-            upcoming=upcoming,
-            upcoming_summary=upcoming_summary,
-            hidden_returns=upcoming_summary["returns"] - sum(e["type"] == "return" for e in upcoming),
-            savings=potential_monthly_savings(results),
-            todo_summary=_todo_summary(results),
+            rail=rail,
+            headline=headline,
             issues=_connection_issues(),
             kept=results.get("keep", []),
             snoozed=_snoozed_items(results, services),
@@ -966,7 +965,9 @@ def _todo_items(results, services=()):
             cycle = rec.get("billing_cycle")
             cost = (f"{_money(rec.get('annual_cost'))}/yr" if cycle == "annual" else
                     f"{_money(rec.get('monthly_cost'))}/mo") if key != "untracked" else ""
-            items.append({"key": key, "label": label, "tone": tone, "name": rec["name"], "why": why,
+            items.append({"key": key, "label": label, "tone": tone,
+                          "color": {"pause": "yellow", "review": "yellow", "renew": "green",
+                                    "resubscribe": "cyan", "untracked": "pink"}.get(tone, "quiet"), "name": rec["name"], "why": why,
                           "when": rec.get("billing_date") if key != "untracked" else "",
                           "cost": cost, "service_id": rec.get("id"),
                           "icon_path": icons.get(rec.get("id")),
@@ -992,12 +993,6 @@ def _snoozed_items(results, services=()):
     labels = {key: label for key, label, _ in _TODO_ACTIONS}
     return [{**rec, "label": labels[rec["action"]], "icon_path": icons.get(rec.get("id"))}
             for rec in results.get("snoozed", [])]
-
-
-def _service_mark(name):
-    accents = ("purple", "pink", "cyan", "green", "orange", "yellow", "red")
-    return {"initials": "".join(word[0] for word in name.split()[:2]).upper(),
-            "accent": accents[hashlib.sha256(name.encode()).digest()[0] % len(accents)]}
 
 
 def _service_name(name):

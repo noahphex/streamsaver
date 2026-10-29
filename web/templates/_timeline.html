@@ -9,7 +9,7 @@
   <time class="timeline-date timeline-date-inline" datetime="{{ event.date }}">{{ event.date|nice_date }} · </time>
 {%- endmacro %}
 {% macro event_row(event) -%}
-<li class="timeline-row timeline-{{ event.type }}{% if event.type == 'bill' %} bill-{{ event.verdict.kind }}{% endif %}">
+<li{% if event.type == 'bill' %} id="bill-{{ event.service_id }}-{{ event.date }}"{% endif %} class="timeline-row timeline-{{ event.type }}{% if event.type == 'bill' %} bill-{{ event.verdict.kind }}{% endif %}">
   <time class="timeline-date timeline-date-desktop" datetime="{{ event.date }}">{{ event.date|timeline_date }}</time>
   {{ service_mark(event.service_name, event.icon_path, 32 if event.type == 'bill' else 24) }}
   <div class="timeline-copy">

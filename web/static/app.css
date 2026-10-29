@@ -73,7 +73,7 @@ a { color: inherit; text-decoration: none; text-underline-offset: 3px; }
 .nav a[aria-current="page"] { color: var(--text); background: var(--raise); }
 .sync-form { margin-left: auto; flex: none; }
 button.sync { background: transparent; color: var(--muted); gap: 6px; border: 0; border-radius: 999px; font-size: 13px; font-weight: 400; }
-.sync-prefix { margin-right: -6px; }
+.sync-prefix { margin-right: 0; }
 button.sync:hover { background: var(--surface); color: var(--text); }
 .menu { position: relative; flex: none; }
 .menu > summary { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border-radius: 999px; list-style: none; }
@@ -85,7 +85,7 @@ button.sync:hover { background: var(--surface); color: var(--text); }
 .menu-panel hr { border: 0; border-top: 1px solid var(--line); margin: 8px 0; }
 .page { width: min(1120px, 100%); margin: 0 auto; padding: var(--sp-5); }
 .hero { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); margin: var(--sp-2) 0 var(--sp-4); }
-.hero h1, .money-band h1 { margin: 0 0 var(--sp-1); font-size: var(--fs-xl); line-height: 1.15; }
+.hero h1 { margin: 0 0 var(--sp-1); font-size: var(--fs-xl); line-height: 1.15; }
 .hero h1 { display: flex; align-items: center; gap: var(--sp-3); }
 .hero h1 .button { font-size: var(--fs-sm); gap: var(--sp-1); }
 .back-link { display: inline-flex; align-items: center; min-height: 44px; color: var(--muted); font-size: var(--fs-sm); }
@@ -223,21 +223,36 @@ tr:hover .show-action, tr:focus-within .show-action { color: var(--text); }
 .pill.quiet { color: var(--muted); background: var(--surface); }
 .card-head > .pill { grid-column: 2; }
 /* To-do list (dashboard) and advice pills (services) */
-.money-band p { margin: var(--sp-2) 0 0; }
-.spend-total { margin-top: var(--sp-3); font-size: var(--fs-hero); font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.15; }
-.spend-total small { font-size: var(--fs-md); font-weight: 400; }
-.spend-savings { color: var(--green); }
-.empty-todo { margin: 0; }
+.spend-headline { margin: 22px 0 0; }
+.spend-headline h1 { margin: 0; max-width: 22ch; font-size: 44px; line-height: 1.08; letter-spacing: -.035em; text-wrap: balance; }
+.spend-amount { color: var(--purple); font-weight: 850; font-variant-numeric: tabular-nums; }
+.spend-sub { max-width: 55ch; color: var(--muted); margin: 10px 0 0; }
+.text-mono { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--text); }
+.text-green, .spend-savings { color: var(--green); }
+.text-yellow { color: var(--yellow); }
+.spend-savings { margin: 8px 0 0; }
+.empty-todo { margin: 0; padding: 16px; border-radius: 16px; background: color-mix(in srgb, var(--green) 8%, var(--bg)); border: 1px solid color-mix(in srgb, var(--green) 30%, var(--bg)); }
+.undo-notice { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; color: var(--muted); }
+.todo-count { font: 600 13px var(--mono); color: var(--muted); margin-left: 10px; }
+.todo-panel details { padding-top: 12px; border-top: 1px solid var(--line); }
+.todo-panel summary { min-height: 44px; align-content: center; }
 .snooze-panel p { margin: 0 0 var(--sp-2); }
-.todo-summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--sp-1) var(--sp-4); margin-bottom: var(--sp-4); }
 .todo-panel details { margin-top: var(--sp-4); }
 .connection-issues { border-top: 4px solid var(--red); color: color-mix(in srgb, var(--red), #fff 35%); }
 .connection-issues p { margin: 0; }
 .connection-issues p + p { margin-top: var(--sp-2); }
 .todo { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
-.todo li { display: flex; align-items: center; padding: 0; background: var(--panel-2); border-radius: 8px; }
-.todo li:has(.todo-link:hover) { background: color-mix(in srgb, var(--accent) 10%, var(--panel-2)); }
-.todo-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4) var(--sp-3) 0; }
+.todo-tone-yellow { --todo-tone: var(--yellow); }
+.todo-tone-cyan { --todo-tone: var(--cyan); }
+.todo-tone-green { --todo-tone: var(--green); }
+.todo-tone-pink { --todo-tone: var(--pink); }
+.todo-tone-quiet { --todo-tone: var(--muted); }
+.todo li { display: flex; flex-direction: column; align-items: stretch; padding: 0; background: color-mix(in srgb, var(--todo-tone) 9%, var(--bg)); border: 1px solid color-mix(in srgb, var(--todo-tone) 38%, var(--bg)); border-radius: 16px; }
+.todo-panel .todo-done { background: var(--todo-tone); color: var(--on-accent); }
+.todo-actions form { flex: 1; }
+.todo-actions button { width: 100%; min-height: 44px; }
+.todo li:has(.todo-link:hover) { background: color-mix(in srgb, var(--todo-tone) 13%, var(--bg)); }
+.todo-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-4) var(--sp-4); }
 .todo-link { flex: 1; min-width: 0; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: var(--sp-1) var(--sp-3); align-items: center; overflow-wrap: anywhere; padding: var(--sp-4); border-radius: 8px; color: inherit; }
 .todo-link > .service-mark { grid-row: 1 / 3; align-self: start; }
 .todo-link:hover .name { text-decoration: underline; text-underline-offset: 3px; }
@@ -267,7 +282,7 @@ details.more[open] summary { margin-bottom: var(--sp-2); }
 form[data-cycle="monthly"] .cost-annual, form[data-cycle="annual"] .cost-monthly { display: none; }
 .bundles { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; margin: var(--sp-1) 0 0; }
 .form-panel.narrow { max-width: 440px; }
-/* Coming up uses the same rows on Shows and the compact dashboard preview. */
+/* Coming up event rows. */
 .timeline-week h2 { margin: var(--sp-5) 0 var(--sp-3); font-size: var(--fs-md); }
 .timeline-list { display: grid; gap: var(--sp-2); list-style: none; margin: 0; padding: 0; }
 .timeline-row { display: grid; grid-template-columns: 6rem 32px minmax(0, 1fr); gap: var(--sp-3); align-items: center; padding: var(--sp-4); border-radius: var(--sp-2); background: var(--panel); }
@@ -286,7 +301,6 @@ form[data-cycle="monthly"] .cost-annual, form[data-cycle="annual"] .cost-monthly
 .verdict-dot { display: inline-block; width: var(--sp-2); height: var(--sp-2); margin-right: var(--sp-1); border-radius: 50%; background: var(--yellow); }
 .verdict-returns .verdict-dot { background: var(--green); }
 .timeline-todo { display: inline-flex; align-items: center; min-height: 44px; }
-.timeline-preview > .button { margin-top: var(--sp-2); }
 .credential-panels { display: grid; }
 .provider-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 #todo { scroll-margin-top: calc(var(--topbar-height, 0px) + var(--sp-4)); }
@@ -359,4 +373,52 @@ form[data-cycle="monthly"] .cost-annual, form[data-cycle="annual"] .cost-monthly
   .show-action { padding: 0 var(--sp-2); }
   .connections li { grid-template-columns: 1fr auto; }
   .connections li > div { grid-column: 1 / -1; grid-row: 2; }
+}
+
+/* Billing rail: geometry and copy arrive as core presentation data. */
+.rail { max-width: 700px; margin: 26px 0 24px; }
+.rail > svg { width: 100%; height: auto; display: block; overflow: visible; }
+.rail .track { stroke: var(--line); stroke-width: 2; }
+.rail .tick { stroke: var(--line); }
+.rail .tick-label { fill: var(--muted); font: 11px var(--mono); }
+.rail .today { fill: var(--pink); }
+.rail .arc { fill: none; stroke: var(--green); stroke-width: 1.6; stroke-opacity: .75; }
+.rail .return-dot { fill: var(--bg); stroke: var(--green); stroke-width: 2; }
+.rail .return-dot.elsewhere { stroke: var(--muted); stroke-dasharray: 2 2; }
+.rail-tone-green { color: var(--green); }
+.rail-tone-yellow { color: var(--yellow); }
+.rail-tone-quiet { color: var(--muted); }
+.rail .bill-hit { fill: transparent; stroke: transparent; stroke-width: 44px; vector-effect: non-scaling-stroke; pointer-events: all; }
+.rail .stem { stroke: currentColor; stroke-width: 1; }
+.rail .bill-ring { fill: none; stroke: currentColor; stroke-width: 2; }
+.rail .amount { fill: var(--text); font: 700 12px var(--mono); }
+.rail-mark.mark-purple { fill: var(--purple); }
+.rail-mark.mark-pink { fill: var(--pink); }
+.rail-mark.mark-cyan { fill: var(--cyan); }
+.rail-mark.mark-green { fill: var(--green); }
+.rail-mark.mark-orange { fill: var(--orange); }
+.rail-mark.mark-yellow { fill: var(--yellow); }
+.rail-mark.mark-red { fill: var(--red); }
+.rail-initials { fill: var(--on-accent); font-size: 12px; font-weight: 800; }
+.rail-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 12px; color: var(--muted); }
+.rail-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.rail-legend i { width: 10px; height: 10px; border: 2px solid var(--green); border-radius: 50%; }
+.rail-legend .elsewhere { border-color: var(--muted); border-style: dashed; }
+.rail-link { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; color: var(--muted); font-size: 14px; }
+.rail-link:hover { color: var(--text); }
+.rail-link .icon { width: 16px; height: 16px; }
+.rail-empty { border-top: 2px solid var(--line); padding-top: 16px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.sr-only:focus-within { position: static; width: auto; height: auto; margin: 0; overflow: visible; clip-path: none; white-space: normal; }
+.credentials-link, .resubscribe-link { display: inline-flex; align-items: center; min-height: 44px; padding: 10px 4px; margin: -10px -4px; }
+.timeline-bill[id] { scroll-margin-top: calc(var(--topbar-height, 0px) + 16px); }
+@media (prefers-reduced-motion: no-preference) {
+  .rail .arc { stroke-dasharray: 1; animation: rail-draw 1.1s cubic-bezier(.16,1,.3,1) backwards; animation-delay: calc(var(--sequence) * 70ms); }
+  .rail .bill { animation: rail-rise .7s cubic-bezier(.16,1,.3,1) backwards; animation-delay: calc(var(--sequence) * 90ms); }
+}
+@keyframes rail-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes rail-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 720px) {
+  .spend-headline h1 { font-size: 38px; }
+  .hero h1 .button.small { min-height: 44px; }
 }

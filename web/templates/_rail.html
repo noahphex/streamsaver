@@ -1,0 +1,43 @@
+{% from "_icons.html" import icon %}
+{% macro billing_rail(rail) -%}
+<figure class="rail" aria-label="Next 30 days of bills and returning shows">
+  {% if rail.empty %}
+    <p class="muted rail-empty">No bills in the next 30 days.</p>
+  {% else %}
+  <svg viewBox="0 0 {{ rail.width }} {{ rail.height }}" aria-hidden="true" focusable="false">
+    <line class="track" x1="{{ rail.track_start }}" y1="{{ rail.track_y }}" x2="{{ rail.track_end }}" y2="{{ rail.track_y }}"/>
+    {% for tick in rail.ticks %}
+      <line class="tick" x1="{{ tick.x }}" y1="{{ rail.track_y }}" x2="{{ tick.x }}" y2="{{ rail.tick_bottom }}"/>
+      {% if tick.today %}<circle class="today" cx="{{ tick.x }}" cy="{{ rail.track_y }}" r="4"/>{% endif %}
+      <text class="tick-label{{ ' today' if tick.today else '' }}" x="{{ tick.x }}" y="{{ tick.label_y }}" text-anchor="{{ tick.anchor }}">{{ tick.label }}</text>
+    {% endfor %}
+    {% for arc in rail.arcs %}
+      <path class="arc" d="{{ arc.path }}" pathLength="1" style="--sequence: {{ arc.sequence }}"/>
+    {% endfor %}
+    {% for item in rail.returns %}
+      <circle class="return-dot {{ item.kind }}" cx="{{ item.x }}" cy="{{ item.y }}" r="3.5"><title>{{ item.title }} · {{ item.date }}</title></circle>
+    {% endfor %}
+    {% for bill in rail.bills %}
+    <a href="{{ url_for('shows') }}#bill-{{ bill.service_id }}-{{ bill.date }}" tabindex="-1">
+      <g class="bill rail-tone-{{ bill.tone }}" style="--sequence: {{ bill.sequence }}">
+        <title>{{ bill.service_name }} · {{ bill.amount|money }} · {{ bill.verdict }}</title>
+        <circle class="bill-hit" cx="{{ bill.initials_x }}" cy="{{ bill.initials_y }}" r="{{ bill.hit_radius }}"/>
+        <line class="stem" x1="{{ bill.x }}" y1="{{ bill.tile_bottom }}" x2="{{ bill.x }}" y2="{{ rail.track_y }}"/>
+        <text class="amount" x="{{ bill.amount_x }}" y="{{ bill.amount_y }}" text-anchor="middle">{{ bill.amount|money }}</text>
+        <clipPath id="rail-clip-{{ bill.sequence }}"><rect x="{{ bill.tile_x }}" y="{{ bill.tile_y }}" width="{{ bill.size }}" height="{{ bill.size }}" rx="8"/></clipPath>
+        <rect class="mark-{{ bill.mark.accent }} rail-mark" x="{{ bill.tile_x }}" y="{{ bill.tile_y }}" width="{{ bill.size }}" height="{{ bill.size }}" rx="8"/>
+        <text class="rail-initials" x="{{ bill.initials_x }}" y="{{ bill.initials_y }}" text-anchor="middle" dominant-baseline="central">{{ bill.mark.initials }}</text>
+        {% if bill.icon_path %}<image href="{{ url_for('logos', filename=bill.icon_path.split('/')[-1]) }}" x="{{ bill.tile_x }}" y="{{ bill.tile_y }}" width="{{ bill.size }}" height="{{ bill.size }}" clip-path="url(#rail-clip-{{ bill.sequence }})" preserveAspectRatio="xMidYMid slice"/>{% endif %}
+        <rect class="bill-ring" x="{{ bill.tile_x }}" y="{{ bill.tile_y }}" width="{{ bill.size }}" height="{{ bill.size }}" rx="8"/>
+      </g>
+    </a>
+    {% endfor %}
+  </svg>
+  <ul class="sr-only">
+    {% for bill in rail.bills %}<li><a href="{{ url_for('shows') }}#bill-{{ bill.service_id }}-{{ bill.date }}">{{ bill.date|nice_date }}, {{ bill.service_name }}, {{ bill.amount|money }}: {{ bill.verdict }}</a></li>{% endfor %}
+  </ul>
+  <figcaption class="rail-legend"><span><i aria-hidden="true"></i>Counts toward a bill</span><span><i class="elsewhere" aria-hidden="true"></i>Prepaid or not subscribed</span></figcaption>
+  {% endif %}
+  <a class="rail-link" href="{{ url_for('shows') }}">See all coming up {{ icon('chevron-right') }}</a>
+</figure>
+{%- endmacro %}
