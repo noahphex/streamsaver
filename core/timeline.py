@@ -161,6 +161,7 @@ def group_periods(timeline, today=None):
     outside = {"annual · prepaid", "not subscribed", "after your last bill in this window"}
     for bill in bills:
         identity = bill.get("service_id") or bill["service_name"]
+        first = identity not in previous
         start = previous.get(identity, today.isoformat())
         end = bill["date"]
         previous[identity] = end
@@ -171,7 +172,9 @@ def group_periods(timeline, today=None):
         span = (date.fromisoformat(end) - date.fromisoformat(start)).days
         for index, event in enumerate(returns):
             if (event.get("service_id") is not None and event["service_id"] == bill.get("service_id")
-                    and event.get("context") not in outside and start < event["date"] <= end):
+                    and event.get("context") not in outside
+                    # A first window starts today, so a return today belongs to it.
+                    and (start <= event["date"] if first else start < event["date"]) and event["date"] <= end):
                 pos = (date.fromisoformat(event["date"]) - date.fromisoformat(start)).days / max(1, span) * 100
                 window.append(dict(event, pos=round(max(0, min(100, pos)), 2)))
                 assigned.add(index)
