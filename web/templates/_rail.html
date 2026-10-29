@@ -15,8 +15,8 @@
       <path class="arc" d="{{ arc.path }}" pathLength="1" style="--sequence: {{ arc.sequence }}"/>
     {% endfor %}
     {% for item in rail.clusters %}
-      <circle class="return-dot {{ item.kind }}" cx="{{ item.x }}" cy="{{ item.y }}" r="3.5"><title>{{ item.titles|join(", ") }}</title></circle>
-      {% if item.count > 1 %}<text class="cluster-count" x="{{ item.x + 7 }}" y="{{ item.y + 4 }}">×{{ item.count }}</text>{% endif %}
+      <circle class="return-dot {{ item.kind }}" cx="{{ item.x }}" cy="{{ item.y }}" r="{{ 7 if item.count > 1 else 3.5 }}"><title>{{ item.titles|join(", ") }}</title></circle>
+      {% if item.count > 1 %}<text class="cluster-count" x="{{ item.x }}" y="{{ item.y }}" text-anchor="middle" dominant-baseline="central">{{ item.count }}</text>{% endif %}
     {% endfor %}
     {# Paint expanded targets first so they never cover another bill's visible tile. #}
     {% for bill in rail.bills %}
