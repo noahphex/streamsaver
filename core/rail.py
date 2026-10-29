@@ -174,7 +174,8 @@ def build_rail(timeline, today=None, days=30, width=350):
         occupied.append((x, radius))
     for event, cluster in zip(returns, return_clusters):
         event.update(x=cluster['x'], y=track_y)
-    label_offset = max(18, max((c['radius'] + 8 for c in clusters), default=0))
+    # label_y is the text baseline; 11px labels rise about 9px, so clear the dot's radius plus that.
+    label_offset = max(18, max((c['radius'] + 14 for c in clusters), default=0))
     ticks = [dict(x=x_for(today + timedelta(days=offset)),
                   label='Today' if offset == 0 else f'{today + timedelta(days=offset):%b} {(today + timedelta(days=offset)).day}',
                   today=offset == 0, label_y=track_y + label_offset,

@@ -151,7 +151,7 @@ def test_cluster_example_has_only_counts_and_one_tile_row():
 def test_second_row_only_when_tiles_exceed_track_capacity():
     data = rail(*(bill(15, service=i) for i in range(9)))
     assert [b['row'] for b in data['bills']] == [0] * 8 + [1]
-    assert data['height'] > 146
+    assert data['height'] > 152
     for b in data['bills']:
         assert 14 <= b['tile_x'] <= 304
 
@@ -167,11 +167,11 @@ def flat_example():
 
 def test_requested_flat_example():
     data = flat_example()
-    assert data['height'] == 146
+    assert data['height'] == 152
     assert [b['tile_x'] for b in data['bills']] == [62.4, 159.0, 223.4]
     assert [b['badge'] for b in data['bills']] == ['3 back', '1 back', '2 back']
     assert {b['row'] for b in data['bills']} == {0}
-    assert all(t['label_y'] == data['track_y'] + 18 for t in data['ticks'])
+    assert all(t['label_y'] == data['track_y'] + 24 for t in data['ticks'])  # radius-10 cluster + 14
 
 
 def test_overlapping_return_badges_shorten_without_changing_rows():
@@ -230,3 +230,10 @@ def test_dense_prices_fit_between_adjacent_amount_centers():
             assert a['amount_x'] + a['amount_width'] / 2 + 4 <= b['amount_x'] - b['amount_width'] / 2
         assert all(b['amount_x'] - b['amount_width'] / 2 >= 2
                    and b['amount_x'] + b['amount_width'] / 2 <= 348 for b in data['bills'])
+
+
+def test_tick_labels_clear_numbered_dots():
+    # An 11px label rises about 9px above its baseline; it must start below the dot.
+    data = flat_example()
+    lowest_dot = max(c['y'] + c['radius'] for c in data['clusters'])
+    assert all(t['label_y'] - 9 > lowest_dot for t in data['ticks'])
