@@ -340,7 +340,6 @@ form[data-cycle="monthly"] .cost-annual, form[data-cycle="annual"] .cost-monthly
 .rail .tick-label { fill: var(--muted); font: clamp(7.5px, calc(18px - 1.875cqw), 12px) var(--mono); }
 .rail .today { fill: var(--pink); }
 .rail .return-dot { fill: var(--bg); stroke: var(--green); stroke-width: 2; }
-.rail .return-dot.elsewhere { stroke: var(--muted); stroke-dasharray: 2 2; }
 .rail-tone-green { color: var(--green); }
 .rail-tone-yellow { color: var(--yellow); }
 .rail-tone-quiet { color: var(--muted); }
@@ -356,10 +355,6 @@ form[data-cycle="monthly"] .cost-annual, form[data-cycle="annual"] .cost-monthly
 .rail-mark.mark-yellow { fill: var(--yellow); }
 .rail-mark.mark-red { fill: var(--red); }
 .rail-initials { fill: var(--on-accent); font-size: clamp(8px, calc(19px - 2cqw), 13px); font-weight: 800; }
-.rail-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 12px; color: var(--muted); }
-.rail-legend span { display: inline-flex; align-items: center; gap: 6px; }
-.rail-legend i { width: 10px; height: 10px; border: 2px solid var(--green); border-radius: 50%; }
-.rail-legend .elsewhere { border-color: var(--muted); border-style: dashed; }
 .rail-link { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; color: var(--muted); font-size: 14px; }
 .rail-link:hover { color: var(--text); }
 .rail-link .icon { width: 16px; height: 16px; }
@@ -505,13 +500,13 @@ form[data-cycle="monthly"] .cost-annual, form[data-cycle="annual"] .cost-monthly
 
 @media (max-width: 720px) { .table-wrap { overflow: visible; } }
 
-/* Keep phone text readable while the SVG expands to 1.6x on desktop. */
-.rail .badge-text, .rail .cluster-count, .rail .amount, .rail .tick-label {
-  font-size: clamp(8px, calc(24px - 2.857cqw), 16px);
-}
-.rail .badge-text { fill: currentColor; font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 650; }
-.rail .cluster-count { fill: var(--text); font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 700; }
-.rail .verdict-badge { fill: var(--bg); stroke: currentColor; stroke-width: 1; }
+/* Fixed SVG type sizes remain readable at the 350-unit phone width. */
+.rail .amount { font-size: 11px; }
+.rail .tick-label { font-size: 11px; }
+.rail .badge-text { fill: currentColor; font: 600 11px ui-sans-serif, system-ui, sans-serif; }
+.rail .badge-dot { fill: currentColor; }
+.rail .cluster-count { fill: var(--green); font: 700 clamp(8px, calc(24px - 2.857cqw), 16px) ui-sans-serif, system-ui, sans-serif; }
+.rail .verdict-badge { fill: color-mix(in srgb, currentColor 12%, var(--bg)); stroke: none; }
 .rail { position: relative; }
 .rail-accessible { list-style: none; margin: 0; padding: 0; }
 .rail-focus-link:focus { clip-path: none; width: 100%; height: auto; min-height: 44px; margin: 0; padding: 12px; inset: 0 auto auto 0; white-space: normal; overflow: visible; background: var(--surface); z-index: 2; }

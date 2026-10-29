@@ -832,8 +832,10 @@ class WebTests(unittest.TestCase):
         self.assertIn('aria-hidden="true" focusable="false"', page)
         self.assertIn('<ul class="rail-accessible">', page)
         self.assertIn('class="sr-only rail-focus-link" href="/shows#bill-', page)
-        self.assertIn('Counts toward a bill', page)
-        self.assertIn('Prepaid or not subscribed', page)
+        self.assertNotIn('<figcaption', page)
+        self.assertIn('Return 7', page)
+        self.assertIn('width="44" height="44"', page)
+        self.assertNotIn('Elsewhere returns', page)
         anchor = f'bill-{sid}-{today + timedelta(days=12)}'
         self.assertIn(f'href="/shows#{anchor}"', page)
         self.assertLess(page.index('class="rail"'), page.index('id="todo"'))
@@ -861,6 +863,8 @@ class WebTests(unittest.TestCase):
                   for sid, day, kind in zip((1, 2, 3), (7, 8, 20), kinds)]
         events.append(dict(type="return", date=str(today + timedelta(days=1)),
                            service_id=1, title="<Sample & show>", context="counts toward next bill"))
+        events.append(dict(type="return", date=str(today + timedelta(days=2)),
+                           service_id=9, title="Elsewhere sample", context="not subscribed"))
         results = {key: [{"id": sid, "name": f"Sample {sid}", "reason": "Sample reason"}]
                    for sid, key in enumerate(("suspend", "resubscribe", "renew_soon", "untracked"), 1)}
         with mock.patch.object(webapp, "get_all_services", return_value=services), \
@@ -876,6 +880,12 @@ class WebTests(unittest.TestCase):
             self.assertIn(f'class="todo-tone-{tone}"', page)
         self.assertIn('href="/logos/sample.png"', page)
         self.assertIn('class="rail-initials"', page)
+        rail_markup = page[page.index('<figure class="rail"'):page.index('</figure>')]
+        self.assertNotIn('Elsewhere sample', rail_markup)
+        self.assertNotIn('return-dot elsewhere', rail_markup)
+        self.assertIn('Returns before this bill: &lt;Sample &amp; show&gt;', rail_markup)
+        self.assertIn('class="badge-dot"', rail_markup)
+        self.assertIn('See all coming up', rail_markup)
         self.assertIn('&lt;Sample &amp; show&gt;', page)
         self.assertIn('class="todo-done"', page)
         self.assertIn('>Did it</button>', page)
