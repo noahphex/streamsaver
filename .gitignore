@@ -31,3 +31,11 @@ assets/service_icons/
 config/*.bak-*
 config/*.tmp
 data/*.bak-*
+
+.env.*
+!.env.example
+config/.secret_key
+config/.secret_key-*
+docker-compose.override.yml
+assets/logos/[0-9]*.jpg
+.pytest_cache/

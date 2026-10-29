@@ -222,7 +222,7 @@ class WebTests(unittest.TestCase):
         add_service("Max", status="subscribed", monthly_cost=10,
                     billing_anchor_date=date.today().isoformat())
         page = self.client.get("/").data.decode()
-        self.assertIn('aria-label="Did it: Paused it: Max"', page)
+        self.assertIn('aria-label="Paused it: Max"', page)
         self.assertIn('aria-label="Not now: Max"', page)
         self.assertIn('class="todo-count" aria-hidden="true">1</span>', page)
         self.assertEqual(page.count("Could save $10.00/mo"), 1)
@@ -234,7 +234,7 @@ class WebTests(unittest.TestCase):
         self.assertIn('aria-label="Undo snooze: Max"', page)
         self.assertNotIn("0 changes", page)
         page = self._post("/todo/unsnooze", data=data, follow_redirects=True).data.decode()
-        self.assertIn('aria-label="Did it: Paused it: Max"', page)
+        self.assertIn('aria-label="Paused it: Max"', page)
         self.assertNotIn("Snoozed (1)", page)
 
     def test_snooze_uses_server_date_and_services_hide_advice(self):
@@ -292,7 +292,7 @@ class WebTests(unittest.TestCase):
 
     def test_only_discord_webhooks_are_accepted(self):
         self._sign_in()
-        self._post("/settings", data={"discord_webhook_url": "http://192.168.1.1/admin"})
+        self._post("/settings", data={"discord_webhook_url": "http://127.0.0.1/admin"})
         self.assertEqual(webapp._get_setting("discord_webhook_url"), "")
         self._post("/settings", data={"discord_webhook_url": "https://discord.com/api/webhooks/1/abc"})
         self.assertEqual(webapp._get_setting("discord_webhook_url"), "https://discord.com/api/webhooks/1/abc")
@@ -326,7 +326,7 @@ class WebTests(unittest.TestCase):
     def test_email_form_without_report_field_keeps_report_address(self):
         self._sign_in()
         webapp._set_setting("notification_email", "reports@example.com")
-        self._post("/credentials/email", data={"gmail_sender": "sender@gmail.com"})
+        self._post("/credentials/email", data={"gmail_sender": "sender@example.test"})
         self.assertEqual(webapp._get_setting("notification_email"), "reports@example.com")
 
     def test_gmail_test_failure_is_reported_not_raised(self):
@@ -888,7 +888,7 @@ class WebTests(unittest.TestCase):
         self.assertIn('See all coming up', rail_markup)
         self.assertIn('&lt;Sample &amp; show&gt;', page)
         self.assertIn('class="todo-done"', page)
-        self.assertIn('>Did it</button>', page)
+        self.assertIn('>Paused it</button>', page)
         self.assertNotIn('Synced', page[page.index('id="todo"'):])
 
         class PostForms(HTMLParser):
@@ -925,7 +925,7 @@ class WebTests(unittest.TestCase):
         self.assertLess(page.index('id="todo"'), page.index('class="rail"'))
         self.assertIn('aria-label="To do, 1 item"', page)
         self.assertIn('href="#todo">1 thing to change.', page)
-        self.assertIn('>Did it</button>', page)
+        self.assertIn('>Paused it</button>', page)
         with mock.patch.object(webapp, "run_analysis", return_value={}):
             page = self.client.get("/").data.decode()
         self.assertLess(page.index('class="rail"'), page.index('id="todo"'))

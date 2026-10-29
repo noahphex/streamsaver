@@ -95,11 +95,42 @@ SHOW_SORT_COLUMNS = {
 }
 
 
+def _session_secret():
+    value = os.environ.get("STREAMSAVER_SECRET_KEY", "")
+    if value in {"streamsaver-local-change-me", "change-me-local-streamsaver"}:
+        logger.warning("Ignoring an insecure default STREAMSAVER_SECRET_KEY; using the private key file.")
+    elif value:
+        return value
+
+    path = Path(CRED_FILE).parent / ".secret_key"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".secret_key-")
+        try:
+            with os.fdopen(fd, "w") as stream:
+                os.fchmod(stream.fileno(), 0o600)
+                stream.write(secrets.token_urlsafe(48))
+                stream.flush()
+                os.fsync(stream.fileno())
+            # Publish a complete file without replacing a concurrent startup's key.
+            try:
+                os.link(temporary, path)
+            except FileExistsError:
+                pass
+        finally:
+            os.unlink(temporary)
+    path.chmod(0o600)
+    value = path.read_text().strip()
+    if not value:
+        raise RuntimeError("The session key file is empty; restore it or remove it to generate a new key.")
+    return value
+
+
 def create_app():
     _setup_logging()
     init_db()
     app = Flask(__name__, static_folder="static", template_folder="templates")
-    app.secret_key = os.environ.get("STREAMSAVER_SECRET_KEY", "streamsaver-local-change-me")
+    app.secret_key = _session_secret()
     app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
     # Browsers won't send the session on cross-site POSTs; a sign-in lasts 30 days per browser.
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -858,13 +889,16 @@ def _setup_credentials_from_form(form):
         "trakt_client_id": "Trakt Client ID",
         "trakt_client_secret": "Trakt Client Secret",
         "trakt_username": "Trakt Username",
-        "gmail_sender": "Gmail sender address",
-        "gmail_app_password": "Gmail App Password",
     }
     values = {key: form.get(key, "").strip() for key in required}
     missing = [label for key, label in required.items() if not values[key]]
     if missing:
         raise RuntimeError(f"Missing required setup fields: {', '.join(missing)}.")
+
+    values["gmail_sender"] = form.get("gmail_sender", "").strip()
+    values["gmail_app_password"] = form.get("gmail_app_password", "").strip()
+    if bool(values["gmail_sender"]) != bool(values["gmail_app_password"]):
+        raise RuntimeError("Provide both Gmail sender address and Gmail App Password, or leave both blank.")
 
     # PIN is optional: without one, setup saves the app keys and the user signs in with a
     # device code on the Credentials page (Trakt's PIN page often hangs).

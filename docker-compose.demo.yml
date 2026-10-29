@@ -1,0 +1,25 @@
+services:
+  demo:
+    build: .
+    environment:
+      TZ: UTC
+      STREAMSAVER_PASSPHRASE: demo
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        python scripts/seed_demo.py --data-dir /app/data --config-dir /app/config --force
+        && exec gunicorn --bind 0.0.0.0:8092 --workers 1 --threads 8 --timeout 120 wsgi:app
+    ports:
+      - "127.0.0.1:8093:8092"
+    volumes:
+      - demo-config:/app/config
+      - demo-data:/app/data
+      - demo-logos:/app/assets/logos
+      - demo-backups:/app/backups
+
+volumes:
+  demo-config:
+  demo-data:
+  demo-logos:
+  demo-backups:

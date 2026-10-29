@@ -33,7 +33,7 @@
             {% if item.has_done %}
               <form method="post" action="{{ url_for('todo_done', service_id=item.service_id, action=item.key) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="todo-done" aria-label="Did it: {{ item.done_label }}: {{ item.name }}">Did it</button>
+                <button class="todo-done" aria-label="{{ item.done_label }}: {{ item.name }}">{{ item.done_label }}</button>
               </form>
             {% endif %}
             <form method="post" action="{{ url_for('todo_snooze') }}">

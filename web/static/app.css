@@ -229,7 +229,7 @@ tr:hover .show-action, tr:focus-within .show-action { color: var(--text); }
 .todo-tone-green { --todo-tone: var(--green); }
 .todo-tone-pink { --todo-tone: var(--pink); }
 .todo-tone-quiet { --todo-tone: var(--muted); }
-.todo li { display: flex; flex-direction: column; align-items: stretch; padding: 0; background: color-mix(in srgb, var(--todo-tone) 9%, var(--bg)); border: 1px solid color-mix(in srgb, var(--todo-tone) 38%, var(--bg)); border-radius: 16px; }
+.todo li { display: flex; flex-direction: column; align-items: stretch; min-width: 0; padding: 0; background: color-mix(in srgb, var(--todo-tone) 9%, var(--bg)); border: 1px solid color-mix(in srgb, var(--todo-tone) 38%, var(--bg)); border-radius: 16px; }
 .todo-panel .todo-done { background: var(--todo-tone); color: var(--on-accent); }
 .todo-actions form { flex: 1; }
 .todo-actions button { width: 100%; min-height: 44px; }
@@ -526,7 +526,7 @@ form[data-cycle="monthly"] .cost-annual, form[data-cycle="annual"] .cost-monthly
   .todo-name .pill { flex-shrink: 0; font-size: 11px; padding: 2px 5px; }
   .todo .when { grid-column: 3; grid-row: 1; text-align: right; font-family: var(--mono); font-size: 12px; white-space: nowrap; }
   .todo .todo-date, .todo-link .why { display: none; }
-  .todo-panel .todo-why { display: block; border: 0; margin: 2px 10px 0; padding: 0; }
+  .todo-panel .todo-why { display: block; min-width: 0; border: 0; margin: 2px 10px 0; padding: 0; }
   .todo-panel .todo-why summary { padding: 0; min-height: 20px; height: 20px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .todo-why p { margin: 4px 0; font-size: 13px; color: var(--muted); }
   .todo-actions { gap: 8px; padding: 4px 10px 8px; }

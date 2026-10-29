@@ -4,232 +4,220 @@
   <img alt="Streamsaver - Streaming Cost Intelligence" src="assets/logos/streamsaver_header.jpg" width="480">
 </picture>
 
-# Streamsaver
+Streamsaver is a self-hosted app that compares your Trakt viewing activity with your streaming bills to help you decide what to keep, pause, or restart.
 
-**Stack:** Python 3.11, Flask, Gunicorn, SQLite, Docker, Trakt API, TMDb API, Gmail SMTP  
-**Current app:** responsive web UI on port `8092` plus a daily scheduler container
+<table>
+  <tr>
+    <td><img src="docs/images/dashboard.png" alt="Phone dashboard with monthly spending, upcoming bills, and subscription to-dos" width="260"></td>
+    <td><img src="docs/images/coming-up.png" alt="Phone Coming up view showing bills alongside returning shows" width="260"></td>
+  </tr>
+  <tr><td>Dashboard</td><td>Coming up</td></tr>
+  <tr>
+    <td colspan="2"><img src="docs/images/services.png" alt="Desktop Services page with subscription prices, billing dates, and paused services" width="740"></td>
+  </tr>
+  <tr><td colspan="2">Services</td></tr>
+</table>
 
-Streamsaver helps decide which streaming services are worth keeping. It imports your Trakt watched history and watchlist, looks up where shows are available through TMDb provider data, compares that against the services you track, and sends email recommendations about what to keep, suspend, renew, or revisit.
+## What it does
 
-## How It Works
+- Shows your monthly spend headline and the services behind it, including annual plans.
+- Puts bills beside returning shows in Coming up: a bill is worth paying when something you watch comes back before it.
+- Suggests subscription to-dos, with one-tap **Paused it** and **Not now** actions. You make the actual change with the provider.
+- Sends email reports with weekly status alerts by default, plus Discord notifications for scheduled-job events and failures.
+- Runs on your own server and encrypts API credentials at rest with your passphrase.
 
-1. Sync your watched shows and watchlist from Trakt.
-2. Use TMDb provider data to identify where shows are available.
-3. Compare that show activity against your configured streaming services and costs.
-4. Score shows based on recent watching, upcoming episodes, dormant/ignored/abandoned state, and watchlist interest.
-5. Generate practical recommendations for subscriptions and optional email reports.
+## Quick start (Docker)
 
-The score is a decision aid, not an automatic cancellation system. Streamsaver shows the evidence; you still decide what to change.
-
-## Current Features
-
-| Page | Purpose |
-|---|---|
-| Dashboard | Summary metrics, sync shortcuts, and recommendation counts. |
-| Services | Add, edit, and delete streaming services. Track subscribed, suspended, unsubscribed, and not subscribed services. |
-| Shows | Review synced shows, filter by state, sort by column, and mark shows as dormant, ignored, or abandoned. |
-| Settings | Configure report email, provider country, abandoned-show behavior, sync/backfill Trakt, refresh providers, send reports, update credentials, and backup/restore. |
-| About | Plain-English explanation of Streamsaver's purpose and methodology. |
-
-## Docker Install
-
-From this repository:
+Install Docker with the Compose plugin, then run:
 
 ```sh
-cd /Volumes/Media/homelab/streamsaver
-docker compose up -d --build
+mkdir streamsaver && cd streamsaver
+curl -fsSLO https://raw.githubusercontent.com/noahphex/streamsaver/main/docker-compose.yml
+curl -fsSLO https://raw.githubusercontent.com/noahphex/streamsaver/main/.env.example
+cp .env.example .env
+docker compose up -d
 ```
 
-The container exposes the web UI on port `8092`.
+Open [http://localhost:8092](http://localhost:8092) and follow the setup wizard.
+Choose a passphrase of at least eight characters, save your API details, and
+complete Trakt authorization. Keep your passphrase: you need it to sign in.
 
-Local URLs used in this homelab:
+The image runs as uid 1000. Compose creates persistent named volumes for
+configuration, data, cached logos, and backups, with writable container ownership.
+If you substitute host bind mounts, make those directories writable by uid 1000.
 
-- Caddy URL: `https://streamsaver.home.arpa`
-- Direct URL: `http://192.168.1.156:8092`
-- Localhost from the Docker host: `http://127.0.0.1:8092`
+After setup, put the same passphrase in `STREAMSAVER_PASSPHRASE` in `.env` and run
+`docker compose up -d` again if you want the scheduler to work unattended.
+Without it, you can sign in and sync manually through the web app.
 
-Verify:
+Use a home network, VPN, or reverse proxy with authentication.
+See [Security](SECURITY.md) before choosing how to expose the app.
 
-```sh
-docker compose ps
-curl -f http://127.0.0.1:8092/health
-curl -k -f https://streamsaver.home.arpa/health
-```
+## What you'll need
 
-`docker compose ps` should show both `streamsaver` and `streamsaver-scheduler`.
-The scheduler runs once per day at `STREAMSAVER_SCHEDULER_RUN_AT` from `.env`
-and uses `STREAMSAVER_PASSPHRASE` to decrypt credentials without an interactive prompt.
+1. **A Trakt account and API app.** Visit [your API applications](https://trakt.tv/oauth/applications)
+   and choose **New Application**. Enter a name and set the redirect URI to
+   `urn:ietf:wg:oauth:2.0:oob`. Copy **Client ID** and **Client Secret** into
+   Setup, together with your **Trakt Username**.
+   Click **Authorize Trakt**, approve access, and paste the returned PIN into
+   **PIN From Trakt**. This matches the app's out-of-band authorization flow.
+   If the PIN page stalls, leave the PIN blank and save; the Credentials page
+   offers device-code sign-in at [trakt.tv/activate](https://trakt.tv/activate).
+   Trakt may require developer verification before creating an API app; see its
+   [authentication guide](https://developer.trakt.tv/docs/authentication-oauth).
+2. **A TMDb API key.** In your TMDb account, open
+   [Settings → API](https://www.themoviedb.org/settings/api), request a key if
+   needed, and copy **API Key (v3 auth)** into Setup's **Read-Only API Key**.
+   The app sends the key as `api_key`; use the API key rather than the API Read
+   Access Token. See [TMDb authentication](https://developer.themoviedb.org/docs/authentication-application).
+3. **Optional email reports.** Enable Google Account **Security → 2-Step Verification**,
+   then open [App passwords](https://myaccount.google.com/apppasswords), create a
+   password for Streamsaver, and enter your Gmail address and that app password
+   in Setup. Leave both blank to skip email. The **Report Email** can be a
+   different destination. See [Google's app password instructions](https://support.google.com/accounts/answer/185833).
+4. **Optional Discord notifications.** Open your Discord server's **Server Settings →
+   Integrations → Webhooks → New Webhook**, select a channel, and copy the webhook
+   URL into Streamsaver **Settings → Notifications → Discord webhook URL**.
+   See [Discord's webhook guide](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks).
 
-### Docker Volumes
+Once signed in, use **Settings → Maintenance → Refresh provider list**, add your
+subscriptions on **Services**, then run **Settings → Maintenance → Sync now**.
+Set **Provider country** in Settings to match your region. Prices are entered
+by you; provider names and show availability come from TMDb.
 
-The compose file mounts local folders into the container:
+## Configuration
 
-| Host path | Container path | Purpose |
-|---|---|---|
-| `./config` | `/app/config` | Encrypted credentials and salt. |
-| `./data` | `/app/data` | SQLite database and logs. |
-| `./assets/logos` | `/app/assets/logos` | Cached provider logos. |
-| `./backups` | `/app/backups` | Backup exports and imports. |
+Copy `.env.example` to `.env` and edit the values you need. Keep `.env` private;
+it is ignored by Git and excluded from image builds.
 
-The Docker command intentionally runs Gunicorn with one worker and multiple threads. Streamsaver keeps decrypted credentials in Flask memory after unlock, so one worker avoids unlock state drifting between processes.
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `STREAMSAVER_SECRET_KEY` | Blank | Optional session signing key. Blank generates and reuses `config/.secret_key` with mode 600. Known old defaults are rejected. |
+| `STREAMSAVER_PASSPHRASE` | Blank | Optional credential unlock; required for unattended scheduler runs. Use the passphrase chosen in Setup. |
+| `STREAMSAVER_SCHEDULER_RUN_AT` | `02:00` | Daily scheduler time in `TZ`; Compose passes it to `--run-at`. |
+| `TZ` | `UTC` | Container timezone, including the scheduler's clock. |
+| `STREAMSAVER_PORT` | `8092` | Published Docker port, or Flask's port when running locally. |
+| `STREAMSAVER_VERSION` | `latest` | GHCR image tag, such as a released `1.2.3`. |
+| `STREAMSAVER_HOST` | `0.0.0.0` | Local Flask bind address; Docker's Gunicorn bind stays fixed internally. |
 
-## First-Run Setup
+Compose reads `.env` automatically; the local launcher loads it as shell assignments.
+Quote values containing spaces or shell characters. Changing the session signing
+key signs browsers out. Keep the generated key with your configuration volume.
 
-Open the web UI and go to `/setup`, or click **Run the setup wizard** from the unlock page if no credentials exist.
+Reports default to weekly status alerts. Change **Settings → Notifications →
+Status alerts** to Daily, Weekly, Monthly, or Never. The scheduler still syncs
+daily; actionable recommendations can appear between weekly status alerts.
+Use Settings' test buttons to check email or Discord configuration.
 
-You will need:
+## Running without Docker
 
-- Trakt API app credentials from `https://trakt.tv/oauth/applications`
-- Trakt redirect URI set to `urn:ietf:wg:oauth:2.0:oob`
-- TMDb read-only API key from `https://www.themoviedb.org/settings/api`
-- Gmail sender address and Gmail App Password from `https://myaccount.google.com/apppasswords`
-
-The web setup wizard:
-
-1. Creates a local encryption passphrase.
-2. Builds the Trakt authorization URL from your Client ID.
-3. Exchanges the Trakt PIN for access and refresh tokens, or, if the PIN is left blank,
-   sends you to **Settings -> Update Credentials** to sign in with a device code.
-4. Encrypts all credentials into `config/credentials.enc`.
-5. Stores the encryption salt in `config/.salt`.
-6. Unlocks the current web session after saving.
-
-To update existing credentials from the web UI, unlock Streamsaver first, then go to **Settings -> Update Credentials**.
-
-### CLI Setup Alternative
-
-The original terminal wizard still works:
-
-```sh
-./run_streamsaver.sh --setup
-```
-
-For Docker-first installs, the web setup wizard is usually simpler because it writes to the mounted `./config` folder used by the container.
-
-## Daily Use
-
-1. Unlock Streamsaver with the passphrase.
-2. Go to **Settings -> Sync Trakt Now**.
-3. Use **Backfill Last Year** if you need to repopulate watched data after a reset or sync issue.
-4. Use **Refresh Provider List** after changing provider country or when TMDb provider data looks stale.
-5. Add or update subscriptions on **Services**.
-6. Review sortable show data on **Shows**.
-7. Run **Analysis & Send Report** to email current recommendations.
-
-If `STREAMSAVER_PASSPHRASE` is set in `.env` or the compose environment, the app can unlock automatically on startup.
-
-## Email Reports
-
-Streamsaver can send Gmail SMTP reports for:
-
-- Services to consider suspending.
-- Annual renewals to review.
-- Annual renewals likely worth keeping.
-- Suspended services that may be worth resubscribing to.
-
-Email logos are embedded as CID attachments using locally cached provider logos, so the email does not need to fetch external images when rendered.
-
-## Discord Alerts
-
-Streamsaver can send operational alerts to a Discord channel when the scheduled job fails.
-
-Configure this from **Settings -> Discord Webhook URL**, then use **Test Discord Alert**.
-The saved webhook is used for:
-
-- Scheduler credential/decryption failures.
-- Scheduled Trakt sync failures, including expired or invalid Trakt authorization.
-- Scheduled analysis failures.
-- Scheduled email digest delivery failures.
-
-If Trakt authorization fails, open **Settings -> Update Credentials**, click **Get Trakt Code**, enter the code at trakt.tv/activate, then click **Finish Trakt Sign-In**. The nightly job picks up the new tokens on its next run. The PIN form below it is a fallback for changing the Client ID or Secret.
-
-## Scheduler
-
-Docker Compose starts `streamsaver-scheduler` automatically. It runs the daily sync/report pipeline at `STREAMSAVER_SCHEDULER_RUN_AT` from `.env`, defaulting to `02:00`.
-
-You can still run the scheduler manually for testing:
-
-```sh
-./run_streamsaver.sh --scheduler
-.venv/bin/python scheduler.py --run-once
-.venv/bin/python scheduler.py
-.venv/bin/python scheduler.py --run-at 08:00
-```
-
-Passphrase sources, in order:
-
-1. `.env` file in the project root:
-   ```sh
-   STREAMSAVER_PASSPHRASE=your_passphrase
-   ```
-2. Existing environment variable.
-3. Scheduler CLI argument: `--passphrase your_passphrase`.
-4. Interactive prompt.
-
-Example cron:
-
-```cron
-0 2 * * * STREAMSAVER_PASSPHRASE=yourpass /path/to/streamsaver/.venv/bin/python /path/to/streamsaver/scheduler.py --run-once
-```
-
-## Backup And Restore
-
-Use **Settings -> Export Backup** to download a JSON backup. Use **Settings -> Restore Backup** to import one.
-
-Restore replaces service and setting data from the backup. Provider logos can be refreshed afterward with **Refresh Provider List** if needed.
-
-## Local Development
+Use Python 3.11 or newer from a source checkout:
 
 ```sh
 python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python main.py
+.venv/bin/pip install -r requirements.txt
+cp .env.example .env
+./run_streamsaver.sh
 ```
 
-Open `http://localhost:8092`.
+The launcher creates the venv if needed, installs requirements, loads `.env`, and
+starts the Flask web app. Open `http://localhost:8092` and complete Setup.
+Use `./run_streamsaver.sh web` explicitly, `./run_streamsaver.sh --scheduler` for
+one scheduled job, or `./run_streamsaver.sh --help` for usage.
+For an ongoing local schedule, invoke `scheduler.py --run-at 02:00` with the venv
+Python and your passphrase in the environment.
 
-The app is the Flask web UI in `web/`, served through `wsgi.py` and Docker. (The old Tkinter GUI was removed.)
+## Building from source
 
-Every page needs a signed-in browser: open Streamsaver and enter the passphrase once (each browser stays signed in for 30 days). `/health` stays public for monitoring. POSTs from other sites are rejected.
+Clone [the repository](https://github.com/noahphex/streamsaver) over HTTPS and
+create a local `docker-compose.override.yml` in the checkout:
 
-## Project Structure
-
-```text
-streamsaver/
-├── Dockerfile
-├── docker-compose.yml
-├── wsgi.py                         # Gunicorn entry point
-├── main.py                         # Local Flask dev entry point
-├── scheduler.py                    # Scheduled sync/report runner
-├── setup_credentials.py            # CLI credential setup and encryption helpers
-├── db.py                           # SQLite schema and migrations
-├── web/
-│   ├── app.py                      # Flask routes and web actions
-│   ├── static/app.css              # Responsive web styling
-│   └── templates/                  # Web UI templates
-├── core/
-│   ├── trakt_client.py             # Trakt REST API wrapper
-│   ├── tmdb_client.py              # TMDb API wrapper
-│   ├── show_tracker.py             # Sync, scoring, and show-state logic
-│   ├── service_manager.py          # Service CRUD, providers, and logo cache
-│   ├── backup.py                   # JSON backup import/export
-│   └── analysis.py                 # Recommendation engine
-├── email_reports/
-│   ├── logo.py                     # CID logo attachments
-│   ├── report_builder.py           # HTML email rendering
-│   └── mailer.py                   # Gmail SMTP sender
-├── assets/logos/                   # Cached TMDb logos
-├── config/                         # credentials.enc and .salt
-├── data/                           # SQLite database and logs
-└── backups/                        # Backup files
+```yaml
+services:
+  streamsaver:
+    build: .
+    image: streamsaver:local
+  streamsaver-scheduler:
+    build: .
+    image: streamsaver:local
 ```
 
-## Security Notes
+Then run:
 
-- Credentials are encrypted with Fernet and PBKDF2.
-- Encrypted credentials are stored in `config/credentials.enc`.
-- The encryption salt is stored in `config/.salt`.
-- `config/`, `data/`, and generated logo/cache files are gitignored.
-- The passphrase cannot be recovered if lost.
-- Unlocking stores decrypted credentials only in the running Flask process memory.
+```sh
+docker compose build
+docker compose up -d
+```
+
+Compose automatically merges the override. The override file is ignored by Git,
+so you can keep your own image tag or volume mappings locally.
+The web app uses one Gunicorn worker because unlocked credentials live in process memory.
+
+## Data and backups
+
+- `config/` contains encrypted `credentials.enc`, its `.salt`, and the generated
+  `.secret_key` used to sign browser sessions. Keep the passphrase separately.
+- `data/` contains `streamsaver.db` with services, shows, settings, and cached
+  provider metadata, plus application logs.
+- `assets/logos/` caches downloaded provider logos. Missing logos show initials;
+  the included Streamsaver brand images remain available.
+- `backups/` is the directory reserved for server-side backup files.
+
+In Docker these paths live in named volumes. Stop both services before making
+filesystem copies of the database and config volumes.
+
+Use **Settings → Maintenance → Export backup → Export** to download services
+and settings as JSON. Restore with **Settings → Restore backup**. That export
+excludes shows, credentials, salt, and the session key; it is not a full installation
+backup. Settings can contain a Discord webhook, so protect exported JSON too.
+
+## Updating
+
+From the directory containing your Compose file:
+
+```sh
+docker compose pull && docker compose up -d
+```
+
+Back up your volumes first. Set `STREAMSAVER_VERSION` to a release tag to pin an
+image instead of following `latest`.
+
+## Development
+
+Run the tests from the repository root:
+
+```sh
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt pytest
+.venv/bin/python -m pytest -q
+.venv/bin/python -m unittest discover -v tests
+```
+
+Start the isolated screenshot demo with one command:
+
+```sh
+docker compose -p streamsaver-demo -f docker-compose.demo.yml up --build -d
+```
+
+Open [http://localhost:8093](http://localhost:8093) and sign in with `demo`.
+The demo binds only to localhost, creates seven services and 25 invented shows,
+and writes fake encrypted credentials. Seeding makes no network requests; avoid
+sync, provider refresh, and notification tests with these fake credentials.
+The app generates a random session key in the throwaway config volume.
+Every demo start resets its database and credentials. Destroy the demo and its volumes:
+
+```sh
+docker compose -p streamsaver-demo -f docker-compose.demo.yml down -v
+```
+
+For a local seed, run `scripts/seed_demo.py` with the venv Python and explicit
+`--data-dir` and `--config-dir` paths. Existing databases or credentials are
+protected unless you pass `--force`. The web app uses its normal `data/` and
+`config/` paths, so use a disposable checkout for local screenshots.
+
+## Attribution
+
+This product uses the TMDB API but is not endorsed or certified by TMDB.
+Trakt data comes from the user's own Trakt account.
+
+[MIT License](LICENSE). Copyright 2026 Noah Lee.
