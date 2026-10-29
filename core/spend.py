@@ -34,3 +34,33 @@ def potential_monthly_savings(results):
         else (rec.get("monthly_cost") or 0)
         for key in ("suspend", "consider_non_renewal") for rec in results.get(key, [])
     )
+
+
+def spend_headline(totals, timeline_or_rail, savings, subscribed_count):
+    """Spoken spend copy derived from actual bills, including annual charges."""
+    from core.rail import build_rail
+
+    rail = (timeline_or_rail if isinstance(timeline_or_rail, dict)
+            else build_rail(timeline_or_rail))
+    bills = rail["bills"]
+    if not bills:
+        parts = [{"text": "Nothing bills in the next 30 days.", "tone": "quiet"}]
+    else:
+        amount = sum((Decimal(str(bill["amount"])) for bill in bills), Decimal("0"))
+        parts = [{"text": f"${amount:,.2f}", "tone": "mono"},
+                 {"text": " lands in the next 30 days", "tone": "quiet"}]
+        nothing_new = sum(bill["verdict_kind"] == "nothing_new" for bill in bills)
+        clause = None
+        if nothing_new:
+            clause = {"text": f"{nothing_new} {'bill has' if nothing_new == 1 else 'bills have'} nothing coming back first.",
+                      "tone": "yellow", "emphasis": True}
+        elif all(bill["verdict_kind"] == "returns" for bill in bills):
+            clause = {"text": "every bill has a show coming back first.",
+                      "tone": "green", "emphasis": True}
+        parts.append({"text": ", and " if clause else ".", "tone": "quiet"})
+        if clause:
+            parts.append(clause)
+    return {"lead": "You pay" if subscribed_count else "You're not paying for any streaming right now.",
+            "amount": f"${totals['monthly_total']:,.2f}" if subscribed_count else "",
+            "tail": f"a month for {subscribed_count} {'service' if subscribed_count == 1 else 'services'}." if subscribed_count else "",
+            "sub_parts": parts, "savings": f"Could save ${savings:,.2f}/mo." if savings > 0 else ""}

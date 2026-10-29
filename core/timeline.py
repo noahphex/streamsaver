@@ -141,27 +141,6 @@ def build_timeline(results, today=None, days=60):
     return list(weeks.values())
 
 
-def preview(timeline, days=14, limit=5):
-    """Keep every bill, filling remaining slots with the earliest returns."""
-    today = date.today()
-    end = today + timedelta(days=days)
-    events = [event for week in timeline for event in week["events"]
-              if today <= date.fromisoformat(event["date"]) <= end]
-    events.sort(key=lambda e: (e["date"], e["type"] != "bill",
-                               (e.get("title") or e["service_name"]).casefold()))
-    if limit is None:
-        return events
-    slots = max(0, limit - sum(e["type"] == "bill" for e in events))
-    selected = []
-    for event in events:
-        if event["type"] == "bill":
-            selected.append(event)
-        elif slots:
-            selected.append(event)
-            slots -= 1
-    return selected
-
-
 def timeline_summary(timeline):
     """Count bills and returns, summing actual charges rather than monthly equivalents."""
     events = [event for week in timeline for event in week["events"]]

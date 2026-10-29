@@ -222,9 +222,9 @@ class WebTests(unittest.TestCase):
         add_service("Max", status="subscribed", monthly_cost=10,
                     billing_anchor_date=date.today().isoformat())
         page = self.client.get("/").data.decode()
-        self.assertIn('aria-label="Paused it: Max"', page)
+        self.assertIn('aria-label="Did it: Paused it: Max"', page)
         self.assertIn('aria-label="Not now: Max"', page)
-        self.assertIn("1 change", page)
+        self.assertIn('class="todo-count">1</span>', page)
         self.assertEqual(page.count("Could save $10.00/mo"), 1)
         data = {"name": "Max", "action": "suspend"}
         page = self._post("/todo/snooze", data=data, follow_redirects=True).data.decode()
@@ -234,7 +234,7 @@ class WebTests(unittest.TestCase):
         self.assertIn('aria-label="Undo snooze: Max"', page)
         self.assertNotIn("0 changes", page)
         page = self._post("/todo/unsnooze", data=data, follow_redirects=True).data.decode()
-        self.assertIn('aria-label="Paused it: Max"', page)
+        self.assertIn('aria-label="Did it: Paused it: Max"', page)
         self.assertNotIn("Snoozed (1)", page)
 
     def test_snooze_uses_server_date_and_services_hide_advice(self):
@@ -253,13 +253,13 @@ class WebTests(unittest.TestCase):
         self.assertNotIn('class="pill yellow">Pause', self.client.get("/services").data.decode())
         self.assertNotIn('<h2>Pause</h2>', self.client.get(f"/services/{service_id}/edit").data.decode())
 
-    def test_untracked_todo_has_ignore_without_done(self):
+    def test_untracked_todo_has_not_now_without_done(self):
         self._sign_in()
         with db.db_session() as conn:
             conn.execute("INSERT INTO shows (trakt_id, title, show_state, primary_provider) "
                          "VALUES ('u', 'Example show', 'active', 'Untracked')")
         page = self.client.get("/").data.decode()
-        self.assertIn('aria-label="Ignore: Untracked"', page)
+        self.assertIn('aria-label="Not now: Untracked"', page)
         self.assertNotIn('/done/', page)
         page = self._post("/todo/snooze", data={"name": "Untracked", "action": "untracked"},
                                 follow_redirects=True).data.decode()
@@ -443,13 +443,13 @@ class WebTests(unittest.TestCase):
             page = self.client.get("/").data.decode()
         for client in (trakt, tmdb, gmail):
             client.assert_not_called()
-        self.assertIn('<h1>Your streaming</h1>', page)
+        self.assertIn('<section class="spend-headline">', page)
         self.assertNotIn("Streaming Cost Control", page)
-        self.assertIn("1 change", page)
+        self.assertIn('class="todo-count">1</span>', page)
         self.assertEqual(page.count("Could save $15.00/mo"), 1)
-        self.assertIn("Synced never", page)
+        self.assertNotIn("Synced never", page)
         self.assertIn('role="status" aria-label="Connections need attention"', page)
-        self.assertLess(page.index("Connections need attention"), page.index("<h1>Your streaming</h1>"))
+        self.assertLess(page.index("Connections need attention"), page.index("<h1>"))
         self.assertIn('href="/credentials#tmdb"', page)
         self.assertIn('href="/credentials#gmail"', page)
         self.assertIn("Fix Gmail", page)
@@ -558,8 +558,8 @@ class WebTests(unittest.TestCase):
         with db.db_session() as conn:
             conn.execute("UPDATE services SET icon_path = ? WHERE id = ?", ("assets/logos/8.jpg", service_id))
         page = self.client.get("/").data.decode()
-        self.assertIn('class="spend-total">$12.00', page)
-        self.assertIn("next 30 days · 1 bill", page)
+        self.assertIn('class="spend-amount">$12.00', page)
+        self.assertIn("lands in the next 30 days", page)
         self.assertIn('src="/logos/8.jpg"', page)
         self.assertIn('width="32" height="32" alt="" loading="lazy"', page)
         self.assertIn('onerror="this.remove()"', page)
@@ -579,31 +579,30 @@ class WebTests(unittest.TestCase):
         self.assertNotIn('src="/logos/8.jpg"', page)
         self.assertNotIn("Could save", page)
 
-    def test_money_band_distinguishes_monthly_and_due_spend(self):
+    def test_headline_distinguishes_monthly_and_actual_due_spend(self):
         from core.service_manager import add_service
         self._sign_in()
         add_service("Annual TV", status="subscribed", billing_cycle="annual",
-                                 annual_cost=120, billing_anchor_date=date.today().isoformat())
+                    annual_cost=120, billing_anchor_date=date.today().isoformat())
         rec = {**webapp.get_all_services()[0], "billing_date": date.today().isoformat(),
                "reason": "No recent viewing."}
         for results, savings in [({"suspend": [rec]}, True), ({"keep": [rec]}, False), ({}, False)]:
             with self.subTest(results=list(results)), mock.patch.object(webapp, "run_analysis", return_value=results):
                 page = self.client.get("/").data.decode()
                 self.assertEqual(page.count("<h1>"), 1)
-                self.assertIn('<h1>Your streaming</h1>', page)
-                self.assertIn('<h2>To do</h2>', page)
-                self.assertIn('class="spend-total">$10.00<small class="muted">/mo', page)
-                self.assertIn('$120.00/yr', page)
+                self.assertIn('class="spend-amount">$10.00</span> a month for 1 service.', page)
+                self.assertNotIn('money-band', page)
                 self.assertNotIn('class="metrics', page)
-                self.assertLess(page.index('class="panel money-band"'), page.index('<h2>To do</h2>'))
+                self.assertIn('class="todo-count"', page)
+                self.assertLess(page.index('class="spend-headline"'), page.index('id="todo"'))
+                if results:
+                    self.assertIn('class="text-mono">$120.00</span>', page)
                 if savings:
-                    self.assertIn('$120.00 due in the next 30 days · 1 bill', page)
-                    self.assertIn('Could save $10.00/mo', page)
-                    self.assertIn('>Spending</p>', page)
+                    self.assertIn('Could save $10.00/mo.', page)
                 else:
                     self.assertNotIn('Could save', page)
-                    self.assertIn(f'All {1 if results else 0} service{"" if results else "s"} {"is" if results else "are"} earning their keep.', page)
                     self.assertIn('Nothing to change.', page)
+                    self.assertIn(f'All {1 if results else 0} service{"" if results else "s"} {"is" if results else "are"} earning their keep.', page)
 
     def test_keep_reason_footer_and_single_card_link(self):
         from core.service_manager import add_service
@@ -695,7 +694,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(webapp._show_sort("invalid", "invalid"), ("state", "desc"))
 
 
-    def test_coming_up_default_and_dashboard_preview(self):
+    def test_coming_up_default_and_dashboard_rail(self):
         from datetime import timedelta
         from core.service_manager import add_service
         self._sign_in()
@@ -716,7 +715,7 @@ class WebTests(unittest.TestCase):
         self.assertNotIn('class="table-wrap"', page)
         self.assertIn("Love is Blind", page)
         dashboard = self.client.get("/").data.decode()
-        self.assertIn("Next 14 days", dashboard)
+        self.assertIn('class="rail"', dashboard)
         self.assertIn("See all coming up", dashboard)
         self.assertIn('id="todo"', dashboard)
         self.assertIn("/shows?view=all", dashboard)  # Shows library menu link
@@ -726,7 +725,7 @@ class WebTests(unittest.TestCase):
         self.assertIn('href="/#todo"', page)
         self.assertIn("Pause suggested", page)
 
-    def test_empty_timeline_and_preview_limit(self):
+    def test_empty_timeline_and_rail(self):
         from datetime import timedelta
         self._sign_in()
         page = self.client.get("/shows").data.decode()
@@ -738,8 +737,8 @@ class WebTests(unittest.TestCase):
                 "INSERT INTO shows (trakt_id, title, next_air_date) VALUES (?, ?, ?)",
                 [(str(i), f"Return {i}", str(date.today() + timedelta(days=i))) for i in range(7)])
         page = self.client.get("/").data.decode()
-        self.assertEqual(page.count('class="timeline-row timeline-return"'), 5)
-        self.assertNotIn("Return 5", page)
+        self.assertIn("No bills in the next 30 days.", page)
+        self.assertNotIn("class=\"arc\"", page)
 
     def test_frame_navigation_and_library(self):
         self._sign_in()
@@ -812,7 +811,7 @@ class WebTests(unittest.TestCase):
         self.assertLess(page.index('class="title">Alpha'), page.index('class="title">Zulu'))
         self.assertIn('value="state" selected', page)
 
-    def test_preview_bill_anchor_full_counts_and_footer(self):
+    def test_rail_bill_anchor_all_returns_and_accessible_fallback(self):
         from datetime import timedelta
         from core.service_manager import add_service
         self._sign_in()
@@ -824,14 +823,80 @@ class WebTests(unittest.TestCase):
                 "INSERT INTO shows (trakt_id, title, show_state, service_id, next_air_date) VALUES (?, ?, 'anticipated', ?, ?)",
                 [(str(i), f"Return {i}", sid, str(today + timedelta(days=i))) for i in range(8)])
         page = self.client.get("/").data.decode()
-        self.assertIn("Next 14 days · 1 bill $19.99 · 8 returns", page)
-        self.assertIn("+4 more returns", page)
-        self.assertIn('class="bill-amount">$19.99', page)
-        self.assertEqual(page.count('class="timeline-row timeline-return"'), 4)
-        self.assertLess(page.index('id="todo"'), page.index('class="panel timeline-preview"'))
+        self.assertIn('class="rail"', page)
+        self.assertIn('8 shows return before this bill', page)
+        self.assertEqual(page.count('class="arc"'), 8)
+        self.assertEqual(page.count('class="return-dot counts"'), 8)
+        self.assertIn('aria-hidden="true" focusable="false"', page)
+        self.assertIn('<ul class="sr-only">', page)
+        self.assertIn('Counts toward a bill', page)
+        self.assertIn('Prepaid or not subscribed', page)
+        anchor = f'bill-{sid}-{today + timedelta(days=12)}'
+        self.assertIn(f'href="/shows#{anchor}"', page)
+        self.assertLess(page.index('class="rail"'), page.index('id="todo"'))
         shows_page = self.client.get("/shows").data.decode()
+        self.assertIn(f'id="{anchor}"', shows_page)
         self.assertIn("<summary>+2 more</summary>", shows_page)
         self.assertIn("Return 7", shows_page)
+
+    def test_dashboard_synthetic_rail_tones_escaping_and_post_csrf(self):
+        from datetime import timedelta
+        from html.parser import HTMLParser
+
+        self._sign_in()
+        today = date.today()
+        services = [{"id": sid, "name": f"Sample {sid}", "status": "subscribed"}
+                    for sid in (1, 2, 3)]
+        kinds = ("returns", "nothing_new", "unknown")
+        events = [dict(type="bill", date=str(today + timedelta(days=day)),
+                       service_id=sid, service_name=f"Sample {sid}", amount=10,
+                       icon_path="assets/logos/sample.png" if sid == 1 else None,
+                       verdict={"kind": kind, "text": "Synthetic verdict"})
+                  for sid, day, kind in zip((1, 2, 3), (7, 8, 20), kinds)]
+        events.append(dict(type="return", date=str(today + timedelta(days=1)),
+                           service_id=1, title="<Sample & show>", context="counts toward next bill"))
+        results = {key: [{"id": sid, "name": f"Sample {sid}", "reason": "Sample reason"}]
+                   for sid, key in enumerate(("suspend", "resubscribe", "renew_soon", "untracked"), 1)}
+        with mock.patch.object(webapp, "get_all_services", return_value=services), \
+                mock.patch.object(webapp, "get_cost_totals", return_value={"monthly_total": 30}), \
+                mock.patch.object(webapp, "run_analysis", return_value=results), \
+                mock.patch.object(webapp, "build_timeline", return_value=[{"events": events}]):
+            page = self.client.get("/").data.decode()
+        self.assertIn('class="spend-amount">$30.00</span> a month for 3 services.', page)
+        self.assertIn('class="text-yellow">1 bill has nothing coming back first.', page)
+        for tone in ("green", "yellow", "quiet"):
+            self.assertIn(f'class="bill rail-tone-{tone}"', page)
+        for tone in ("yellow", "cyan", "green", "pink"):
+            self.assertIn(f'class="todo-tone-{tone}"', page)
+        self.assertIn('href="/logos/sample.png"', page)
+        self.assertIn('class="rail-initials"', page)
+        self.assertIn('&lt;Sample &amp; show&gt;', page)
+        self.assertIn('class="todo-done"', page)
+        self.assertIn('>Did it</button>', page)
+        self.assertNotIn('Synced', page[page.index('id="todo"'):])
+
+        class PostForms(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.tokens = []
+                self.current = None
+
+            def handle_starttag(self, tag, attrs):
+                attrs = dict(attrs)
+                if tag == "form":
+                    self.current = 0 if attrs.get("method", "get").lower() == "post" else None
+                elif tag == "input" and attrs.get("name") == "csrf_token" and self.current is not None:
+                    self.current += 1
+
+            def handle_endtag(self, tag):
+                if tag == "form" and self.current is not None:
+                    self.tokens.append(self.current)
+                    self.current = None
+
+        forms = PostForms()
+        forms.feed(page)
+        self.assertGreater(len(forms.tokens), 3)
+        self.assertTrue(all(count == 1 for count in forms.tokens))
 
     def test_state_sort_orders_by_meaning(self):
         states = ["active", "anticipated", "occasional", "abandoned", "completed", "dormant", "ignored", "archived"]

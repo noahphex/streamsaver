@@ -1,11 +1,25 @@
 {% extends "base.html" %}
 {% block title %}Dashboard - Streamsaver{% endblock %}
 {% from "_service_mark.html" import service_mark, snooze_undo, service_title with context %}
-{% from "_timeline.html" import event_row with context %}
+{% from "_rail.html" import billing_rail with context %}
 {% block content %}
+{% if issues %}
+<section class="panel connection-issues" role="status" aria-label="Connections need attention">
+  {% for issue in issues %}
+    <p><strong>{{ issue.name }}</strong>: {{ issue.message }} {{ issue.impact }} <a class="inline-link" href="{{ issue.href }}">Fix {{ issue.name }}</a></p>
+  {% endfor %}
+</section>
+{% endif %}
+
+<section class="spend-headline">
+  <h1>{{ headline.lead }}{% if headline.amount %} <span class="spend-amount">{{ headline.amount }}</span> {{ headline.tail }}{% endif %}</h1>
+  <p class="spend-sub">{% for part in headline.sub_parts %}{% if part.emphasis %}<strong class="text-{{ part.tone }}">{{ part.text }}</strong>{% else %}<span class="text-{{ part.tone }}">{{ part.text }}</span>{% endif %}{% endfor %}</p>
+  {% if headline.savings %}<p class="spend-savings">{{ headline.savings }}</p>{% endif %}
+</section>
+{{ billing_rail(rail) }}
 {% if todo_undo %}
 <section class="flash-stack" tabindex="-1">
-  <div class="flash success button-row" role="status">
+  <div class="undo-notice button-row" role="status">
     <span>Marked {{ todo_undo.name }} {{ done_messages[todo_undo.action] }}.</span>
     <form method="post" action="{{ url_for('todo_undo') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -15,35 +29,16 @@
   </div>
 </section>
 {% endif %}
-{% if issues %}
-<section class="panel connection-issues" role="status" aria-label="Connections need attention">
-  {% for issue in issues %}
-    <p><strong>{{ issue.name }}</strong>: {{ issue.message }} {{ issue.impact }} <a class="inline-link" href="{{ issue.href }}">Fix {{ issue.name }}</a></p>
-  {% endfor %}
-</section>
-{% endif %}
-
-<section class="panel money-band">
-  <h1>Your streaming</h1>
-  {% if todo %}<p class="muted">Spending</p>{% else %}<p>All {{ kept|length }} service{{ "" if kept|length == 1 else "s" }} {{ "is" if kept|length == 1 else "are" }} earning their keep.</p>{% endif %}
-  <div class="spend-total">{{ totals.monthly_total|money }}<small class="muted">/mo</small></div>
-  <p>{{ spend.total|money }} due in the next 30 days · {{ spend.count }} bill{{ '' if spend.count == 1 else 's' }} <span class="muted">· {{ totals.annual_total|money }}/yr</span></p>
-  {% if savings > 0 %}<p class="spend-savings">Could save {{ savings|money }}/mo</p>{% endif %}
-</section>
 <section class="panel todo-panel" id="todo">
-  <h2>To do</h2>
-  <div class="todo-summary">
-    {% if todo_summary %}<span>{{ todo_summary }}</span>{% endif %}
-    <span class="muted">Synced {{ settings.last_trakt_sync|local_time }}</span>
-  </div>
+  <h2>To do <span class="todo-count">{{ todo|length }}</span></h2>
   {% if todo %}
     <ul class="todo">
       {% for item in todo %}
         {% set href = url_for('service_edit', service_id=item.service_id) if item.service_id else url_for('service_new', name=item.name) %}
-        <li>
+        <li class="todo-tone-{{ item.color }}">
           <a class="todo-link" href="{{ href }}">
             {{ service_mark(item.name, item.icon_path) }}
-            <span class="todo-name"><span class="name">{{ service_title(item.name) }}</span> <span class="pill {{ {'pause': 'yellow', 'review': 'yellow', 'renew': 'green', 'keep': 'green', 'resubscribe': 'cyan', 'untracked': 'pink'}.get(item.tone, 'quiet') }}">{{ item.label }}</span></span>
+            <span class="todo-name"><span class="name">{{ service_title(item.name) }}</span> <span class="pill {{ item.color }}">{{ item.label }}</span></span>
             <span class="when">{% if item.cost %}{{ item.cost }}{% endif %}{% if item.cost and item.when %} · {% endif %}{% if item.when %}bills {{ item.when|nice_date }}{% endif %}</span>
             {% if item.why %}<span class="why">{{ item.why }}</span>{% endif %}
           </a>
@@ -51,22 +46,21 @@
             {% if item.has_done %}
               <form method="post" action="{{ url_for('todo_done', service_id=item.service_id, action=item.key) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="small ghost" aria-label="{{ item.done_label }}: {{ item.name }}">{{ item.done_label }}</button>
+                <button class="todo-done" aria-label="Did it: {{ item.done_label }}: {{ item.name }}">Did it</button>
               </form>
             {% endif %}
             <form method="post" action="{{ url_for('todo_snooze') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="name" value="{{ item.name }}">
               <input type="hidden" name="action" value="{{ item.key }}">
-              {% set snooze_label = 'Ignore' if item.key == 'untracked' else 'Not now' %}
-              <button class="small ghost" aria-label="{{ snooze_label }}: {{ item.name }}">{{ snooze_label }}</button>
+              <button class="ghost" aria-label="Not now: {{ item.name }}">Not now</button>
             </form>
           </div>
         </li>
       {% endfor %}
     </ul>
   {% else %}
-    <p class="muted empty-todo">Nothing to change.</p>
+    <p class="empty-todo">Nothing to change. All {{ kept|length }} service{{ "" if kept|length == 1 else "s" }} {{ "is" if kept|length == 1 else "are" }} earning their keep.</p>
   {% endif %}
   {% if kept %}
     <details>
@@ -94,16 +88,5 @@
     </details>
   {% endif %}
 </section>
-
-{% if upcoming %}
-<section class="panel timeline-preview">
-  <h2>Next 14 days · {{ upcoming_summary.bills }} bill{{ '' if upcoming_summary.bills == 1 else 's' }} {{ upcoming_summary.amount|money }} · {{ upcoming_summary.returns }} return{{ '' if upcoming_summary.returns == 1 else 's' }}</h2>
-  <ul class="timeline-list">
-    {% for event in upcoming %}{{ event_row(event) }}{% endfor %}
-  </ul>
-  {% if hidden_returns %}<p class="muted">+{{ hidden_returns }} more returns</p>{% endif %}
-  <a class="button quiet" href="{{ url_for('shows') }}">See all coming up</a>
-</section>
-{% endif %}
 
 {% endblock %}
