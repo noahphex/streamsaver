@@ -3,135 +3,126 @@
 from datetime import date, timedelta
 
 from core.presentation import service_mark
+from core.timeline import group_periods
 
 
 def build_rail(timeline, today=None, days=30, width=350):
-    """Project timeline events onto a track; keep geometry out of templates."""
+    """Project bills, verdict badges and return links; templates only render."""
     today = today or date.today()
     if days <= 0 or width < 56:
         raise ValueError("The rail needs positive days and at least 56px of width")
     end = today + timedelta(days=days)
-    events = sorted((event for week in timeline for event in week["events"]
-                     if today <= date.fromisoformat(event["date"]) <= end),
-                    key=lambda event: event["date"])
+    all_events = [event for week in timeline for event in week['events']]
+    events = sorted((event for event in all_events
+                     if today <= date.fromisoformat(event['date']) <= end),
+                    key=lambda event: event['date'])
 
     def x_for(day):
         return round(14 + (day - today).days / days * (width - 28), 2)
 
-    track_y = 120
     bills = []
-    row_ends = [float("-inf"), float("-inf")]
-    tones = {"returns": "green", "nothing_new": "yellow"}
+    authored_titles = set()
     for event in events:
-        if event["type"] != "bill":
+        if event['type'] != 'bill':
             continue
-        x = x_for(date.fromisoformat(event["date"]))
-        size = round(max(26, min(48, 26 + float(event["amount"]) * .45)), 2)
-        tile_x = round(max(1, min(width - size - 1, x - size / 2)), 2)
-        # Prefer the lower row, using the upper row when its neighbour overlaps.
-        row = next((i for i in (0, 1) if row_ends[i] + 4 <= tile_x),
-                   min(range(2), key=lambda i: row_ends[i]))
-        row_ends[row] = tile_x + size
-        tile_y = 54 - row * 30
+        x = x_for(date.fromisoformat(event['date']))
+        size = round(max(26, min(48, 26 + float(event['amount']) * .45)), 2)
+        if 'shows' in event['verdict']:
+            authored_titles.add(f"bill-{event.get('service_id')}-{event['date']}")
         bills.append({key: event.get(key) for key in
-                      ("amount", "service_name", "icon_path", "service_id", "date")} | {
-            "x": x, "size": size, "row": row,
-            "mark": service_mark(event["service_name"]),
-            "tone": tones.get(event["verdict"]["kind"], "quiet"),
-            "verdict": event["verdict"]["text"], "verdict_kind": event["verdict"]["kind"],
-            "tile_x": tile_x, "tile_y": tile_y, "tile_bottom": tile_y + size,
-            "amount_x": round(tile_x + size / 2, 2), "amount_y": tile_y - 8,
-            "initials_x": round(tile_x + size / 2, 2),
-            "initials_y": round(tile_y + size / 2, 2), "sequence": len(bills),
+                      ('amount', 'service_name', 'icon_path', 'service_id', 'date')} | {
+            'x': x, 'size': size, 'mark': service_mark(event['service_name']),
+            'tone': {'returns': 'green', 'nothing_new': 'yellow'}.get(event['verdict']['kind'], 'quiet'),
+            'verdict': event['verdict']['text'], 'verdict_kind': event['verdict']['kind'],
+            'show_titles': [show['title'] for show in event['verdict'].get('shows', [])],
+            'anchor': f"bill-{event.get('service_id')}-{event['date']}", 'sequence': len(bills),
         })
 
-    # A 30px stagger alone overlaps larger tiles and the lower amount label.
-    upper_sizes = [bill["size"] for bill in bills if bill["row"] == 1]
-    clearance = max(upper_sizes, default=0)
-    extra = max(0, clearance + 18 - 30) if upper_sizes else 0
-    for bill in bills:
-        if bill["row"] == 0:
-            for key in ("tile_y", "tile_bottom", "amount_y", "initials_y"):
-                bill[key] += extra
-    track_y += extra
-
-    # Trim the viewBox to the amount text, including its ascenders.
-    top = min((bill["amount_y"] - 12 for bill in bills), default=0) - 4
-    for bill in bills:
-        for key in ("tile_y", "tile_bottom", "amount_y", "initials_y"):
-            bill[key] -= top
-    track_y = max((bill["tile_bottom"] for bill in bills), default=track_y - top - 36) + 36
-
-    returns, arcs, clusters = [], [], []
+    return_anchors = {(event.get('service_id'), event['date'], event['title']): period['anchor_id']
+                      for period in group_periods(timeline, today)['periods'] for event in period['returns']}
+    returns, clusters, return_clusters = [], [], []
     for event in events:
-        if event["type"] != "return":
+        if event['type'] != 'return':
             continue
-        x = x_for(date.fromisoformat(event["date"]))
-        # Dots closer than 12 units blur together on a phone, so they share one numbered dot.
-        cluster = next((group for group in clusters if x - group["x"] <= 12), None)
+        anchor = return_anchors.get((event.get('service_id'), event['date'], event['title']), 'elsewhere')
+        kind = 'elsewhere' if anchor == 'elsewhere' else 'counts'
+        bill = next((bill for bill in bills if bill['anchor'] == anchor), None)
+        if bill and bill['anchor'] not in authored_titles:
+            bill['show_titles'].append(event['title'])
+        x = x_for(date.fromisoformat(event['date']))
+        # A cluster has one destination, and never mixes counts with elsewhere.
+        cluster = next((group for group in clusters if group['kind'] == kind
+                        and group['anchor'] == anchor and x - group['x'] <= 12), None)
         if cluster is None:
-            cluster = {"x": x, "y": track_y + 9, "count": 0, "titles": [], "kind": "elsewhere"}
+            cluster = dict(x=x, count=0, titles=[], kind=kind, anchor=anchor)
             clusters.append(cluster)
-        cluster["count"] += 1
-        cluster["titles"].append(f"{event['title']} · {event['date']}")
-        kind = "counts" if event.get("context", "").startswith("counts toward") else "elsewhere"
-        if kind == "counts":
-            cluster["kind"] = "counts"
-        bill = next((bill for bill in bills if kind == "counts"
-                     and event.get("service_id") is not None
-                     and bill["service_id"] == event["service_id"]
-                     and bill["date"] >= event["date"]), None)
-        x, y = cluster["x"], cluster["y"]
-        returns.append({"x": x, "y": y, "kind": kind,
-                        "title": event["title"], "date": event["date"],
-                        "bill_x": bill["x"] if bill else None})
-        if bill:
-            bill.setdefault("show_titles", []).append(event["title"])
-            depth = round(min(70, 14 + abs(bill["x"] - x) * .32), 2)
-            control_x = round((x + bill["x"]) / 2, 2)
-            control_y = round(y + depth, 2)
-            t = (y - control_y) / (y - 2 * control_y + track_y)
-            bottom = (1 - t) ** 2 * y + 2 * (1 - t) * t * control_y + t ** 2 * track_y
-            arcs.append({"path": f"M {x} {y} Q {control_x} {control_y} {bill['x']} {track_y}",
-                         "sequence": len(arcs), "depth": depth, "bottom": round(bottom, 2)})
-    label_ends = [0, 0]
-    label_rows = [index % 2 if any(abs(bill["x"] - other["x"]) < 90 for other in bills if other is not bill)
-                  else 0 for index, bill in enumerate(bills)]
-    for index, bill in enumerate(bills):
-        titles = bill.get("show_titles", [])
-        row = label_rows[index]
-        # Labels are centred on their bill, so each gets the gap to its nearest same-row neighbour.
-        gap = min((abs(bill["x"] - other["x"]) for j, other in enumerate(bills)
-                   if j != index and label_rows[j] == row), default=width)
-        suffix = f" +{len(titles) - 1}" if len(titles) > 1 else ""
-        limit = max(6, min(18, int((gap - 6) / 5.6))) - len(suffix)
-        lead = titles[0] if titles else ""
-        bill["show_label"] = (lead if len(lead) <= limit else lead[:limit - 1].rstrip() + "…") + suffix
-        half_width = len(bill["show_label"]) * 2.8
-        while True:
-            if row == len(label_ends):
-                label_ends.append(0)
-            label_x = max(half_width + 2, min(width - half_width - 2, bill["x"]))
-            label_x = max(label_x, label_ends[row] + half_width + 6)
-            if label_x + half_width <= width - 2:
-                break
-            row += 1
-        bill["label_y"] = track_y - 12 if row == 0 else track_y + 29 + (row - 1) * 16
-        bill["label_x"] = round(label_x, 2)
-        if bill["show_label"]:
-            label_ends[row] = bill["label_x"] + half_width
-        bill["hit_x"] = max(0, min(width - 48, bill["amount_x"] - 24))
-        bill["hit_y"] = bill["initials_y"] - 24
-        bill["hit_height"] = 48
-    bottom = max([track_y + 9] + [arc["bottom"] for arc in arcs]
-                 + [bill["label_y"] + 3 for bill in bills if bill["show_label"]])
-    ticks = [{"x": x_for(today + timedelta(days=offset)),
-              "label": "Today" if offset == 0 else
-              f"{today + timedelta(days=offset):%b} {(today + timedelta(days=offset)).day}",
-              "today": offset == 0, "label_y": bottom + 16,
-              "anchor": "start" if offset == 0 else "end" if offset == days else "middle"}
+        cluster['count'] += 1
+        cluster['titles'].append(f"{event['title']} · {event['date']}")
+        return_clusters.append(cluster)
+        returns.append(dict(x=cluster['x'], kind=kind, title=event['title'], date=event['date'], anchor=anchor))
+
+    # Allocate whole tile/badge units to lanes, with two lanes for close bills.
+    # Dense fixtures may need more lanes to preserve readable text without overlaps.
+    row_ends = []
+    for bill in bills:
+        count = len(bill['show_titles'])
+        bill['badge'] = (f'{count} back first' if bill['verdict_kind'] == 'returns' else
+                         {'nothing_new': 'Nothing new', 'prepaid': 'Annual'}.get(bill['verdict_kind'], 'Too early'))
+        badge_width = min(width - 4, max(70, len(bill['badge']) * 7.5 + 16))
+        badge_x = round(max(2, min(width - badge_width - 2, bill['x'] - badge_width / 2)), 2)
+        row = next((i for i, right in enumerate(row_ends) if right + 4 <= badge_x), len(row_ends))
+        if row == len(row_ends):
+            row_ends.append(0)
+        row_ends[row] = badge_x + badge_width
+        bill.update(row=row, badge_width=badge_width, badge_x=badge_x)
+    for bill in bills:
+        # The first lane sits nearest the track, as in the original tile stagger.
+        y = 28 + (len(row_ends) - 1 - bill['row']) * 112
+        tile_x = round(max(1, min(width - bill['size'] - 1, bill['x'] - bill['size'] / 2)), 2)
+        bill.update(tile_x=tile_x, tile_y=y, tile_bottom=y + bill['size'],
+                    amount_x=tile_x + bill['size'] / 2, amount_y=y - 10,
+                    initials_x=tile_x + bill['size'] / 2, initials_y=y + bill['size'] / 2,
+                    badge_y=y + 56, badge_text_y=y + 68,
+                    badge_center=bill['badge_x'] + bill['badge_width'] / 2,
+                    hit_x=max(0, min(width - 48, tile_x + bill['size'] / 2 - 24)),
+                    hit_y=y - 4, hit_height=48)
+    track_y = max((b['badge_y'] + 24 for b in bills), default=70) + 22
+    # Break every stem at all intervening badges/tiles, including other lanes.
+    for bill in bills:
+        start = bill['tile_bottom']
+        segments = []
+        obstacles = sorted([(b['badge_y'] - 2, b['badge_y'] + 26) for b in bills
+                            if b['badge_x'] - 2 <= bill['x'] <= b['badge_x'] + b['badge_width'] + 2]
+                           + [(b['amount_y'] - 16, b['tile_bottom'] + 2) for b in bills if b is not bill
+                              and b['tile_x'] - 15 <= bill['x'] <= b['tile_x'] + b['size'] + 15])
+        for top, bottom in obstacles:
+            if bottom <= start:
+                continue
+            if top > start:
+                segments.append(dict(start=start, end=top))
+            start = max(start, bottom)
+        if start < track_y:
+            segments.append(dict(start=start, end=track_y))
+        bill['stems'] = segments
+    # Offset coincident kinds/destinations along the track so both remain visible.
+    occupied = []
+    for cluster in clusters:
+        radius = max(10, len(str(cluster['count'])) * 4 + 4) if cluster['count'] > 1 else 4
+        x = max(radius + 2, min(width - radius - 2, cluster['x']))
+        candidates = [x] + list(range(radius + 2, int(width - radius - 1)))
+        x = min(candidates, key=lambda candidate: (
+            sum(max(0, radius + old_r + 3 - abs(candidate - old_x)) for old_x, old_r in occupied),
+            abs(candidate - x)))
+        cluster.update(x=round(x, 2), y=track_y, radius=radius,
+                       hit_x=round(max(0, min(width - 56, x - 28)), 2), hit_y=track_y - 28)
+        occupied.append((x, radius))
+    for event, cluster in zip(returns, return_clusters):
+        event.update(x=cluster['x'], y=track_y)
+    ticks = [dict(x=x_for(today + timedelta(days=offset)),
+                  label='Today' if offset == 0 else f'{today + timedelta(days=offset):%b} {(today + timedelta(days=offset)).day}',
+                  today=offset == 0, label_y=track_y + 34,
+                  anchor='start' if offset == 0 else 'end' if offset == days else 'middle')
              for offset in range(0, days + 1, 7)]
-    return {"bills": bills, "returns": returns, "clusters": clusters, "arcs": arcs, "ticks": ticks,
-            "height": max(tick["label_y"] for tick in ticks) + 12, "empty": not bills, "width": width,
-            "track_y": track_y, "track_start": 14, "track_end": width - 14,
-            "tick_bottom": track_y + 5}
+    return dict(bills=bills, returns=returns, clusters=clusters, ticks=ticks,
+                height=track_y + 46, empty=not bills and not returns, width=width,
+                track_y=track_y, track_start=14, track_end=width - 14, tick_bottom=track_y + 5)

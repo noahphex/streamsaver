@@ -28,17 +28,12 @@
 <form class="toolbar" method="get">
   <input type="hidden" name="view" value="all">
   <input name="q" value="{{ q }}" placeholder="Search shows" aria-label="Search shows">
-  <select name="state" onchange="this.form.submit()" aria-label="Show state">
-    {% for item in ["All", "Active", "Occasional", "Dormant", "Completed", "Abandoned", "Anticipated", "Ignored", "Archived"] %}
-      <option value="{{ item }}" {% if state == item %}selected{% endif %}>{{ item }}</option>
-    {% endfor %}
-  </select>
+  {% if state != 'All' %}<input type="hidden" name="state" value="{{ state }}">{% endif %}
   <label class="library-sort">Sort
     <select name="order" onchange="this.form.submit()">
-      {% for key, label in [("next", "Next date"), ("title", "Title"), ("state", "State"), ("service", "Service"), ("provider", "Provider"), ("last", "Last watched")] %}
-      {% for dir, suffix in [("asc", "soonest" if key in ('next', 'last') else "A–Z"), ("desc", "latest" if key in ('next', 'last') else "Z–A")] %}
-      <option value="{{ key }}:{{ dir }}"{% if sort == key and direction == dir %} selected{% endif %}>{{ label }}, {{ suffix }}</option>
-      {% endfor %}{% endfor %}
+      {% for key, label in [('next:asc', 'Next date'), ('last:desc', 'Recently watched'), ('title:asc', 'Title A–Z'), ('state:desc', 'State')] %}
+      <option value="{{ key }}"{% if key == sort ~ ':' ~ direction %} selected{% endif %}>{{ label }}</option>
+      {% endfor %}
     </select>
   </label>
   <div class="segments" role="group" aria-label="Show group">
@@ -46,6 +41,7 @@
   </div>
   <input type="hidden" name="group" value="{{ group }}">
 </form>
+{% if state != 'All' %}<a class="state-chip pill quiet" href="{{ url_for('shows', view='all', q=q, group=group, sort=sort, dir=direction) }}" aria-label="Clear state filter: {{ state }}">State: {{ state|capitalize }} {{ icon('close') }}</a>{% endif %}
 {% macro sort_link(key, label) -%}
   {% set active = sort == key %}
   {% set next_dir = 'asc' if not active or direction == 'desc' else 'desc' %}
@@ -72,7 +68,7 @@
       {% for show in shows %}
         <tr>
           <td data-label="Title" class="title">{{ show.title }}</td>
-          <td data-label="State"><span class="pill {{ {'active': 'green', 'anticipated': 'cyan', 'occasional': 'pink', 'abandoned': 'pink'}.get(show.show_state, 'quiet') }}">{{ show.show_state|capitalize }}</span></td>
+          <td data-label="State"><span class="pill {{ {'active': 'green', 'anticipated': 'cyan', 'occasional': 'pink', 'abandoned': 'quiet'}.get(show.show_state, 'quiet') }}">{{ show.show_state|capitalize }}</span></td>
           <td data-label="Service">{{ show.service_name or "—" }}{% if show.next_air_date %}<span class="mobile-next"> · {{ show.next_air_date|nice_date }}</span>{% endif %}</td>
           <td data-label="Provider"><span class="provider-name" title="{{ show.primary_provider or '' }}">{{ show.primary_provider if show.primary_provider and show.primary_provider != show.service_name else "" }}</span></td>
           <td data-label="Last">{{ show.last_watch_date|nice_date }}</td>

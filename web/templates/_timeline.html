@@ -26,16 +26,16 @@
 </article>
 {% endfor %}
 {% if grouped.later.count %}
-<div class="later">{% for anchor in grouped.later.anchors %}<span id="{{ anchor }}" class="later-anchor"></span>{% endfor %}<span>{{ grouped.later.count }} later {{ 'bill' if grouped.later.count == 1 else 'bills' }} · {% for day in grouped.later.dates %}<span class="figure">{{ (day|nice_date).split(' ')[1] if not loop.first and day[:7] == grouped.later.dates[loop.index0 - 1][:7] else day|nice_date }}</span>{{ ', ' if not loop.last }}{% endfor %}</span><strong class="figure">· {{ grouped.later.total|money }} total</strong></div>
+<div class="later">{% for anchor in grouped.later.anchors %}<span id="{{ anchor }}" class="later-anchor"></span>{% endfor %}<span>{{ grouped.later.count }} later {{ 'bill' if grouped.later.count == 1 else 'bills' }} · {% for day in grouped.later.dates %}<span class="figure">{{ (day|nice_date).split(' ')[1] if not loop.first and day[:7] == grouped.later.dates[loop.index0 - 1][:7] else day|nice_date }}</span>{{ ', ' if not loop.last }}{% endfor %}</span><strong class="figure">{{ grouped.later.total|money }} total</strong></div>
 <p class="muted later-note">Too early to tell. Trakt only knows the next episode.</p>
 {% endif %}
 {% if grouped.elsewhere %}
-<section class="elsewhere-section">
+<section class="elsewhere-section" id="elsewhere">
 <h2>Elsewhere <span class="figure muted">{{ grouped.elsewhere|length }}</span></h2>
 <ul class="elsewhere">
 {% for event in grouped.elsewhere %}
 <li>{{ service_mark(event.service_name, event.icon_path, 28) }}
-  <div><strong>{{ event.title }}</strong><small class="muted">{{ event.date|timeline_date }} · {{ service_title(event.service_name) }}, {{ 'prepaid' if event.context == 'annual · prepaid' else event.context }}</small></div>
+  <div><strong>{{ event.title }}</strong><small class="muted">{{ event.date|timeline_date }} · {{ service_title(event.service_name) }}, {{ 'prepaid' if event.context == 'annual · prepaid' else status_labels.get(event.service_status, event.context) if event.context == 'not subscribed' else event.context }}</small></div>
   {% if event.snoozed_until %}<span class="muted">Snoozed until {{ event.snoozed_until|nice_date }}</span>{% elif event.service_status in ('unsubscribed', 'not_subscribed', 'suspended') %}<a class="resubscribe-link" href="{{ url_for('dashboard') + '#todo' if event.resubscribe_todo else url_for('service_edit', service_id=event.service_id) }}">Resubscribe</a>{% elif event.context == 'annual · prepaid' %}<span class="pill quiet">Annual</span>{% endif %}
 </li>
 {% endfor %}

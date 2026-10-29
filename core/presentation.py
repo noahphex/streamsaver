@@ -32,3 +32,25 @@ def ledger_reason(reason):
                            ("Medium", "You watch it sometimes"), ("Low", "You rarely watch it")):
         reason = reason.replace(f"Viewer activity: {activity}", copy)
     return reason
+
+
+STATUS_LABELS = {
+    "subscribed": "Paying",
+    "suspended": "Paused",
+    "unsubscribed": "Cancelled",
+    "not_subscribed": "Never had",
+}
+
+
+def service_counts(services):
+    """Count paid and free subscriptions using their actual billing cycle cost."""
+    paying = free = 0
+    for service in services:
+        if service['status'] != 'subscribed':
+            continue
+        cost = service.get('annual_cost' if service.get('billing_cycle') == 'annual' else 'monthly_cost') or 0
+        if float(cost):
+            paying += 1
+        else:
+            free += 1
+    return dict(paying=paying, free=free)

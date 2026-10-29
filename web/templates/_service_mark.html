@@ -15,6 +15,6 @@
   </form>
 {%- endmacro %}
 
-{% macro service_title(name) -%}
-  {% set display = name|service_name %}{{ display.base }}{% if display.channel %} <span class="service-channel">Amazon Channel</span>{% endif %}
+{% macro service_title(name, inline=False) -%}
+  {% set display = name|service_name %}{{ display.base }}{% if display.channel %} {% if inline %}(Amazon Channel){% else %}<span class="service-channel">Amazon Channel</span>{% endif %}{% endif %}
 {%- endmacro %}

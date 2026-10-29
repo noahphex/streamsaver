@@ -22,3 +22,17 @@ def test_library_groups_and_exact_legacy_state():
     assert set(library_states("All", "Done")) == {"completed", "abandoned", "dormant", "archived", "ignored"}
     assert library_states("Active", "Done") == ("active",)
     assert library_states("All", "unknown") == ()
+
+
+def test_shared_status_vocabulary():
+    from core.presentation import STATUS_LABELS
+    assert list(STATUS_LABELS.values()) == ['Paying', 'Paused', 'Cancelled', 'Never had']
+
+
+def test_paying_count_excludes_free_and_uses_annual_cost():
+    from core.presentation import service_counts
+    services = [dict(status='subscribed', monthly_cost=0),
+                dict(status='subscribed', monthly_cost=10),
+                dict(status='subscribed', billing_cycle='annual', monthly_cost=0, annual_cost=120),
+                dict(status='suspended', monthly_cost=10)]
+    assert service_counts(services) == dict(paying=2, free=1)

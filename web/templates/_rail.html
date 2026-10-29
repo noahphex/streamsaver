@@ -4,6 +4,7 @@
   {% if rail.empty %}
     <p class="muted rail-empty">No bills in the next 30 days.</p>
   {% else %}
+  {% if not rail.bills %}<p class="muted rail-empty">No bills in the next 30 days.</p>{% endif %}
   <svg viewBox="0 0 {{ rail.width }} {{ rail.height }}" aria-hidden="true" focusable="false">
     <line class="track" x1="{{ rail.track_start }}" y1="{{ rail.track_y }}" x2="{{ rail.track_end }}" y2="{{ rail.track_y }}"/>
     {% for tick in rail.ticks %}
@@ -11,12 +12,14 @@
       {% if tick.today %}<circle class="today" cx="{{ tick.x }}" cy="{{ rail.track_y }}" r="4"/>{% endif %}
       <text class="tick-label{{ ' today' if tick.today else '' }}" x="{{ tick.x }}" y="{{ tick.label_y }}" text-anchor="{{ tick.anchor }}">{{ tick.label }}</text>
     {% endfor %}
-    {% for arc in rail.arcs %}
-      <path class="arc" d="{{ arc.path }}" pathLength="1" style="--sequence: {{ arc.sequence }}"/>
+    {% for item in rail.clusters %}
+    <a href="{{ url_for('shows') }}#{{ item.anchor }}" tabindex="-1"><rect class="bill-hit" x="{{ item.hit_x }}" y="{{ item.hit_y }}" width="56" height="56"/></a>
     {% endfor %}
     {% for item in rail.clusters %}
-      <circle class="return-dot {{ item.kind }}" cx="{{ item.x }}" cy="{{ item.y }}" r="{{ 7 if item.count > 1 else 3.5 }}"><title>{{ item.titles|join(", ") }}</title></circle>
+    <a href="{{ url_for('shows') }}#{{ item.anchor }}" tabindex="-1">
+      <circle class="return-dot {{ item.kind }}" cx="{{ item.x }}" cy="{{ item.y }}" r="{{ item.radius }}"><title>{{ item.titles|join(", ") }}</title></circle>
       {% if item.count > 1 %}<text class="cluster-count" x="{{ item.x }}" y="{{ item.y }}" text-anchor="middle" dominant-baseline="central">{{ item.count }}</text>{% endif %}
+    </a>
     {% endfor %}
     {# Paint expanded targets first so they never cover another bill's visible tile. #}
     {% for bill in rail.bills %}
@@ -26,8 +29,9 @@
     <a href="{{ url_for('shows') }}#bill-{{ bill.service_id }}-{{ bill.date }}" tabindex="-1">
       <g class="bill rail-tone-{{ bill.tone }}" style="--sequence: {{ bill.sequence }}">
         <title>{{ bill.service_name }} · {{ bill.amount|money }} · {{ bill.verdict }}</title>
-        <line class="stem" x1="{{ bill.x }}" y1="{{ bill.tile_bottom }}" x2="{{ bill.x }}" y2="{{ rail.track_y }}"/>
-        {% if bill.show_label %}<text class="show-label" x="{{ bill.label_x }}" y="{{ bill.label_y }}" text-anchor="middle">{{ bill.show_label }}</text>{% endif %}
+        {% for stem in bill.stems %}<line class="stem" x1="{{ bill.x }}" y1="{{ stem.start }}" x2="{{ bill.x }}" y2="{{ stem.end }}"/>{% endfor %}
+        <rect class="verdict-badge" x="{{ bill.badge_x }}" y="{{ bill.badge_y }}" width="{{ bill.badge_width }}" height="24" rx="12"/>
+        <text class="badge-text" x="{{ bill.badge_center }}" y="{{ bill.badge_text_y }}" dominant-baseline="central" text-anchor="middle">{{ bill.badge }}</text>
         <text class="amount" x="{{ bill.amount_x }}" y="{{ bill.amount_y }}" text-anchor="middle">{{ bill.amount|money }}</text>
         <clipPath id="rail-clip-{{ bill.sequence }}"><rect x="{{ bill.tile_x }}" y="{{ bill.tile_y }}" width="{{ bill.size }}" height="{{ bill.size }}" rx="8"/></clipPath>
         <rect class="mark-{{ bill.mark.accent }} rail-mark" x="{{ bill.tile_x }}" y="{{ bill.tile_y }}" width="{{ bill.size }}" height="{{ bill.size }}" rx="8"/>
@@ -38,8 +42,9 @@
     </a>
     {% endfor %}
   </svg>
-  <ul class="sr-only">
-    {% for bill in rail.bills %}<li>{{ bill.date|nice_date }}, {{ bill.service_name }}, {{ bill.amount|money }}: {{ bill.verdict }}</li>{% endfor %}
+  <ul class="rail-accessible">
+    {% for bill in rail.bills %}<li><a class="sr-only rail-focus-link" href="{{ url_for('shows') }}#{{ bill.anchor }}">{{ bill.date|nice_date }}, {{ bill.service_name }}, {{ bill.amount|money }}: {% if bill.verdict_kind == 'returns' %}{{ bill.show_titles|length }} {{ 'show returns' if bill.show_titles|length == 1 else 'shows return' }} first: {{ bill.show_titles|join(', ') }}{% else %}{{ bill.badge }}{% endif %}</a></li>{% endfor %}
+    {% for item in rail.clusters %}<li><a class="sr-only rail-focus-link" href="{{ url_for('shows') }}#{{ item.anchor }}">{{ 'Elsewhere returns' if item.kind == 'elsewhere' else 'Returns before this bill' }}: {{ item.titles|join(', ') }}</a></li>{% endfor %}
   </ul>
   <figcaption class="rail-legend"><span><i aria-hidden="true"></i>Counts toward a bill</span><span><i class="elsewhere" aria-hidden="true"></i>Prepaid or not subscribed</span></figcaption>
   {% endif %}
