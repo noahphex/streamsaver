@@ -247,39 +247,39 @@
       "x": 14.0,
       "label": "Today",
       "today": true,
-      "label_y": 136,
+      "label_y": 142,
       "anchor": "start"
     },
     {
       "x": 89.13,
       "label": "Nov 5",
       "today": false,
-      "label_y": 136,
+      "label_y": 142,
       "anchor": "middle"
     },
     {
       "x": 164.27,
       "label": "Nov 12",
       "today": false,
-      "label_y": 136,
+      "label_y": 142,
       "anchor": "middle"
     },
     {
       "x": 239.4,
       "label": "Nov 19",
       "today": false,
-      "label_y": 136,
+      "label_y": 142,
       "anchor": "middle"
     },
     {
       "x": 314.53,
       "label": "Nov 26",
       "today": false,
-      "label_y": 136,
+      "label_y": 142,
       "anchor": "middle"
     }
   ],
-  "height": 146,
+  "height": 152,
   "empty": false,
   "width": 350,
   "track_y": 118,
