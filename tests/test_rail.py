@@ -42,22 +42,19 @@ def test_nearby_bills_stagger_and_returns_cluster():
     assert data["returns"][1]["y"] == data["returns"][0]["y"]
 
 
-def test_arcs_only_match_counts_to_next_bill_for_service():
+def test_returns_link_to_next_bill_for_their_service():
     data = rail(bill(4), bill(10), bill(7, service=2), returning(5),
                 returning(1, "annual · prepaid"), returning(2, service=9))
-    assert len(data["arcs"]) == 1
-    assert data["returns"][1]["bill_x"] is None
-    assert data["returns"][2]["bill_x"] == data["bills"][2]["x"]
-    assert data["arcs"][0]["sequence"] == 0
-    assert " Q " in data["arcs"][0]["path"]
-    assert 14 <= data["arcs"][0]["depth"] <= 70
+    assert [r['anchor'] for r in data['returns']] == ['elsewhere', 'elsewhere', 'bill-1-2026-11-08']
+    assert data['returns'][2]['kind'] == 'counts'
 
 
-def test_empty_and_height_encloses_stacked_returns():
-    assert rail()["empty"] is True
+def test_empty_and_return_only_rail():
+    assert rail()['empty'] is True
     data = rail(*(returning(1) for _ in range(20)))
-    assert data["empty"] is True
-    assert data["height"] > max(r["y"] for r in data["returns"])
+    assert data['empty'] is False
+    assert data['clusters'][0]['kind'] == 'elsewhere'
+    assert data['height'] > max(r['y'] for r in data['returns'])
 
 
 def test_spoken_headline_variants_and_actual_bill_amounts():
@@ -86,73 +83,88 @@ def test_large_staggered_tiles_and_amount_labels_do_not_collide():
     assert lower["tile_bottom"] < data["track_y"]
 
 
-def test_show_label_truncation_and_more_count():
+def test_badge_copy_and_authoritative_verdict_titles():
     data = rail(bill(15), dict(returning(1), title="Love is Blind"), returning(2))
-    # A lone bill has the whole width, so the name is not cut.
-    assert data["bills"][0]["show_label"] == "Love is Blind +1"
-    assert rail(bill(15), dict(returning(1), title="Short"))["bills"][0]["show_label"] == "Short"
-    assert rail(bill(15), returning(1), returning(2))["bills"][0]["show_label"] == "Sample show +1"
+    assert data['bills'][0]['badge'] == '2 back first'
+    for kind, label in [('nothing_new', 'Nothing new'), ('unknown', 'Too early'), ('prepaid', 'Annual')]:
+        assert rail(bill(15, kind=kind))['bills'][0]['badge'] == label
+    source = bill(15)
+    source['verdict']['shows'] = [dict(title='Anticipated', date='2026-10-30')]
+    data = rail(source, returning(1), returning(2))
+    assert data['bills'][0]['badge'] == '1 back first'
+    assert data['bills'][0]['show_titles'] == ['Anticipated']
 
 
-def test_cluster_threshold_and_arcs_start_at_shared_dot():
-    data = rail(bill(5), bill(15, service=2), bill(25, service=3),
-                returning(1), returning(1, service=2), returning(1, service=3), returning(1))
-    assert len(data["clusters"]) == 1
-    assert data["clusters"][0]["count"] == 4
-    assert len(data["arcs"]) == 4
-    assert len({arc["path"].split(" Q ")[0] for arc in data["arcs"]}) == 1
-    assert len(rail(returning(1), returning(2), width=100)["clusters"]) == 1
-    assert len(rail(returning(1), returning(7), width=100)["clusters"]) == 2
+def test_cluster_threshold_and_period_destinations():
+    data = rail(bill(5), bill(15, service=2), returning(1), returning(1, service=2), returning(1))
+    assert [c['count'] for c in data['clusters']] == [2, 1]
+    assert len({c['anchor'] for c in data['clusters']}) == 2
+    assert len(rail(bill(30), returning(1), returning(2), width=100)['clusters']) == 1
+    assert len(rail(bill(30), returning(1), returning(7), width=100)['clusters']) == 2
 
 
-def test_crowded_bills_keep_truncated_names_not_counts():
-    # Three bills 3 days apart share rows, so names shrink to the gap but stay names.
-    data = rail(bill(10), bill(13, service=2), bill(16, service=3),
-                dict(returning(1), title="The Celebrity Traitors"),
-                dict(returning(2, service=2), title="Abbott Elementary"),
-                dict(returning(3, service=3), title="Love is Blind"))
-    labels = [b["show_label"] for b in data["bills"]]
-    assert all("show" not in label for label in labels)
-    assert all(len(label) >= 6 for label in labels)
-    assert labels[0].startswith("The Ce") and labels[0].endswith("…")
+def test_axis_and_height_follow_badges():
+    for data in (rail(bill(3), returning(2)), rail(bill(29), returning(2)),
+                 rail(bill(7, 100), bill(8, 100, service=2))):
+        assert len({t['label_y'] for t in data['ticks']}) == 1
+        assert data['height'] == max(t['label_y'] for t in data['ticks']) + 12
+        assert min(b['amount_y'] for b in data['bills']) == 18
+        assert all(b['badge_y'] + 24 < data['track_y'] for b in data['bills'])
+        assert all(b['hit_height'] >= 48 for b in data['bills'])
 
 
-def test_axis_and_height_follow_actual_geometry():
-    shallow = rail(bill(3), returning(2))
-    deep = rail(bill(29), returning(2))
-    assert deep["ticks"][1]["label_y"] > shallow["ticks"][1]["label_y"]
-    for data in (shallow, deep, rail(bill(7, 100), bill(8, 100, service=2))):
-        assert data["ticks"][0]["label_y"] == data["ticks"][1]["label_y"]  # Today sits on the date axis
-        assert data["height"] == max(t["label_y"] for t in data["ticks"]) + 12
-        assert min(b["amount_y"] for b in data["bills"]) == 16
-        assert data["track_y"] == max(b["tile_bottom"] for b in data["bills"]) + 36
-        assert all(b["hit_height"] >= 48 for b in data["bills"])
-    assert deep["ticks"][1]["label_y"] == max(a["bottom"] for a in deep["arcs"]) + 16
-
-
-def test_dense_right_edge_labels_keep_separate_lanes_and_targets_are_local():
-    data = rail(*(bill(29, 20, service=i) for i in range(6)),
-                *(returning(1, service=i) for i in range(6)))
-    labels = [(b["label_x"], b["label_y"]) for b in data["bills"]]
-    assert len(set(labels)) == 6
-    for i, a in enumerate(data["bills"]):
-        assert a["hit_y"] + 24 == a["initials_y"]
-        assert a["hit_height"] == 48
-        for b in data["bills"][i + 1:]:
-            if a["label_y"] == b["label_y"]:
-                assert b["label_x"] - a["label_x"] >= (len(a["show_label"]) + len(b["show_label"])) * 2.8 + 6
+def test_dense_badges_and_stems_never_cross_text():
+    data = rail(*(bill(29, 100, service=i) for i in range(6)))
+    assert len({b['row'] for b in data['bills']}) == 6
+    for item in data['bills']:
+        for other in data['bills']:
+            if other['badge_x'] <= item['x'] <= other['badge_x'] + other['badge_width']:
+                assert all(stem['end'] <= other['badge_y'] or stem['start'] >= other['badge_y'] + 24
+                           for stem in item['stems'])
 
 
 def cluster_example():
-    return rail(bill(7, 10, 1), bill(17, 15, 2), bill(27, 20, 3),
-                dict(returning(2, service=1), title="Example one"),
-                dict(returning(2, service=2), title="Example two"),
-                dict(returning(2, service=3), title="Example three"),
-                dict(returning(2, service=1), title="Example four"))
+    return rail(bill(7, 10, 1), bill(10, 15, 2, 'nothing_new'), bill(27, 20, 3, 'unknown'),
+                dict(returning(2, service=1), title='Example one'),
+                dict(returning(2, service=1), title='Example two'),
+                dict(returning(2, 'not subscribed', 9), title='Elsewhere example'))
 
 
-def test_cluster_example_matches_review_json():
+def test_synthetic_fixtures_match_review_json():
     import json
     from pathlib import Path
-    expected = json.loads((Path(__file__).parent / "fixtures" / "rail-cluster-example.json").read_text())
-    assert cluster_example() == expected
+    for name in ['rail-cluster-example.json', 'rail_synthetic.json']:
+        expected = json.loads((Path(__file__).parent / 'fixtures' / name).read_text())
+        assert cluster_example() == expected
+
+
+def test_badges_separate_kinds_periods_and_stems():
+    data = cluster_example()
+    assert [(c['kind'], c['count']) for c in data['clusters']] == [('counts', 2), ('elsewhere', 1)]
+    assert data['clusters'][0]['anchor'] == 'bill-1-2026-11-05'
+    assert data['clusters'][1]['anchor'] == 'elsewhere'
+    assert data['bills'][0]['badge'] == '2 back first'
+    assert data['bills'][0]['row'] != data['bills'][1]['row']
+    lower, upper = data['bills'][:2]
+    assert upper['badge_y'] + 24 + 4 <= lower['amount_y'] - 16
+    assert abs(data['clusters'][0]['x'] - data['clusters'][1]['x']) >= 17
+    for i, a in enumerate(data['bills']):
+        for b in data['bills'][i + 1:]:
+            if a['row'] == b['row']:
+                assert a['badge_x'] + a['badge_width'] + 4 <= b['badge_x']
+
+
+def test_return_links_to_period_beyond_visible_rail():
+    data = rail(bill(40), returning(20))
+    assert not data['bills']
+    assert data['clusters'][0]['anchor'] == 'bill-1-2026-12-08'
+    assert data['clusters'][0]['kind'] == 'counts'
+
+
+def test_prepaid_returns_match_coming_up_elsewhere():
+    from core.timeline import group_periods
+    source = [{'events': [bill(40, kind='prepaid'), returning(10)]}]
+    data = build_rail(source, today=TODAY)
+    assert group_periods(source, TODAY)['elsewhere']
+    assert data['clusters'][0]['kind'] == 'elsewhere'
+    assert data['clusters'][0]['anchor'] == 'elsewhere'

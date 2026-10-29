@@ -25,14 +25,15 @@
           <a class="todo-link" href="{{ href }}">
             {{ service_mark(item.name, item.icon_path) }}
             <span class="todo-name"><span class="name">{{ service_title(item.name) }}</span> <span class="pill {{ item.color }}">{{ item.label }}</span></span>
-            <span class="when">{% if item.cost %}{{ item.cost }}{% endif %}{% if item.cost and item.when %} · {% endif %}{% if item.when %}bills {{ item.when|nice_date }}{% endif %}</span>
-            {% if item.why %}<span class="why">{{ item.why }}</span>{% endif %}
+            <span class="when">{% if item.cost %}{{ item.cost }}{% endif %}<span class="todo-date">{% if item.cost and item.when %} · {% endif %}{% if item.when %}bills {{ item.when|nice_date }}{% endif %}</span></span>
+            {% if item.why %}<span class="why" title="{{ item.why }}">{{ item.why }}</span>{% endif %}
           </a>
+          {% if item.why %}<details class="todo-why"><summary title="{{ item.why }}">{{ item.why }}</summary><p>{{ item.why }}</p></details>{% endif %}
           <div class="todo-actions">
             {% if item.has_done %}
               <form method="post" action="{{ url_for('todo_done', service_id=item.service_id, action=item.key) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="todo-done" aria-label="Did it: {{ item.done_label }}: {{ item.name }}">{{ item.done_label }}</button>
+                <button class="todo-done" aria-label="Did it: {{ item.done_label }}: {{ item.name }}">Did it</button>
               </form>
             {% endif %}
             <form method="post" action="{{ url_for('todo_snooze') }}">
@@ -66,7 +67,7 @@
         {% for rec in snoozed %}
           <li>
             {{ service_mark(rec.name, rec.icon_path, 24) }}
-            <span class="snoozed-copy"><strong>{{ service_title(rec.name) }}</strong>: {{ rec.label }} · until {{ rec.until|nice_date }}</span>
+            <span class="snoozed-copy"><strong>{{ service_title(rec.name, inline=True) }}</strong> · {{ rec.label }} · until {{ rec.until|nice_date }}</span>
             {{ snooze_undo(rec) }}
           </li>
         {% endfor %}

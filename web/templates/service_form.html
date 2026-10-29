@@ -6,7 +6,9 @@
 {% block content %}
 <section class="hero compact">
   <div class="hero-copy">
-    <h1>{% if editable %}{{ service_mark(editable.name, editable.icon_path) }} {% endif %}<span>{{ service_title(editable.name) if editable else "Add service" }}</span>{% if editable %}<span class="pill quiet">{{ status_labels.get(editable.status, editable.status) }}</span>{% endif %}</h1>
+    {% if editable %}{{ service_mark(editable.name, editable.icon_path) }}{% endif %}
+    <h1>{{ editable.name if editable else "Add service" }}</h1>
+    {% if editable %}<span class="pill quiet">{{ status_labels[editable.status] }}</span>{% endif %}
   </div>
   <a class="back-link" href="{{ url_for('services') }}">{{ icon("chevron-left") }} Services</a>
 </section>
@@ -88,14 +90,14 @@
   </form>
 </section>
 {% if editable %}
-<section class="panel danger-section">
-  <h2>Delete service</h2>
+<details class="danger-section">
+  <summary>Delete this service</summary>
   <p class="muted">Removes {{ editable.name }} and its bundles. Shows linked to it become unlinked; nothing on the streaming service changes.</p>
   <form method="post" action="{{ url_for('delete_service_route', service_id=editable.id) }}" onsubmit="return confirm('Delete {{ editable.name }}? This cannot be undone.')">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button class="ghost danger-text">Delete {{ editable.name }}</button>
   </form>
-</section>
+</details>
 {% endif %}
 <script>
   (() => {

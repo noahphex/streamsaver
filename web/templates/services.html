@@ -21,7 +21,7 @@
   {% if not tip and keep_reasons.get(svc.name) %}<p class="keep-reason muted" title="{{ keep_reasons[svc.name]|recommendation_reason }}">{{ keep_reasons[svc.name]|recommendation_reason }}</p>{% endif %}
 </div>
 {% else %}<p class="muted">No paying services.</p>{% endfor %}
-<footer class="ledger-footer"><span><span class="num">{{ paying|length }}</span> paying</span><span><strong class="num">{{ totals.monthly_total|money }}</strong><small class="muted"> /mo</small> · <strong class="num">{{ totals.annual_total|money }}</strong><small class="muted"> /yr</small></span></footer>
+<footer class="ledger-footer"><span><span class="num">{{ service_counts.paying }}</span> paying{% if service_counts.free %} · {{ service_counts.free }} free{% endif %}</span><span><strong class="num">{{ totals.monthly_total|money }}</strong><small class="muted"> /mo</small> · <strong class="num">{{ totals.annual_total|money }}</strong><small class="muted"> /yr</small></span></footer>
 </section>
 <section class="off-section">
 <h2>Off</h2>
@@ -30,7 +30,7 @@
 {% set returning = off_returns.get(svc.id) %}
 <article class="off-tile">
 {{ service_mark(svc.name, svc.icon_path, 28) }}
-<div class="service-identity"><strong><a class="card-link" aria-label="Edit {{ svc.name }}" href="{{ url_for('service_edit', service_id=svc.id) }}">{{ service_title(svc.name) }}</a></strong><small class="muted">{{ price(svc) }} · not paying</small></div>
+<div class="service-identity"><strong><a class="card-link" aria-label="Edit {{ svc.name }}" href="{{ url_for('service_edit', service_id=svc.id) }}">{{ service_title(svc.name) }}</a></strong><small class="muted">{{ status_labels[svc.status] }} · {{ price(svc) }}</small></div>
 {% if returning %}<div class="off-return"><span>{{ returning.title }} returns {{ returning.date|nice_date }}</span>{% if returning.snoozed_until %}<span class="muted">Snoozed until {{ returning.snoozed_until|nice_date }}</span>{% else %}<a class="resubscribe-link" href="{{ url_for('dashboard') + '#todo' if returning.resubscribe_todo else url_for('service_edit', service_id=svc.id) }}">Resubscribe {{ icon('chevron-right') }}</a>{% endif %}</div>{% endif %}
 </article>
 {% else %}<p class="muted">No services off.</p>{% endfor %}

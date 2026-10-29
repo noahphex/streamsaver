@@ -621,11 +621,11 @@ class WebTests(unittest.TestCase):
             page = self.client.get(f'/services/{service_id}/edit').data.decode()
             heading = page[page.index('<h1>'):page.index('</h1>')]
             self.assertNotIn('service-mark-24', heading)
-            self.assertIn('Paramount+ <span class="service-channel">Amazon Channel</span>', heading)
+            self.assertEqual(heading, "<h1>Paramount+ Amazon Channel")
         rec.update(action="suspend", until=date.today().isoformat())
         with mock.patch.object(webapp, "run_analysis", return_value={"snoozed": [rec]}):
             page = self.client.get(f'/services/{service_id}/edit').data.decode()
-            self.assertIn('1 active show. Viewer activity: High.', page)
+            self.assertIn('1 active show. You watch it a lot.', page)
             self.assertIn('>Undo snooze</button>', page)
 
     def test_trakt_button_tier(self):
@@ -740,7 +740,6 @@ class WebTests(unittest.TestCase):
                 [(str(i), f"Return {i}", str(date.today() + timedelta(days=i))) for i in range(7)])
         page = self.client.get("/").data.decode()
         self.assertIn("No bills in the next 30 days.", page)
-        self.assertNotIn("class=\"arc\"", page)
 
     def test_frame_navigation_and_library(self):
         self._sign_in()
@@ -827,12 +826,12 @@ class WebTests(unittest.TestCase):
         page = self.client.get("/").data.decode()
         self.assertIn('class="rail"', page)
         self.assertIn('8 shows return before this bill', page)
-        self.assertEqual(page.count('class="arc"'), 8)
-        # 8 returns on consecutive days share 4 numbered dots; every return keeps its arc.
+        # Eight returns on consecutive days share four numbered dots.
         self.assertEqual(page.count('class="return-dot counts"'), 4)
         self.assertEqual(page.count('class="cluster-count"'), 4)
         self.assertIn('aria-hidden="true" focusable="false"', page)
-        self.assertIn('<ul class="sr-only">', page)
+        self.assertIn('<ul class="rail-accessible">', page)
+        self.assertIn('class="sr-only rail-focus-link" href="/shows#bill-', page)
         self.assertIn('Counts toward a bill', page)
         self.assertIn('Prepaid or not subscribed', page)
         anchor = f'bill-{sid}-{today + timedelta(days=12)}'
@@ -879,7 +878,7 @@ class WebTests(unittest.TestCase):
         self.assertIn('class="rail-initials"', page)
         self.assertIn('&lt;Sample &amp; show&gt;', page)
         self.assertIn('class="todo-done"', page)
-        self.assertIn('>Paused it</button>', page)
+        self.assertIn('>Did it</button>', page)
         self.assertNotIn('Synced', page[page.index('id="todo"'):])
 
         class PostForms(HTMLParser):
@@ -916,7 +915,7 @@ class WebTests(unittest.TestCase):
         self.assertLess(page.index('id="todo"'), page.index('class="rail"'))
         self.assertIn('aria-label="To do, 1 item"', page)
         self.assertIn('href="#todo">1 thing to change.', page)
-        self.assertIn('>Paused it</button>', page)
+        self.assertIn('>Did it</button>', page)
         with mock.patch.object(webapp, "run_analysis", return_value={}):
             page = self.client.get("/").data.decode()
         self.assertLess(page.index('class="rail"'), page.index('id="todo"'))
@@ -1046,7 +1045,7 @@ class WebTests(unittest.TestCase):
         for text in ('bills worth paying', 'shows return first', 'Elsewhere', 'window-fill'):
             self.assertIn(text if text != 'shows return first' else 'show returns first', page)
         page = self.client.get("/services").data.decode()
-        for text in ('Paying</h2>', 'Off</h2>', 'ledger-row', 'Off return returns', 'not paying'):
+        for text in ('Paying</h2>', 'Off</h2>', 'ledger-row', 'Off return returns', 'Paused ·'):
             self.assertIn(text, page)
         self.assertNotIn('class="metrics"', page)
         self.assertNotIn('class="card ', page)
@@ -1068,8 +1067,65 @@ class WebTests(unittest.TestCase):
             page = self.client.get("/shows").data.decode()
         self.assertIn('href="/#todo">Resubscribe</a>', page)
         self.assertIn('href="/services/2/edit">Resubscribe</a>', page)
-        self.assertIn('Paramount+ <span class="service-channel">Amazon Channel</span>, not subscribed', page)
+        self.assertIn('Paramount+ <span class="service-channel">Amazon Channel</span>, Cancelled', page)
         self.assertEqual(page.count('class="resubscribe-link"'), 2)
+
+    def test_compact_library_filters_and_default_date_sort(self):
+        import re
+        self._sign_in()
+        with db.db_session() as conn:
+            conn.executemany("INSERT INTO shows (trakt_id,title,show_state,next_air_date) VALUES (?,?,?,?)",
+                             [('none', 'Undated example', 'abandoned', None),
+                              ('late', 'Later example', 'anticipated', '2027-01-02'),
+                              ('soon', 'Soon example', 'anticipated', '2027-01-01')])
+        page = self.client.get('/shows?view=all').data.decode()
+        toolbar = re.search(r'<form class="toolbar".*?</form>', page, re.S).group()
+        self.assertEqual(toolbar.count('<option '), 4)
+        self.assertNotIn('<select name="state"', toolbar)
+        self.assertIn('value="next:asc" selected', toolbar)
+        self.assertLess(page.index('class="title">Soon example'), page.index('class="title">Later example'))
+        self.assertLess(page.index('class="title">Later example'), page.index('class="title">Undated example'))
+        self.assertIn('class="pill quiet">Abandoned', page)
+        page = self.client.get('/shows?view=all&state=Anticipated&q=example&order=title:asc').data.decode()
+        self.assertIn('State: Anticipated', page)
+        self.assertIn('aria-label="Clear state filter: Anticipated"', page)
+        chip = re.search(r'<a class="state-chip.*?</a>', page, re.S).group()
+        self.assertNotIn('state=', chip)
+        self.assertIn('q=example', chip)
+        self.assertIn('m6 6 12 12M18 6 6 18', chip)
+        self.assertNotIn('Undated example', page)
+        for order in ['service:asc', 'provider:desc', 'last:asc', 'next:desc']:
+            page = self.client.get('/shows?view=all&order=' + order).data.decode()
+            self.assertIn('class="title">Soon example', page)
+
+    def test_shared_service_labels_free_count_and_name_only_heading(self):
+        from core.service_manager import add_service
+        self._sign_in()
+        for status, label in [('subscribed', 'Paying'), ('suspended', 'Paused'),
+                              ('unsubscribed', 'Cancelled'), ('not_subscribed', 'Never had')]:
+            sid = add_service('Example ' + status, status=status, monthly_cost=10)
+            page = self.client.get(f'/services/{sid}/edit').data.decode()
+            self.assertIn(f'<h1>Example {status}</h1>', page)
+            self.assertIn(f'value="{status}" selected>{label}</option>', page)
+            self.assertIn(f'<span class="pill quiet">{label}</span>', page)
+            self.assertIn('<details class="danger-section">', page)
+            self.assertIn("return confirm('Delete", page)
+        add_service('Free example', status='subscribed', monthly_cost=0)
+        page = self.client.get('/services').data.decode()
+        self.assertIn('1</span> paying · 1 free', page)
+        for label in ['Paused', 'Cancelled', 'Never had']:
+            self.assertIn(label + ' ·', page)
+
+    def test_provider_purpose_and_visible_unique_summaries(self):
+        self._sign_in()
+        page = self.client.get('/credentials').data.decode()
+        for label, purpose in [('Trakt', 'Viewing history and upcoming episodes'),
+                               ('TMDb', 'Matching shows to streaming services'), ('Gmail', 'Sends your reports')]:
+            self.assertIn(f'<summary>{label} connection details</summary>', page)
+            self.assertIn(purpose, page)
+        self.assertNotIn('<summary class="sr-only"', page)
+        page = self.client.get('/settings').data.decode()
+        self.assertIn('(sent only when there are service recommendations)', page)
 
 
 if __name__ == "__main__":

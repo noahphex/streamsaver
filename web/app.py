@@ -31,7 +31,7 @@ from flask import (
 from core.analysis import run_analysis
 from core.spend import potential_monthly_savings, spend_headline
 from core.rail import build_rail
-from core.presentation import service_mark as _service_mark, ledger_reason, library_states
+from core.presentation import service_mark as _service_mark, ledger_reason, library_states, STATUS_LABELS, service_counts
 from core.todo import ACTIONABLE_KEYS, DONE_LABELS, default_until, mark_done, snooze, undo_done, unsnooze
 from core.backup import export_backup, import_backup
 from core.newsletter import (
@@ -119,12 +119,7 @@ def create_app():
             "signed_in": bool(session.get("signed_in")),
             "settings": {"last_trakt_sync": _get_setting("last_trakt_sync")},
             "csrf_token": csrf_token,
-            "status_labels": {
-                "subscribed": "Subscribed",
-                "suspended": "Suspended",
-                "unsubscribed": "Unsubscribed",
-                "not_subscribed": "Not Subscribed",
-            },
+            "status_labels": STATUS_LABELS,
         }
 
     app.add_template_filter(_nice_date, "nice_date")
@@ -352,6 +347,7 @@ def create_app():
             off_returns=group_periods(build_timeline(results))["off_returns"],
             totals=get_cost_totals(status_filter="subscribed"),
             advice=advice,
+            service_counts=service_counts(all_services),
             keep_reasons={rec["name"]: ledger_reason(rec.get("reason", "")) for rec in results.get("keep", [])},
         )
 
@@ -413,7 +409,7 @@ def create_app():
         group = request.args.get("group", "All")
         order = request.args.get("order", "").split(":")
         sort, direction = _show_sort(*(order if len(order) == 2 else
-                                      (request.args.get("sort", "state"), request.args.get("dir", "desc"))))
+                                      (request.args.get("sort", "next"), request.args.get("dir", "desc" if "sort" in request.args else "asc"))))
         page = max(1, min(request.args.get("page", 1, type=int) or 1, 1000000))
         rows, total = _shows(q, state, sort, direction, page=page, group=group)
         return render_template("shows.html", view="all", all_params=all_params, shows=rows, q=q, state=state, group=group, sort=sort,
@@ -949,6 +945,7 @@ _TODO_ACTIONS = [
 
 
 def _recommendation_reason(reason):
+    reason = ledger_reason(reason)
     reason = re.sub(r"\b\d{4}-\d{2}-\d{2}\b", lambda match: _nice_date(match.group()), reason)
     return re.sub(r"(\d+) active show\(s\)",
                   lambda match: f"{match[1]} active show{'' if int(match[1]) == 1 else 's'}", reason)
@@ -1137,7 +1134,8 @@ def _shows(q, state, sort="state", direction="desc", page=None, group="All"):
         query += " AND LOWER(s.show_state) IN (" + ",".join("?" for _ in states) + ")"
         params.extend(states)
     count_query = "SELECT COUNT(*) FROM (" + query + ")"
-    query += f" ORDER BY {SHOW_SORT_COLUMNS[sort]} {direction.upper()}, LOWER(s.title) ASC"
+    undated_last = "CASE WHEN COALESCE(s.next_air_date, '') = '' THEN 1 ELSE 0 END, " if sort == 'next' else ''
+    query += f" ORDER BY {undated_last}{SHOW_SORT_COLUMNS[sort]} {direction.upper()}, LOWER(s.title) ASC"
     with db_session() as conn:
         total = conn.execute(count_query, params).fetchone()[0]
         if page is not None:

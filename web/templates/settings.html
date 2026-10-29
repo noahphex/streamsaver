@@ -20,7 +20,7 @@
           <option value="never" {% if settings.status_alert_frequency == "never" %}selected{% endif %}>Never</option>
         </select>
       </label>
-      <p class="muted">Last status alert: {{ settings.last_status_alert_sent|nice_date or "never" }}</p>
+      <p class="muted">Last alert sent {{ settings.last_status_alert_sent|nice_date or "never" }} (sent only when there are service recommendations)</p>
       <label>Discord webhook URL <span class="muted">Discord alerts: {{ "on" if settings.discord_webhook_configured else "off" }}</span>
         <input type="password" name="discord_webhook_url" autocomplete="off" placeholder="{% if settings.discord_webhook_configured %}Saved: blank keeps it{% else %}https://discord.com/api/webhooks/…{% endif %}">
       </label>
