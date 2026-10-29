@@ -60,13 +60,13 @@
     <input name="tmdb_api_key" value="{{ request.form.tmdb_api_key }}">
   </label>
 
-  <h2>Email Reports</h2>
+  <h2>Email Reports (optional)</h2>
   <div class="form-grid">
     <label>Gmail Sender
-      <input type="email" name="gmail_sender" value="{{ request.form.gmail_sender }}" required>
+      <input type="email" name="gmail_sender" value="{{ request.form.gmail_sender }}">
     </label>
     <label>Gmail App Password
-      <input type="password" name="gmail_app_password" autocomplete="off" required>
+      <input type="password" name="gmail_app_password" autocomplete="off">
     </label>
     <label>Report Email
       <input type="email" name="notify_email" value="{{ request.form.notify_email }}">
