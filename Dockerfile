@@ -20,6 +20,9 @@ RUN pip install -r requirements.txt
 
 COPY . .
 
+# COPY keeps host file modes; a checkout with umask 077 would leave code unreadable to the app user.
+RUN chmod -R a+rX /app
+
 RUN useradd --uid 1000 --create-home streamsaver \
     && mkdir -p /app/config /app/data /app/assets/logos /app/backups \
     && chown -R streamsaver:streamsaver /app/config /app/data /app/assets/logos /app/backups
