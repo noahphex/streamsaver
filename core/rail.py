@@ -69,7 +69,7 @@ def build_rail(timeline, today=None, days=30, width=350):
     for bill in bills:
         count = len(bill['show_titles'])
         bill['badge'] = (f'{count} back' if bill['verdict_kind'] == 'returns' else
-                         {'nothing_new': 'Nothing new', 'prepaid': 'Annual'}.get(bill['verdict_kind'], 'Too early'))
+                         {'nothing_new': 'None awaited', 'prepaid': 'Annual'}.get(bill['verdict_kind'], 'Too early'))
         bill['badge_dot'] = bill['verdict_kind'] == 'returns'
         minimum = len(str(count)) * 6 + 24 if bill['badge_dot'] else len(bill['badge']) * 6 + 16
         if items and (len(items) == capacity or badge_space + 4 + minimum > width - 4):
