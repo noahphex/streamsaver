@@ -3,7 +3,7 @@
 {% from "_icons.html" import icon %}
 {% set summary = grouped.summary %}
 {% if summary.bills or summary.returns %}
-<p class="muted period-summary"><strong class="figure">{{ summary.worth_paying }}</strong> bills worth paying · <strong class="figure">{{ summary.total|money }}</strong>{% if summary.by %} by <span class="figure">{{ summary.by|nice_date }}</span>{% endif %}{% if summary.nothing_new %}<span class="text-yellow"> · <strong class="figure">{{ summary.nothing_new }}</strong> with nothing new</span>{% endif %}</p>
+<p class="muted period-summary"><strong class="figure">{{ summary.worth_paying }}</strong> bills worth paying · <strong class="figure">{{ summary.total|money }}</strong>{% if summary.by %} by <span class="figure">{{ summary.by|nice_date }}</span>{% endif %}{% if summary.nothing_new %}<span class="text-yellow"> · <strong class="figure">{{ summary.nothing_new }}</strong> with nothing you're waiting on</span>{% endif %}</p>
 {% for period in grouped.periods %}
 {% set bill = period.bill %}
 {% set tone = 'green' if bill.verdict.kind == 'returns' else 'yellow' %}
@@ -18,10 +18,10 @@
   </div>
   {{ billing_window(period, tone, today_iso) }}
   <div class="period-verdict">
-    <span class="pill {{ tone }}">{% if tone == 'green' %}{{ bill.verdict.shows|length }} {{ 'show returns' if bill.verdict.shows|length == 1 else 'shows return' }} first{% else %}Nothing new before this bill{% endif %}</span>
+    <span class="pill {{ tone }}">{% if tone == 'green' %}{{ bill.verdict.shows|length }} {{ 'show returns' if bill.verdict.shows|length == 1 else 'shows return' }} first{% else %}{{ bill.verdict.text }}{% endif %}</span>
     {% if tone == 'yellow' and bill.todo is defined %}<a class="pause-link" href="{{ url_for('dashboard') }}#todo">{{ bill.todo.label }} {{ icon('chevron-right') }}</a>{% endif %}
   </div>
-  {% if tone == 'yellow' and period.returns %}<p class="muted period-note">Other tracked shows return below; this advice is based on your anticipated shows.</p>{% endif %}
+  {% if period.returns|length > (bill.verdict.shows|length if tone == 'green' else 0) %}<p class="muted period-note">Only shows you're waiting on count toward this. Shows you're already watching are listed too.</p>{% endif %}
   <ul class="period-returns" aria-label="Tracked returns in this billing window">{% for event in period.returns %}<li><span>{{ event.title }}</span><time class="figure muted" datetime="{{ event.date }}">{{ event.date|timeline_date }}</time></li>{% endfor %}</ul>
 </article>
 {% endfor %}

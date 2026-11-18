@@ -52,7 +52,7 @@ def spend_headline(totals, timeline_or_rail, savings, subscribed_count, todo=())
         nothing_new = sum(bill["verdict_kind"] == "nothing_new" for bill in bills)
         clause = None
         if nothing_new:
-            clause = {"text": f"{nothing_new} {'bill has' if nothing_new == 1 else 'bills have'} nothing coming back first.",
+            clause = {"text": f"{nothing_new} {'bill has' if nothing_new == 1 else 'bills have'} nothing you're waiting on coming back first.",
                       "tone": "yellow", "emphasis": True}
         elif all(bill["verdict_kind"] == "returns" for bill in bills):
             clause = {"text": "every bill has a show coming back first.",

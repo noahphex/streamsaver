@@ -899,7 +899,7 @@ class WebTests(unittest.TestCase):
                 mock.patch.object(webapp, "build_timeline", return_value=[{"events": events}]):
             page = self.client.get("/").data.decode()
         self.assertIn('class="spend-amount">$30.00</span> a month for 3 services.', page)
-        self.assertIn('class="text-yellow">1 bill has nothing coming back first</strong>', page)
+        self.assertIn('class="text-yellow">1 bill has nothing you&#39;re waiting on coming back first</strong>', page)
         for tone in ("green", "yellow", "quiet"):
             self.assertIn(f'class="bill rail-tone-{tone}"', page)
         for tone in ("yellow", "cyan", "green", "pink"):
@@ -1059,7 +1059,7 @@ class WebTests(unittest.TestCase):
         page = self.client.get("/shows").data.decode()
         self.assertNotIn("0 shows return first", page)
         self.assertIn("1 show returns first", page)
-        self.assertIn("Other tracked shows return below", page)
+        self.assertIn("Only shows you're waiting on count toward this.", page)
         self.assertIn("Active return", page)
         self.assertIn("Today premiere", page)
 
