@@ -455,6 +455,7 @@ def create_app():
             flash("Invalid show state.", "error")
             return redirect(url_for("shows"))
         with db_session() as conn:
+            show = conn.execute("SELECT title FROM shows WHERE trakt_id = ?", (trakt_id,)).fetchone()
             if state == "abandoned":
                 conn.execute(
                     "UPDATE shows SET state_before_abandon = CASE WHEN show_state = 'abandoned' "
@@ -467,7 +468,9 @@ def create_app():
             else:
                 conn.execute("UPDATE shows SET show_state = ?, abandoned_override = 0 WHERE trakt_id = ?",
                              (state, trakt_id))
-        flash("Show updated.", "success")
+        title = show["title"] if show else "Show"
+        flash({"abandoned": f"{title} marked abandoned. Unmark it from its row menu to undo.",
+               "restore": f"{title} is no longer abandoned."}.get(state, f"{title} updated."), "success")
         return redirect(request.referrer or url_for("shows"))
 
     @app.route("/settings", methods=["GET", "POST"])

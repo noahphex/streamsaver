@@ -93,7 +93,7 @@
 <details class="danger-section">
   <summary>Delete this service</summary>
   <p class="muted">Removes {{ editable.name }} and its bundles. Shows linked to it become unlinked; nothing on the streaming service changes.</p>
-  <form method="post" action="{{ url_for('delete_service_route', service_id=editable.id) }}" onsubmit="return confirm('Delete {{ editable.name }}? This cannot be undone.')">
+  <form method="post" action="{{ url_for('delete_service_route', service_id=editable.id) }}" data-confirm="Delete {{ editable.name }}? This cannot be undone." onsubmit="return confirm(this.dataset.confirm)">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button class="ghost danger-text">Delete {{ editable.name }}</button>
   </form>
