@@ -67,7 +67,7 @@ def test_spoken_headline_variants_and_actual_bill_amounts():
     assert headline["savings"] == "Could save $12.00/mo."
     mixed = spend_headline(totals, rail(bill(1), bill(2, kind="nothing_new")), 0, 1)
     assert mixed["tail"] == "a month for 1 service."
-    assert mixed["sub_parts"][-1]["text"] == "1 bill has nothing coming back first."
+    assert mixed["sub_parts"][-1]["text"] == "1 bill has nothing you're waiting on coming back first."
     quiet = spend_headline(totals, rail(bill(1, kind="unknown")), 0, 1)
     assert all(p.get("tone") != "green" for p in quiet["sub_parts"])
     empty = spend_headline(totals, [], 0, 0)

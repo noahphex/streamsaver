@@ -77,7 +77,7 @@ def test_verdict_matches_analysis_and_todo_is_not_on_snoozed(database):
     assert bills[0]["verdict"] == {"kind": "returns", "shows": [{"title": "Before", "date": "2026-11-04"},
                                                                {"title": "On bill", "date": "2026-11-09"}],
                                     "text": "2 shows return before this bill"}
-    assert bills[1]["verdict"] == {"kind": "nothing_new", "text": "Nothing new before this bill"}
+    assert bills[1]["verdict"] == {"kind": "nothing_new", "text": "Nothing you're waiting on returns before this bill"}
     assert bills[1]["todo"] == {"label": "Pause suggested"}
     assert "todo" not in bills[0]
     results["snoozed"] = results.pop("suspend")
