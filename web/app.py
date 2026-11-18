@@ -5,6 +5,7 @@ import logging
 import re
 import secrets
 import smtplib
+import sqlite3
 import sys
 import tempfile
 import time
@@ -410,6 +411,10 @@ def create_app():
                 set_bundle_providers(new_id, bundles)
                 flash("Service added.", "success")
             backfill_service_ids()  # providers/bundles changed: re-link shows now, not at the next sync
+        except sqlite3.IntegrityError:  # services.name is unique
+            flash(f"You already have a service named {payload['name']}. Edit that one or use a different name.", "error")
+            editable = next((svc for svc in get_all_services() if str(svc["id"]) == service_id), None)
+            return _service_form(editable, {**payload, "bundle_provider_ids": form.get("bundle_provider_ids", "")}), 409
         except Exception as exc:
             flash(f"Could not save service: {exc}", "error")
             if service_id:
@@ -455,6 +460,7 @@ def create_app():
             flash("Invalid show state.", "error")
             return redirect(url_for("shows"))
         with db_session() as conn:
+            show = conn.execute("SELECT title FROM shows WHERE trakt_id = ?", (trakt_id,)).fetchone()
             if state == "abandoned":
                 conn.execute(
                     "UPDATE shows SET state_before_abandon = CASE WHEN show_state = 'abandoned' "
@@ -467,7 +473,9 @@ def create_app():
             else:
                 conn.execute("UPDATE shows SET show_state = ?, abandoned_override = 0 WHERE trakt_id = ?",
                              (state, trakt_id))
-        flash("Show updated.", "success")
+        title = show["title"] if show else "Show"
+        flash({"abandoned": f"{title} marked abandoned. Unmark it from its row menu to undo.",
+               "restore": f"{title} is no longer abandoned."}.get(state, f"{title} updated."), "success")
         return redirect(request.referrer or url_for("shows"))
 
     @app.route("/settings", methods=["GET", "POST"])
@@ -805,7 +813,7 @@ def create_app():
     return app
 
 
-def _service_form(editable=None):
+def _service_form(editable=None, draft=None):
     bundle_map = {}
     next_renewal = None
     advice = None
@@ -821,7 +829,7 @@ def _service_form(editable=None):
                              if isinstance(rec, dict) and rec.get("id") == editable["id"]), None)
     return render_template(
         "service_form.html",
-        editable=editable,
+        editable=editable, draft=draft,
         period=period, today_iso=date.today().isoformat(),
         bundle_map=bundle_map,
         next_renewal=next_renewal,

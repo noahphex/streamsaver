@@ -53,15 +53,16 @@
   <script>
     (() => {
       if (document.querySelector(".flash")) document.querySelector(".flash-stack").focus();
-      const menu = document.querySelector(".menu");
+      const openMenus = () => document.querySelectorAll(".menu[open], .row-menu[open]");
       document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && menu?.open) {
+        if (event.key !== "Escape") return;
+        openMenus().forEach((menu) => {
           menu.open = false;
           menu.querySelector("summary").focus();
-        }
+        });
       });
       document.addEventListener("click", (event) => {
-        if (menu?.open && !menu.contains(event.target)) menu.open = false;
+        openMenus().forEach((menu) => { if (!menu.contains(event.target)) menu.open = false; });
       });
       const topbar = document.querySelector(".topbar");
       new ResizeObserver(() => {

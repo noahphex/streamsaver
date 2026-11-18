@@ -224,6 +224,9 @@ def run_analysis() -> dict:
 
             # Roll billing date forward and check for staleness
             next_billing, is_uncertain = _advance_billing_date(anchor, cycle, today) if anchor else (today, False)
+            if anchor == today and status == "subscribed":
+                # Started (or resubscribed) today: that bill is paid, so judge against the next one.
+                next_billing = _add_months(anchor, 12 if cycle == "annual" else 1)
             days_until_renewal = (next_billing - today).days
 
             signals = service_watch_signals(s["id"], conn)

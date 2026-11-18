@@ -361,6 +361,32 @@ class WebTests(unittest.TestCase):
             row = conn.execute("SELECT show_state, abandoned_override FROM shows WHERE trakt_id = 't1'").fetchone()
         self.assertEqual((row["show_state"], row["abandoned_override"]), ("anticipated", 0))
 
+    def test_show_flash_names_the_show_and_delete_confirm_survives_apostrophes(self):
+        self._sign_in()
+        with db.db_session() as conn:
+            conn.execute("INSERT INTO shows (trakt_id, title, show_state, interest_score) VALUES ('t1', 'Silo', 'anticipated', 23)")
+            conn.execute("INSERT INTO services (name, status, monthly_cost) VALUES ('Riley''s Test', 'subscribed', 1)")
+            sid = conn.execute("SELECT id FROM services").fetchone()["id"]
+        page = self._post("/shows/t1/state", data={"state": "abandoned"}, follow_redirects=True).get_data(as_text=True)
+        self.assertIn("Silo marked abandoned.", page)
+        form = self.client.get(f"/services/{sid}/edit").get_data(as_text=True)
+        self.assertIn('data-confirm="Delete Riley&#39;s Test? This cannot be undone."', form)
+        self.assertIn('onsubmit="return confirm(this.dataset.confirm)"', form)
+
+    def test_duplicate_service_name_keeps_the_form_and_explains(self):
+        from core.service_manager import add_service
+        self._sign_in()
+        add_service("Netflix", status="subscribed", monthly_cost=10)
+        r = self._post("/services", data={"name": "Netflix", "status": "subscribed", "monthly_cost": "17.99",
+                                          "billing_cycle": "monthly", "billing_anchor_date": "2026-11-25"})
+        page = r.get_data(as_text=True)
+        self.assertEqual(r.status_code, 409)
+        self.assertIn("You already have a service named Netflix.", page)
+        self.assertNotIn("UNIQUE", page)
+        self.assertIn('name="monthly_cost" min="0" step="0.01" value="17.99"', page)
+        self.assertIn('value="subscribed" selected', page)
+        self.assertIn('name="billing_anchor_date" value="2026-11-25"', page)
+
     def test_credential_test_result_is_remembered(self):
         self._sign_in()
         with mock.patch.object(webapp, "check_login", return_value=None):
@@ -1119,7 +1145,7 @@ class WebTests(unittest.TestCase):
             self.assertIn(f'value="{status}" selected>{label}</option>', page)
             self.assertIn(f'<span class="pill quiet">{label}</span>', page)
             self.assertIn('<details class="danger-section">', page)
-            self.assertIn("return confirm('Delete", page)
+            self.assertIn(f'data-confirm="Delete Example {status}?', page)
         add_service('Free example', status='subscribed', monthly_cost=0)
         page = self.client.get('/services').data.decode()
         self.assertIn('1</span> paying · 1 free', page)

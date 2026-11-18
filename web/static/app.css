@@ -478,7 +478,7 @@ form[data-cycle="monthly"] .cost-annual, form[data-cycle="annual"] .cost-monthly
 .row-menu { position: relative; }
 .row-menu > summary { list-style: none; display: grid; place-items: center; min-width: 44px; min-height: 44px; padding: 0; }
 .row-menu > summary::-webkit-details-marker { display: none; }
-.row-menu form { position: absolute; z-index: 2; right: 0; top: 44px; padding: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.row-menu form { position: absolute; z-index: 2; right: 100%; top: 50%; transform: translateY(-50%); white-space: nowrap; padding: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
 @media (max-width: 720px) {
   .paying { grid-template-columns: 32px minmax(0, 1fr) auto; }
   .provider-header { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
@@ -489,7 +489,7 @@ form[data-cycle="monthly"] .cost-annual, form[data-cycle="annual"] .cost-monthly
   .table-wrap td.title { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; }
   .table-wrap td[data-label="State"] .pill { font-size: 11px; }
   .table-wrap td[data-label="Service"] { grid-column: 1 / -1; text-align: right; font-size: 12px; }
-  .table-wrap td:not([data-label]):not([colspan]) { position: absolute; right: 0; top: 4px; }
+  .table-wrap td:not([data-label]):not([colspan]) { position: absolute; grid-area: auto; right: 0; top: 4px; }
   .table-wrap td[colspan] { grid-column: 1 / -1; }
   .hero.compact h1 { flex-wrap: wrap; }
 }
