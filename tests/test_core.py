@@ -184,6 +184,22 @@ class DbTests(unittest.TestCase):
 
         self.assertEqual([r["name"] for r in results["resubscribe"]], ["Paramount+"])
 
+    def test_resubscribing_today_does_not_suggest_pausing(self):
+        from core import todo
+        with db.db_session() as conn:
+            conn.execute(
+                "INSERT INTO services (name, status, monthly_cost, billing_cycle, billing_anchor_date) "
+                "VALUES ('Max', 'suspended', 17.0, 'monthly', NULL)")
+            sid = conn.execute("SELECT id FROM services").fetchone()["id"]
+        self._add_show("cup", "anticipated", 28, date.today().isoformat(),
+                       next_air=(date.today() + timedelta(days=3)).isoformat(), service_id=sid)
+
+        todo.mark_done(sid, "resubscribe")
+        results = analysis.run_analysis()
+
+        self.assertEqual(results["suspend"], [])
+        self.assertEqual([r["name"] for r in results["keep"]], ["Max"])
+
     def test_untracked_providers_are_grouped_and_weekly(self):
         from core.newsletter import filter_status_alerts_for_frequency, mark_status_alerts_sent
         from email_reports.report_builder import build_digest

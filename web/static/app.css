@@ -489,7 +489,7 @@ form[data-cycle="monthly"] .cost-annual, form[data-cycle="annual"] .cost-monthly
   .table-wrap td.title { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; }
   .table-wrap td[data-label="State"] .pill { font-size: 11px; }
   .table-wrap td[data-label="Service"] { grid-column: 1 / -1; text-align: right; font-size: 12px; }
-  .table-wrap td:not([data-label]):not([colspan]) { position: absolute; right: 0; top: 4px; }
+  .table-wrap td:not([data-label]):not([colspan]) { position: absolute; grid-area: auto; right: 0; top: 4px; }
   .table-wrap td[colspan] { grid-column: 1 / -1; }
   .hero.compact h1 { flex-wrap: wrap; }
 }
