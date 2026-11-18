@@ -88,7 +88,7 @@ def test_tiles_stay_inside_track_even_when_dates_coincide_at_edges():
 def test_badge_copy_and_authoritative_verdict_titles():
     data = rail(bill(15), dict(returning(1), title="Love is Blind"), returning(2))
     assert data['bills'][0]['badge'] == '2 back'
-    for kind, label in [('nothing_new', 'Nothing new'), ('unknown', 'Too early'), ('prepaid', 'Annual')]:
+    for kind, label in [('nothing_new', 'None awaited'), ('unknown', 'Too early'), ('prepaid', 'Annual')]:
         assert rail(bill(15, kind=kind))['bills'][0]['badge'] == label
     source = bill(15)
     source['verdict']['shows'] = [dict(title='Anticipated', date='2026-10-30')]

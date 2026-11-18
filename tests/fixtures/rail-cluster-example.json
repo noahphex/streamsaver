@@ -67,12 +67,12 @@
       "show_titles": [],
       "anchor": "bill-2-2026-11-08",
       "sequence": 1,
-      "badge": "Nothing new",
+      "badge": "None awaited",
       "badge_dot": false,
       "tile_x": 111.13,
       "row": 0,
-      "badge_center": 149.13,
-      "badge_width": 82,
+      "badge_center": 152.13,
+      "badge_width": 88,
       "badge_x": 108.13,
       "tile_y": 24,
       "tile_bottom": 56,
@@ -90,7 +90,7 @@
         {
           "start": 90,
           "end": 118,
-          "start_x": 149.13,
+          "start_x": 152.13,
           "end_x": 121.33
         }
       ]
