@@ -373,6 +373,20 @@ class WebTests(unittest.TestCase):
         self.assertIn('data-confirm="Delete Riley&#39;s Test? This cannot be undone."', form)
         self.assertIn('onsubmit="return confirm(this.dataset.confirm)"', form)
 
+    def test_duplicate_service_name_keeps_the_form_and_explains(self):
+        from core.service_manager import add_service
+        self._sign_in()
+        add_service("Netflix", status="subscribed", monthly_cost=10)
+        r = self._post("/services", data={"name": "Netflix", "status": "subscribed", "monthly_cost": "17.99",
+                                          "billing_cycle": "monthly", "billing_anchor_date": "2026-11-25"})
+        page = r.get_data(as_text=True)
+        self.assertEqual(r.status_code, 409)
+        self.assertIn("You already have a service named Netflix.", page)
+        self.assertNotIn("UNIQUE", page)
+        self.assertIn('name="monthly_cost" min="0" step="0.01" value="17.99"', page)
+        self.assertIn('value="subscribed" selected', page)
+        self.assertIn('name="billing_anchor_date" value="2026-11-25"', page)
+
     def test_credential_test_result_is_remembered(self):
         self._sign_in()
         with mock.patch.object(webapp, "check_login", return_value=None):

@@ -38,18 +38,19 @@
 </section>
 {% endif %}
 
-{% set cycle = editable.billing_cycle if editable else "monthly" %}
+{% set v = draft or editable %}{# draft: what was typed, when a save failed #}
+{% set cycle = v.billing_cycle if v else "monthly" %}
 {% set bundles = bundle_map[editable.id] if editable else [] %}
 <section class="section form-panel">
   <h2>Details</h2>
   <form method="post" action="{{ url_for('service_save') }}" class="stack" data-cycle="{{ cycle }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {% if editable %}<input type="hidden" name="service_id" value="{{ editable.id }}">{% endif %}
-    <label>Name <input name="name" list="networks" value="{{ editable.name if editable else prefill_name }}" required></label>
+    <label>Name <input name="name" list="networks" value="{{ v.name if v else prefill_name }}" required></label>
     <datalist id="networks">{% for name in network_names %}<option value="{{ name }}">{% endfor %}</datalist>
     <div class="form-grid">
       <label>Status
-        <select name="status">{% for status in statuses %}<option value="{{ status }}" {% if editable and editable.status == status %}selected{% endif %}>{{ status_labels.get(status, status) }}</option>{% endfor %}</select>
+        <select name="status">{% for status in statuses %}<option value="{{ status }}" {% if v and v.status == status %}selected{% endif %}>{{ status_labels.get(status, status) }}</option>{% endfor %}</select>
       </label>
       <label>Billing cycle
         <select name="billing_cycle" id="billing-cycle">
@@ -58,17 +59,17 @@
         </select>
       </label>
       <label class="cost cost-monthly">Monthly cost ($)
-        <input type="number" name="monthly_cost" min="0" step="0.01" value="{{ '%.2f'|format(editable.monthly_cost or 0) if editable else '' }}">
+        <input type="number" name="monthly_cost" min="0" step="0.01" value="{{ '%.2f'|format(v.monthly_cost or 0) if v else '' }}">
       </label>
       <label class="cost cost-annual">Annual cost ($)
-        <input type="number" name="annual_cost" min="0" step="0.01" value="{{ '%.2f'|format(editable.annual_cost or 0) if editable else '' }}">
+        <input type="number" name="annual_cost" min="0" step="0.01" value="{{ '%.2f'|format(v.annual_cost or 0) if v else '' }}">
       </label>
       <label>First billing date
-        <input type="date" name="billing_anchor_date" value="{{ editable.billing_anchor_date or editable.next_billing_date if editable else '' }}">
+        <input type="date" name="billing_anchor_date" value="{{ (v.billing_anchor_date or v.next_billing_date or '') if v else '' }}">
         <small class="muted">{% if next_renewal %}Next renewal {{ next_renewal|nice_date }}. {% endif %}Any past billing date works; Streamsaver rolls it forward.</small>
       </label>
     </div>
-    <label class="check"><input type="checkbox" name="auto_renew" {% if not editable or editable.auto_renew %}checked{% endif %}> Auto renew</label>
+    <label class="check"><input type="checkbox" name="auto_renew" {% if not v or v.auto_renew %}checked{% endif %}> Auto renew</label>
 
     <div class="bundles">
       <span class="muted">Counts shows from:</span>
@@ -77,8 +78,8 @@
     <details class="more">
       <summary>Provider matching (TMDb IDs)</summary>
       <div class="form-grid">
-        <label>TMDb provider ID <input type="number" name="tmdb_provider_id" value="{{ editable.tmdb_provider_id if editable and editable.tmdb_provider_id else '' }}"></label>
-        <label>Bundled provider IDs <input name="bundle_provider_ids" value="{{ bundles|map(attribute='tmdb_provider_id')|join(', ') }}" placeholder="e.g. 337, 508"></label>
+        <label>TMDb provider ID <input type="number" name="tmdb_provider_id" value="{{ v.tmdb_provider_id if v and v.tmdb_provider_id else '' }}"></label>
+        <label>Bundled provider IDs <input name="bundle_provider_ids" value="{{ draft.bundle_provider_ids if draft else bundles|map(attribute='tmdb_provider_id')|join(', ') }}" placeholder="e.g. 337, 508"></label>
       </div>
       <p class="muted">Usually filled in for you when you pick the name from the list. Bundles let add-on channels count toward this service.</p>
     </details>
